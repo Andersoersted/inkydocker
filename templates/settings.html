@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Settings - InkyDocker{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Page Header -->
+  <header class="page-header">
+    <h1>Settings</h1>
+    <p>Manage your eInk displays</p>
+  </header>
+
+  <!-- Add Device Card -->
+  <div class="card">
+    <h2>Add Device</h2>
+    <form method="POST" action="{{ url_for('settings') }}">
+      <!-- Fields in order: Color, Friendly Name, Orientation, Address, Display Name, Resolution -->
+      <select name="color" required>
+        <option value="#FF0000" style="background-color:#FF0000;">&#160;</option>
+        <option value="#00FF00" style="background-color:#00FF00;">&#160;</option>
+        <option value="#0000FF" style="background-color:#0000FF;">&#160;</option>
+        <option value="#FFFF00" style="background-color:#FFFF00;">&#160;</option>
+        <option value="#FF00FF" style="background-color:#FF00FF;">&#160;</option>
+        <option value="#00FFFF" style="background-color:#00FFFF;">&#160;</option>
+        <option value="#FFA500" style="background-color:#FFA500;">&#160;</option>
+        <option value="#800080" style="background-color:#800080;">&#160;</option>
+        <option value="#008000" style="background-color:#008000;">&#160;</option>
+        <option value="#000000" style="background-color:#000000;">&#160;</option>
+      </select>
+      <input type="text" name="friendly_name" placeholder="Friendly Name" required>
+      <select name="orientation" required>
+        <option value="horizontal">Horizontal</option>
+        <option value="vertical">Vertical</option>
+      </select>
+      <input type="text" name="address" placeholder="Device Address (e.g., http://192.168.1.174)" required>
+      <input type="text" name="display_name" placeholder="Display Name" required>
+      <input type="text" name="resolution" placeholder="Resolution (e.g., 800x600)" required>
+      <input type="submit" value="Add Device">
+      <button type="button" onclick="testConnectionAdd()">Test Connection</button>
+    </form>
+  </div>
+
+  <!-- Existing Devices Card -->
+  <div class="card">
+    <h2>Existing Devices</h2>
+    <table class="device-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Color</th>
+          <th>Friendly Name</th>
+          <th>Orientation</th>
+          <th>Address</th>
+          <th>Display Name</th>
+          <th>Resolution</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for device in devices %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><div style="width:20px; height:20px; border-radius:50%; background:{{ device.color }};"></div></td>
+          <td>{{ device.friendly_name }}</td>
+          <td>{{ device.orientation }}</td>
+          <td>{{ device.address }}</td>
+          <td>{{ device.display_name }}</td>
+          <td>{{ device.resolution }}</td>
+          <td>
+            {% if device.online %}
+              <span style="color:green;">&#9679;</span>
+            {% else %}
+              <span style="color:red;">&#9679;</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" action="{{ url_for('delete_device', index=loop.index0) }}" style="display:inline;">
+              <input type="submit" value="Delete">
+            </form>
+            <button type="button" class="edit-button" 
+                    data-index="{{ loop.index0 }}"
+                    data-color="{{ device.color }}"
+                    data-friendly="{{ device.friendly_name }}"
+                    data-orientation="{{ device.orientation }}"
+                    data-address="{{ device.address }}"
+                    data-display="{{ device.display_name }}"
+                    data-resolution="{{ device.resolution }}">
+              Edit
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Popup for test connection -->
+<div id="testPopup" style="display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+     padding: 20px; background-color: #fff; border: 2px solid #000; z-index: 3000;"></div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeEditModal()">&times;</span>
+    <h2>Edit Device</h2>
+    <form id="editDeviceForm" method="POST" action="{{ url_for('edit_device') }}">
+      <!-- Fields in order: Color, Friendly Name, Orientation, Address, Display Name, Resolution -->
+      <input type="hidden" name="device_index" id="editDeviceIndex">
+      <select name="color" id="editColor" required>
+        <option value="#FF0000" style="background-color:#FF0000;">&#160;</option>
+        <option value="#00FF00" style="background-color:#00FF00;">&#160;</option>
+        <option value="#0000FF" style="background-color:#0000FF;">&#160;</option>
+        <option value="#FFFF00" style="background-color:#FFFF00;">&#160;</option>
+        <option value="#FF00FF" style="background-color:#FF00FF;">&#160;</option>
+        <option value="#00FFFF" style="background-color:#00FFFF;">&#160;</option>
+        <option value="#FFA500" style="background-color:#FFA500;">&#160;</option>
+        <option value="#800080" style="background-color:#800080;">&#160;</option>
+        <option value="#008000" style="background-color:#008000;">&#160;</option>
+        <option value="#000000" style="background-color:#000000;">&#160;</option>
+      </select>
+      <input type="text" name="friendly_name" id="editFriendlyName" placeholder="Friendly Name" required>
+      <select name="orientation" id="editOrientation" required>
+        <option value="horizontal">Horizontal</option>
+        <option value="vertical">Vertical</option>
+      </select>
+      <input type="text" name="address" id="editAddress" placeholder="Device Address" required>
+      <input type="text" name="display_name" id="editDisplayName" placeholder="Display Name" required>
+      <input type="text" name="resolution" id="editResolution" placeholder="Resolution (e.g., 800x600)" required>
+      <div style="margin:10px 0;">
+        <label>Status:</label>
+        <span id="editStatusIndicator" style="font-size:20px;">&#9679;</span>
+        <button type="button" onclick="testConnectionEdit()">Test Connection</button>
+      </div>
+      <button type="button" onclick="saveDeviceChanges()">Save Changes</button>
+      <button type="button" onclick="closeEditModal()">Cancel</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Styles (can be moved to your CSS file) -->
+<style>
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.4);
+}
+.modal-content {
+  background-color: #fefefe;
+  margin: 10% auto;
+  padding: 20px;
+  border: 1px solid #888;
+  max-width: 500px;
+  position: relative;
+}
+.close {
+  color: #aaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.close:hover,
+.close:focus {
+  color: black;
+}
+.device-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+.device-table th, .device-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+.device-table th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+.device-table tr:nth-child(even) {
+  background-color: #fafafa;
+}
+.device-table tr:hover {
+  background-color: #f1f1f1;
+}
+</style>
+
+<!-- JavaScript -->
+<script>
+  // Popup functions for test connection
+  function showTestPopup(message) {
+    let popup = document.getElementById('testPopup');
+    popup.innerHTML = message;
+    popup.style.display = 'block';
+  }
+  function hideTestPopup() {
+    let popup = document.getElementById('testPopup');
+    popup.style.display = 'none';
+  }
+
+  // Test connection for Add Device form
+  function testConnectionAdd() {
+    let addressField = document.querySelector('input[name="address"]');
+    let address = addressField.value;
+    if (!address) return;
+    showTestPopup("testing...");
+    fetch("/test_connection_address?address=" + encodeURIComponent(address))
+      .then(response => response.json())
+      .then(data => {
+         if (data.status === "ok") {
+           showTestPopup("ok");
+         } else {
+           showTestPopup("failed");
+         }
+         setTimeout(hideTestPopup, 2000);
+      })
+      .catch(error => {
+         showTestPopup("failed");
+         setTimeout(hideTestPopup, 2000);
+      });
+  }
+
+  // Open the Edit Modal and pre-fill fields (same order as add device)
+  document.querySelectorAll('.edit-button').forEach(function(button) {
+    button.addEventListener('click', function() {
+      const index = this.getAttribute('data-index');
+      const color = this.getAttribute('data-color');
+      const friendly = this.getAttribute('data-friendly');
+      const orientation = this.getAttribute('data-orientation');
+      const address = this.getAttribute('data-address');
+      const display = this.getAttribute('data-display');
+      const resolution = this.getAttribute('data-resolution');
+      document.getElementById('editDeviceIndex').value = index;
+      document.getElementById('editColor').value = color;
+      document.getElementById('editFriendlyName').value = friendly;
+      document.getElementById('editOrientation').value = orientation;
+      document.getElementById('editAddress').value = address;
+      document.getElementById('editDisplayName').value = display;
+      document.getElementById('editResolution').value = resolution;
+      document.getElementById('editStatusIndicator').style.color = 'red';
+      document.getElementById('editModal').style.display = 'block';
+    });
+  });
+
+  function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+  }
+
+  // Test connection for Edit Device form
+  function testConnectionEdit() {
+    let address = document.getElementById('editAddress').value;
+    if (!address) return;
+    showTestPopup("testing...");
+    fetch("/test_connection_address?address=" + encodeURIComponent(address))
+      .then(response => response.json())
+      .then(data => {
+         if (data.status === "ok") {
+           document.getElementById('editStatusIndicator').style.color = 'green';
+           showTestPopup("ok");
+         } else {
+           document.getElementById('editStatusIndicator').style.color = 'red';
+           showTestPopup("failed");
+         }
+         setTimeout(hideTestPopup, 2000);
+      })
+      .catch(error => {
+         document.getElementById('editStatusIndicator').style.color = 'red';
+         showTestPopup("failed");
+         setTimeout(hideTestPopup, 2000);
+      });
+  }
+
+  // Save changes from the Edit Modal (submits the form normally)
+  function saveDeviceChanges() {
+    document.getElementById('editDeviceForm').submit();
+  }
+</script>
+{% endblock %}

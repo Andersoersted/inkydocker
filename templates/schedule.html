@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Schedule - InkyDocker{% endblock %}
+
+{% block content %}
+<div class="container">
+  <!-- Page Header -->
+  <header class="page-header">
+    <h1>Schedule Images</h1>
+    <p>Drag and drop images onto the calendar to schedule them.</p>
+  </header>
+
+  <!-- Gallery Section -->
+  <div class="card">
+    <h2>Image Gallery</h2>
+    <div class="gallery">
+      {% for image in images %}
+        <div class="gallery-item">
+          <div class="img-container">
+            <img class="fade-img" src="{{ url_for('thumbnail', filename=image) }}" alt="{{ image }}" draggable="true" data-filename="{{ image }}">
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Device Selection -->
+  <div class="card device-section">
+    <h2>Select eInk Display</h2>
+    <div class="device-options">
+      {% for device in devices %}
+        <label class="device-option">
+          <input type="radio" name="device" value="{{ device.address }}" data-friendly="{{ device.friendly_name }}" {% if loop.first %}checked{% endif %}>
+          {{ device.friendly_name }}
+        </label>
+      {% endfor %}
+      {% if devices|length == 0 %}
+        <p>No devices configured. Go to <a href="{{ url_for('settings') }}">Settings</a>.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Calendar Grid -->
+  <div class="card">
+    <h2>Weekly Calendar</h2>
+    <table class="calendar">
+      <thead>
+        <tr>
+          <th>Hour</th>
+          <th>Mon</th>
+          <th>Tue</th>
+          <th>Wed</th>
+          <th>Thu</th>
+          <th>Fri</th>
+          <th>Sat</th>
+          <th>Sun</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for hour in range(0, 25) %}
+          <tr>
+            <th style="border: 1px solid #ccc; padding: 3px;">{{ "%02d:00" % hour }}</th>
+            {% for day in range(7) %}
+              <td class="droppable" data-day="{{ day }}" data-hour="{{ hour }}" style="border: 1px solid #ccc; padding: 3px; width: 80px; height: 30px; position: relative;"></td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- JavaScript -->
+<script>
+  var imageUrlPrefix = "{{ url_for('thumbnail', filename='') }}";
+  // Fade in gallery items
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll('.gallery-item').forEach(function(item) {
+      setTimeout(function() {
+        item.classList.add('loaded');
+      }, 100);
+    });
+  });
+
+  // Global variables for drag & drop
+  var draggedImage = null;
+  var draggedScheduleEvent = null;
+
+  // Helper: calculate Monday of current week
+  function getMonday(d) {
+    d = new Date(d);
+    var day = d.getDay();
+    var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(d.setDate(diff));
+  }
+
+  // Enable drag from gallery
+  document.querySelectorAll('.gallery img').forEach(function(img) {
+    img.addEventListener('dragstart', function(e) {
+      draggedImage = this;
+      draggedScheduleEvent = null;
+    });
+  });
+
+  // Function to make a scheduled event draggable
+  function addDraggableToScheduledEvent(eventElement, eventId) {
+    eventElement.setAttribute('draggable', 'true');
+    eventElement.addEventListener('dragstart', function(e) {
+      draggedScheduleEvent = { element: eventElement, id: eventId };
+      draggedImage = null;
+    });
+  }
+
+  // Insert existing scheduled events into calendar cells
+  var scheduleEvents = {{ schedule_events|tojson|safe }};
+  scheduleEvents.forEach(function(event) {
+    var eventDate = new Date(event.datetime);
+    var monday = getMonday(new Date());
+    monday.setHours(0,0,0,0);
+    var dayOffset = Math.floor((eventDate - monday) / (1000 * 60 * 60 * 24));
+    var hour = eventDate.getHours();
+    var cell = document.querySelector('.droppable[data-day="'+dayOffset+'"][data-hour="'+hour+'"]');
+    if(cell) {
+      var eventDiv = document.createElement("div");
+      eventDiv.className = "scheduled-event";
+      
+      // Thumbnail
+      var thumb = document.createElement("img");
+      thumb.className = "thumbnail";
+      thumb.src = imageUrlPrefix + event.filename;
+      thumb.alt = event.filename;
+      eventDiv.appendChild(thumb);
+      
+      // Trash icon for deletion
+      var trash = document.createElement("img");
+      trash.className = "trash-icon";
+      trash.src = "{{ url_for('static', filename='trash-icon.png') }}";
+      trash.alt = "Delete";
+      trash.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var urlPrefix = "{{ url_for('remove_schedule', event_id=0) }}".slice(0, -1);
+        fetch(urlPrefix + event.id, { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            if(data.status === "success"){
+              eventDiv.style.transition = "opacity 0.5s";
+              eventDiv.style.opacity = 0;
+              setTimeout(() => { eventDiv.remove(); }, 500);
+            }
+          })
+          .catch(error => { alert("Error removing schedule event"); });
+      });
+      eventDiv.appendChild(trash);
+      cell.appendChild(eventDiv);
+      addDraggableToScheduledEvent(eventDiv, event.id);
+    }
+  });
+
+  // Drag and drop for calendar cells
+  document.querySelectorAll('.droppable').forEach(function(cell) {
+    cell.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      cell.classList.add('over');
+    });
+    cell.addEventListener('dragleave', function(e) {
+      cell.classList.remove('over');
+    });
+    cell.addEventListener('drop', function(e) {
+      e.preventDefault();
+      cell.classList.remove('over');
+      var device = document.querySelector('input[name="device"]:checked').value;
+      var today = new Date();
+      var monday = getMonday(today);
+      monday.setHours(0,0,0,0);
+      var day = cell.getAttribute('data-day');
+      var hour = cell.getAttribute('data-hour');
+      monday.setDate(monday.getDate() + parseInt(day));
+      var year = monday.getFullYear();
+      var month = ('0' + (monday.getMonth() + 1)).slice(-2);
+      var dayNum = ('0' + monday.getDate()).slice(-2);
+      var scheduledDate = year + '-' + month + '-' + dayNum;
+      var scheduledTime = ('0' + hour).slice(-2) + ':00';
+      var scheduledDatetime = scheduledDate + ' ' + scheduledTime;
+      
+      if(draggedImage) {
+        var filename = draggedImage.getAttribute('data-filename');
+        var formData = new FormData();
+        formData.append('filename', filename);
+        formData.append('datetime', scheduledDatetime);
+        formData.append('device', device);
+        fetch("{{ url_for('add_schedule') }}", { method: 'POST', body: formData })
+          .then(response => response.json())
+          .then(data => {
+            if(data.status === "success"){
+              var newEvent = document.createElement("div");
+              newEvent.className = "scheduled-event";
+              var thumb = document.createElement("img");
+              thumb.className = "thumbnail";
+              thumb.src = imageUrlPrefix + filename;
+              thumb.alt = filename;
+              newEvent.appendChild(thumb);
+              var trash = document.createElement("img");
+              trash.className = "trash-icon";
+              trash.src = "{{ url_for('static', filename='trash-icon.png') }}";
+              trash.alt = "Delete";
+              trash.addEventListener("click", function(e) {
+                e.stopPropagation();
+                var urlPrefix = "{{ url_for('remove_schedule', event_id=0) }}".slice(0, -1);
+                fetch(urlPrefix + data.event.id, { method: 'POST' })
+                  .then(response => response.json())
+                  .then(data => {
+                    if(data.status === "success"){
+                      newEvent.style.transition = "opacity 0.5s";
+                      newEvent.style.opacity = 0;
+                      setTimeout(() => { newEvent.remove(); }, 500);
+                    }
+                  })
+                  .catch(error => { alert("Error removing schedule event"); });
+              });
+              newEvent.appendChild(trash);
+              cell.appendChild(newEvent);
+              addDraggableToScheduledEvent(newEvent, data.event.id);
+            }
+          })
+          .catch(error => {
+            alert('Error scheduling image');
+          });
+      } else if(draggedScheduleEvent) {
+        var eventId = draggedScheduleEvent.id;
+        var formData = new FormData();
+        formData.append('datetime', scheduledDatetime);
+        fetch("{{ url_for('update_schedule') }}" + "?event_id=" + eventId, { method: 'POST', body: formData })
+          .then(response => response.json())
+          .then(data => {
+            if(data.status === "success"){
+              cell.appendChild(draggedScheduleEvent.element);
+            }
+          })
+          .catch(error => {
+            alert('Error updating schedule event');
+          });
+      }
+    });
+  });
+</script>
+{% endblock %}

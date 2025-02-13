@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <title>{% block title %}InkyDocker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <div class="navbar">
+      <div class="logo">InkyDocker</div>
+      <div class="nav-links">
+        <a href="{{ url_for('upload_file') }}" {% if request.endpoint == 'upload_file' %}class="active"{% endif %}>Upload</a>
+        <a href="{{ url_for('schedule_page') }}" {% if request.endpoint == 'schedule_page' %}class="active"{% endif %}>Schedule</a>
+        <a href="{{ url_for('settings') }}" {% if request.endpoint == 'settings' %}class="active"{% endif %}>Settings</a>
+      </div>
+    </div>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+    <footer class="footer">
+      <p>© 2025 InkyDocker | Built with AI by Me</p>
+    </footer>
+  </body>
+</html>

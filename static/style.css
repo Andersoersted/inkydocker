@@ -1,0 +1,295 @@
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+
+/* Global Styles */
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: #eef2f3; /* Soft blue-gray background */
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Headings */
+h1, h2, h3 {
+    font-weight: 600;
+    color: #1e3a5f;
+}
+
+/* Navigation Bar */
+.navbar {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 15px 25px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.navbar .logo {
+    font-size: 1.5em;
+    font-weight: 600;
+}
+
+.navbar .nav-links a {
+    color: #f1f1f1;
+    text-decoration: none;
+    margin: 0 15px;
+    font-size: 1.1em;
+    font-weight: bold;
+    transition: color 0.2s;
+}
+
+.navbar .nav-links a:hover {
+    color: #ffcc00;
+}
+
+.navbar .nav-links a.active {
+    color: #ffcc00;
+    font-weight: bold;
+}
+
+/* Content Wrapper */
+.content {
+    padding-top: 80px;
+    padding-bottom: 80px;
+}
+
+/* Card Style */
+.card {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+/* Page Header */
+.page-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+/* Upload Form */
+.upload-form {
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 10px;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    border: 1px solid #ddd;
+}
+
+.upload-form input[type="file"] {
+    padding: 8px;
+    border: 2px solid #ccc;
+    border-radius: 5px;
+    font-size: 1em;
+}
+
+.upload-form input[type="submit"],
+.upload-form button {
+    background: linear-gradient(to right, #28a745, #218838);
+    border: none;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background 0.3s, transform 0.2s;
+}
+
+.upload-form input[type="submit"]:hover,
+.upload-form button:hover {
+    background: linear-gradient(to right, #218838, #1e7e34);
+    transform: translateY(-2px);
+}
+
+/* Progress Bar */
+.progress-container {
+    width: 100%;
+    background: #ddd;
+    border-radius: 5px;
+    margin-top: 10px;
+    display: none;
+}
+
+.progress-bar {
+    width: 0%;
+    height: 20px;
+    background: #28a745;
+    border-radius: 5px;
+    transition: width 0.4s ease;
+    color: #fff;
+    line-height: 20px;
+    font-size: 0.9em;
+}
+
+/* Gallery */
+.gallery {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;  /* Left-align the gallery items */
+    align-items: flex-start;
+    gap: 1px;
+    padding: 5px;
+    background: #dfe6ee;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.gallery-item {
+    margin: 0;
+    padding: 0;
+    display: inline-block;
+}
+
+.img-container {
+    position: relative;
+    display: inline-block;
+}
+
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+.img-container:hover .overlay {
+    opacity: 1;
+}
+
+.send-button {
+    background: linear-gradient(to right, #28a745, #218838);
+    border: none;
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: bold;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+}
+
+.overlay .delete-icon {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 25px;
+    height: 25px;
+    cursor: pointer;
+    z-index: 20;
+}
+
+.gallery-item img {
+    height: 100px;
+    width: auto;
+    object-fit: cover;
+    display: block;
+    margin: 0;
+    padding: 0;
+    border-radius: 5px;
+    border: 2px solid #ccc;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+.gallery-item img:hover {
+    transform: scale(1.05);
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Calendar */
+.calendar {
+    width: auto;
+    margin: 20px auto;
+    border-collapse: collapse;
+    font-size: 0.8em;
+}
+.calendar th,
+.calendar td {
+    border: 1px solid #ccc;
+    padding: 2px;
+    text-align: center;
+}
+.calendar th {
+    background: #eaeaea;
+}
+.droppable.over {
+    background: #cce5ff;
+}
+
+/* Device Section */
+.device-section {
+    font-size: 0.9em;
+    padding: 5px;
+    margin-bottom: 10px;
+}
+.device-section h2 {
+    font-size: 1.2em;
+    margin-top: 0;
+}
+.device-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.device-option {
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+/* Layout Containers */
+.container {
+    max-width: 1200px;
+    margin: 80px auto 80px auto;
+    padding: 20px;
+}
+.main-content {
+    display: flex;
+    gap: 20px;
+}
+.left-panel {
+    width: 32%;
+}
+.gallery-section {
+    width: 65%;
+}
+
+/* Last Sent Image */
+.last-sent-img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Footer */
+.footer {
+    background: #1e3a5f;
+    color: #fff;
+    text-align: center;
+    padding: 15px;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    font-size: 0.9em;
+}

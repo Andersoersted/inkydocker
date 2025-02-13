@@ -1,0 +1,3 @@
+Flask
+Pillow==11.1.0
+pillow-heif==0.21.0

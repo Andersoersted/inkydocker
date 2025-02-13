@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Image Upload - InkyDocker{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="main-content">
+    <!-- Left Panel -->
+    <div class="left-panel">
+      <!-- Device Selection -->
+      <div class="card device-section">
+        <h2>Select eInk Display</h2>
+        {% if devices %}
+          <div class="device-options">
+            {% for device in devices %}
+              <label class="device-option">
+                <input type="radio" name="device" value="{{ device.address }}" data-friendly="{{ device.friendly_name }}" {% if loop.first %}checked{% endif %}>
+                {{ device.friendly_name }}
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p>No devices configured. Go to <a href="{{ url_for('settings') }}">Settings</a>.</p>
+        {% endif %}
+      </div>
+
+      <!-- Upload Images -->
+      <div class="card upload-section">
+        <h2>Upload Images</h2>
+        <form id="uploadForm" class="upload-form" method="post" enctype="multipart/form-data">
+          <input type="file" name="file" multiple id="fileInput" required>
+          <br>
+          <input type="submit" value="Upload">
+          <div class="progress-container" id="progressContainer">
+            <div class="progress-bar" id="progressBar">0%</div>
+          </div>
+          <div id="uploadStatus"></div>
+        </form>
+      </div>
+
+      <!-- Last Sent Image -->
+      <div class="card last-sent">
+        <h2>Last Sent Image</h2>
+        {% if last_sent %}
+          <img src="{{ url_for('uploaded_file', filename=last_sent) }}" alt="Last Sent Image" class="last-sent-img">
+        {% else %}
+          <p>No image has been sent yet.</p>
+        {% endif %}
+      </div>
+    </div>
+    <!-- End Left Panel -->
+
+    <!-- Right Panel: Gallery -->
+    <div class="gallery-section">
+      <h2>Gallery</h2>
+      <div class="gallery">
+        {% for image in images %}
+          <div class="gallery-item">
+            <div class="img-container">
+              <img src="{{ url_for('uploaded_file', filename=image) }}" alt="{{ image }}" draggable="true" data-filename="{{ image }}">
+              <div class="overlay">
+                <button class="send-button" data-image="{{ image }}">Send</button>
+                <img src="{{ url_for('static', filename='trash-icon.png') }}" alt="Delete" class="delete-icon" data-image="{{ image }}">
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    <!-- End Right Panel -->
+  </div>
+</div>
+
+<!-- JavaScript -->
+<script>
+  // Handle file upload with progress bar
+  document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('fileInput');
+    if(fileInput.files.length === 0) {
+      alert('Please select a file.');
+      return;
+    }
+    var formData = new FormData();
+    for (var i = 0; i < fileInput.files.length; i++) {
+      formData.append('file', fileInput.files[i]);
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/', true);
+    xhr.upload.addEventListener("progress", function(e) {
+      if(e.lengthComputable) {
+        var percentComplete = (e.loaded / e.total) * 100;
+        var progressBar = document.getElementById('progressBar');
+        progressBar.style.width = percentComplete + '%';
+        progressBar.textContent = Math.round(percentComplete) + '%';
+        document.getElementById('progressContainer').style.display = 'block';
+      }
+    });
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        document.getElementById('uploadStatus').innerText = "Upload successful!";
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressBar').textContent = '0%';
+        setTimeout(function(){ location.reload(); }, 1000);
+      } else {
+        document.getElementById('uploadStatus').innerText = "Upload failed.";
+      }
+    };
+    xhr.onerror = function() { document.getElementById('uploadStatus').innerText = "Upload error."; };
+    xhr.send(formData);
+  });
+
+  // Handle send button click via AJAX
+  document.querySelectorAll('.send-button').forEach(function(button) {
+    button.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var imageFilename = this.getAttribute('data-image');
+      var selectedDevice = document.querySelector('input[name="device"]:checked');
+      if (!selectedDevice) {
+        alert("Please select an eInk display.");
+        return;
+      }
+      var formData = new FormData();
+      formData.append("device", selectedDevice.value);
+      fetch("{{ url_for('send_image', filename='') }}" + imageFilename, { method: 'POST', body: formData })
+        .then(response => response.text())
+        .then(data => {
+          alert("Image sent successfully!");
+          location.reload();
+        })
+        .catch(error => {
+          alert("Error sending image");
+        });
+    });
+  });
+
+  // Handle delete icon click via AJAX
+  document.querySelectorAll('.delete-icon').forEach(function(icon) {
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var imageFilename = this.getAttribute('data-image');
+      fetch("{{ url_for('delete_image', filename='') }}" + encodeURIComponent(imageFilename), { method: 'POST' })
+        .then(response => response.json())
+        .then(data => { 
+          if(data.status === "success"){
+            location.reload();
+          } else {
+            alert("Error deleting image: " + data.message);
+          }
+        })
+        .catch(error => { 
+          alert("Error deleting image");
+        });
+    });
+  });
+</script>
+{% endblock %}
