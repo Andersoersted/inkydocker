@@ -2,41 +2,130 @@
 {% block title %}Settings - InkyDocker{% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container py-4">
   <!-- Page Header -->
-  <header class="page-header">
-    <h1>Settings</h1>
-    <p>Manage your eInk displays</p>
+  <header class="pb-3 mb-4 border-bottom">
+    <h1 class="display-5 fw-bold">Settings</h1>
+    <p class="lead">Manage your eInk displays and AI settings.</p>
   </header>
 
-  <!-- Add Device Card -->
-  <div class="card">
-    <h2>Add Device</h2>
-    <form method="POST" action="{{ url_for('settings') }}">
-      <!-- Fields in order: Color, Friendly Name, Orientation, Address, Display Name, Resolution -->
-      <select name="color" required>
-        <option value="#FF0000" style="background-color:#FF0000;">&#160;</option>
-        <option value="#00FF00" style="background-color:#00FF00;">&#160;</option>
-        <option value="#0000FF" style="background-color:#0000FF;">&#160;</option>
-        <option value="#FFFF00" style="background-color:#FFFF00;">&#160;</option>
-        <option value="#FF00FF" style="background-color:#FF00FF;">&#160;</option>
-        <option value="#00FFFF" style="background-color:#00FFFF;">&#160;</option>
-        <option value="#FFA500" style="background-color:#FFA500;">&#160;</option>
-        <option value="#800080" style="background-color:#800080;">&#160;</option>
-        <option value="#008000" style="background-color:#008000;">&#160;</option>
-        <option value="#000000" style="background-color:#000000;">&#160;</option>
-      </select>
-      <input type="text" name="friendly_name" placeholder="Friendly Name" required>
-      <select name="orientation" required>
-        <option value="horizontal">Horizontal</option>
-        <option value="vertical">Vertical</option>
-      </select>
-      <input type="text" name="address" placeholder="Device Address (e.g., http://192.168.1.174)" required>
-      <input type="text" name="display_name" placeholder="Display Name" required>
-      <input type="text" name="resolution" placeholder="Resolution (e.g., 800x600)" required>
-      <input type="submit" value="Add Device">
-      <button type="button" onclick="testConnectionAdd()">Test Connection</button>
-    </form>
+  <!-- CLIP Model Settings Button -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body text-center">
+      <button id="clipSettingsBtn" class="btn btn-primary btn-lg">CLIP Model Settings</button>
+    </div>
+  </div>
+
+  <!-- CLIP Model Settings Modal -->
+  <div id="clipSettingsModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeClipSettingsModal">&times;</span>
+      <h2>CLIP Model Settings</h2>
+      <form id="clipSettingsForm">
+        <!-- CLIP Model Selection -->
+        <div class="form-group">
+          <label for="clip_model">Select CLIP Model for Image Tagging:</label>
+          <select id="clip_model" name="clip_model" class="form-select" data-current="{{ config.clip_model if config and config.clip_model }}">
+            <option value="">-- Select a model --</option>
+            <option value="ViT-B-32" {% if config and config.clip_model == 'ViT-B-32' %}selected{% endif %}>ViT-B-32 (Faster, less accurate)</option>
+            <option value="ViT-B-16" {% if config and config.clip_model == 'ViT-B-16' %}selected{% endif %}>ViT-B-16 (Balanced)</option>
+            <option value="ViT-L-14" {% if config and config.clip_model == 'ViT-L-14' %}selected{% endif %}>ViT-L-14 (Slower, more accurate)</option>
+          </select>
+          <button type="button" class="field-save-btn" onclick="saveClipModel()">Save Model</button>
+        </div>
+        
+        <!-- Model Download Progress -->
+        <div id="modelDownloadContainer" style="margin-top: 15px; display: none;">
+          <p>Downloading model: <span id="modelDownloadName"></span></p>
+          <div class="progress-container" style="width: 100%; background: #ddd; border-radius: 5px;">
+            <div id="modelDownloadProgress" class="progress-bar" style="width: 0%; height: 20px; background: #28a745; border-radius: 5px; color: #fff; text-align: center; line-height: 20px;">0%</div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+          <p>All models are pre-installed in the system.</p>
+          <p>Larger models provide more accurate tagging but require more processing power and memory.</p>
+        </div>
+        
+        <!-- Rerun Tagging Button -->
+        <div style="margin-top: 20px; text-align: center;">
+          <button type="button" class="primary-btn" onclick="rerunAllTagging()">Rerun Tagging on All Images</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add New Display Button -->
+  <div class="card text-center">
+    <button id="addNewDisplayBtn" class="primary-btn">Add New Display</button>
+  </div>
+
+  <!-- Add New Display Modal -->
+  <div id="addDisplayModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeAddDisplayModal">&times;</span>
+      <h2>Add New Display</h2>
+      <form id="addDisplayForm" method="POST" action="{{ url_for('settings.settings') }}">
+        <input type="text" name="address" id="newAddress" placeholder="Device Address (e.g., 192.168.1.100)" required>
+        <select name="orientation" id="newOrientation" required>
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+        <input type="text" name="friendly_name" id="newFriendlyName" placeholder="Friendly Name" required>
+        <!-- Hidden fields populated by Fetch Display Info -->
+        <input type="hidden" name="display_name" id="newDisplayName">
+        <input type="hidden" name="resolution" id="newResolution">
+        <input type="hidden" name="color" id="newColor">
+        <div style="margin-top: 10px;">
+          <button type="button" class="primary-btn" onclick="fetchDisplayInfo('new')">Fetch Display Info</button>
+        </div>
+        <div style="margin-top: 10px;">
+          <button type="submit" class="primary-btn">Save</button>
+          <button type="button" class="primary-btn" onclick="closeAddDisplayModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Display Modal -->
+  <div id="editDisplayModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeEditDisplayModal">&times;</span>
+      <h2>Edit Display</h2>
+      <form id="editDisplayForm" method="POST" action="{{ url_for('settings.edit_device') }}">
+        <input type="hidden" name="device_index" id="editDeviceIndex">
+        <label for="editFriendlyName">Friendly Name:</label>
+        <input type="text" name="friendly_name" id="editFriendlyName" placeholder="Friendly Name" required>
+        <label for="editOrientation">Orientation:</label>
+        <select name="orientation" id="editOrientation" required>
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+        <label for="editAddress">Device Address:</label>
+        <input type="text" name="address" id="editAddress" placeholder="Device Address" required>
+        <div style="margin-top: 10px;">
+          <button type="submit" class="primary-btn">Save Changes</button>
+          <button type="button" class="primary-btn" onclick="closeEditDisplayModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Advanced Actions Modal -->
+  <div id="advancedActionsModal" class="modal">
+    <div class="modal-content">
+      <span class="close" id="closeAdvancedActionsModal">&times;</span>
+      <h2>Advanced Actions</h2>
+      <p id="advancedDeviceTitle" style="font-weight:bold;"></p>
+      <div style="margin-top: 10px;">
+        <button type="button" class="primary-btn" onclick="triggerSystemUpdate()">System Update & Reboot</button>
+        <button type="button" class="primary-btn" onclick="triggerBackup()">Create Backup</button>
+        <button type="button" class="primary-btn" onclick="triggerAppUpdate()">Update Application</button>
+      </div>
+      <div style="margin-top: 10px;">
+        <button type="button" class="primary-btn" onclick="closeAdvancedActionsModal()">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Existing Devices Card -->
@@ -58,9 +147,11 @@
       </thead>
       <tbody>
         {% for device in devices %}
-        <tr>
+        <tr data-index="{{ loop.index0 }}" data-address="{{ device.address }}">
           <td>{{ loop.index }}</td>
-          <td><div style="width:20px; height:20px; border-radius:50%; background:{{ device.color }};"></div></td>
+          <td>
+            <div style="width:20px; height:20px; border-radius:50%; background:{{ device.color }};"></div>
+          </td>
           <td>{{ device.friendly_name }}</td>
           <td>{{ device.orientation }}</td>
           <td>{{ device.address }}</td>
@@ -74,18 +165,14 @@
             {% endif %}
           </td>
           <td>
-            <form method="POST" action="{{ url_for('delete_device', index=loop.index0) }}" style="display:inline;">
+            <form method="POST" action="{{ url_for('settings.delete_device', device_index=loop.index0) }}" style="display:inline;">
               <input type="submit" value="Delete">
             </form>
-            <button type="button" class="edit-button" 
-                    data-index="{{ loop.index0 }}"
-                    data-color="{{ device.color }}"
-                    data-friendly="{{ device.friendly_name }}"
-                    data-orientation="{{ device.orientation }}"
-                    data-address="{{ device.address }}"
-                    data-display="{{ device.display_name }}"
-                    data-resolution="{{ device.resolution }}">
+            <button type="button" class="edit-button" onclick="openEditModal('{{ loop.index0 }}', '{{ device.friendly_name }}', '{{ device.orientation }}', '{{ device.address }}')">
               Edit
+            </button>
+            <button type="button" class="advanced-button" onclick="openAdvancedModal('{{ loop.index0 }}', '{{ device.friendly_name }}')">
+              Advanced
             </button>
           </td>
         </tr>
@@ -94,192 +181,531 @@
     </table>
   </div>
 </div>
+{% endblock %}
 
-<!-- Popup for test connection -->
-<div id="testPopup" style="display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-     padding: 20px; background-color: #fff; border: 2px solid #000; z-index: 3000;"></div>
-
-<!-- Edit Modal -->
-<div id="editModal" class="modal">
-  <div class="modal-content">
-    <span class="close" onclick="closeEditModal()">&times;</span>
-    <h2>Edit Device</h2>
-    <form id="editDeviceForm" method="POST" action="{{ url_for('edit_device') }}">
-      <!-- Fields in order: Color, Friendly Name, Orientation, Address, Display Name, Resolution -->
-      <input type="hidden" name="device_index" id="editDeviceIndex">
-      <select name="color" id="editColor" required>
-        <option value="#FF0000" style="background-color:#FF0000;">&#160;</option>
-        <option value="#00FF00" style="background-color:#00FF00;">&#160;</option>
-        <option value="#0000FF" style="background-color:#0000FF;">&#160;</option>
-        <option value="#FFFF00" style="background-color:#FFFF00;">&#160;</option>
-        <option value="#FF00FF" style="background-color:#FF00FF;">&#160;</option>
-        <option value="#00FFFF" style="background-color:#00FFFF;">&#160;</option>
-        <option value="#FFA500" style="background-color:#FFA500;">&#160;</option>
-        <option value="#800080" style="background-color:#800080;">&#160;</option>
-        <option value="#008000" style="background-color:#008000;">&#160;</option>
-        <option value="#000000" style="background-color:#000000;">&#160;</option>
-      </select>
-      <input type="text" name="friendly_name" id="editFriendlyName" placeholder="Friendly Name" required>
-      <select name="orientation" id="editOrientation" required>
-        <option value="horizontal">Horizontal</option>
-        <option value="vertical">Vertical</option>
-      </select>
-      <input type="text" name="address" id="editAddress" placeholder="Device Address" required>
-      <input type="text" name="display_name" id="editDisplayName" placeholder="Display Name" required>
-      <input type="text" name="resolution" id="editResolution" placeholder="Resolution (e.g., 800x600)" required>
-      <div style="margin:10px 0;">
-        <label>Status:</label>
-        <span id="editStatusIndicator" style="font-size:20px;">&#9679;</span>
-        <button type="button" onclick="testConnectionEdit()">Test Connection</button>
-      </div>
-      <button type="button" onclick="saveDeviceChanges()">Save Changes</button>
-      <button type="button" onclick="closeEditModal()">Cancel</button>
-    </form>
-  </div>
-</div>
-
-<!-- Modal Styles (can be moved to your CSS file) -->
+{% block scripts %}
 <style>
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 2000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  background-color: rgba(0,0,0,0.4);
-}
-.modal-content {
-  background-color: #fefefe;
-  margin: 10% auto;
-  padding: 20px;
-  border: 1px solid #888;
-  max-width: 500px;
-  position: relative;
-}
-.close {
-  color: #aaa;
-  float: right;
-  font-size: 28px;
-  font-weight: bold;
-  cursor: pointer;
-}
-.close:hover,
-.close:focus {
-  color: black;
-}
-.device-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 15px;
-}
-.device-table th, .device-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: center;
-}
-.device-table th {
-  background-color: #f2f2f2;
-  font-weight: bold;
-}
-.device-table tr:nth-child(even) {
-  background-color: #fafafa;
-}
-.device-table tr:hover {
-  background-color: #f1f1f1;
-}
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 3000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+  .modal-content {
+    background-color: #fff;
+    margin: 10% auto;
+    padding: 20px;
+    border-radius: 5px;
+    max-width: 500px;
+    position: relative;
+  }
+  .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .close:hover,
+  .close:focus {
+    color: #000;
+  }
+  .primary-btn {
+    background: linear-gradient(to right, #28a745, #218838);
+    border: none;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+  }
+  .primary-btn:hover {
+    background: linear-gradient(to right, #218838, #1e7e34);
+  }
+  .field-save-btn {
+    margin-top: 5px;
+    font-size: 0.9em;
+    padding: 5px 10px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .field-save-btn:hover {
+    background-color: #0056b3;
+  }
+  .overlay-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5000;
+  }
+  .overlay-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  .overlay-buttons {
+    margin-top: 15px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  .cancel-btn {
+    background: #6c757d;
+    border: none;
+    color: #fff;
+    padding: 8px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .cancel-btn:hover {
+    background: #5a6268;
+  }
+  .progress-container {
+    margin: 10px 0;
+    background-color: #f1f1f1;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 20px;
+    background-color: #4CAF50;
+    text-align: center;
+    line-height: 20px;
+    color: white;
+    transition: width 0.3s ease;
+  }
 </style>
 
-<!-- JavaScript -->
 <script>
-  // Popup functions for test connection
-  function showTestPopup(message) {
-    let popup = document.getElementById('testPopup');
-    popup.innerHTML = message;
-    popup.style.display = 'block';
+  // Global modal closing functions
+  window.closeAddDisplayModal = function() {
+    document.getElementById('addDisplayModal').style.display = 'none';
+  };
+  window.closeEditDisplayModal = function() {
+    document.getElementById('editDisplayModal').style.display = 'none';
+  };
+  window.closeAdvancedActionsModal = function() {
+    document.getElementById('advancedActionsModal').style.display = 'none';
+  };
+  
+  // Overlay message functions
+  function showOverlayMessage(message, duration) {
+    var overlay = document.createElement('div');
+    overlay.className = 'overlay-popup';
+    overlay.innerHTML = `
+      <div class="overlay-content">
+        <p>${message}</p>
+        <button class="primary-btn" onclick="this.parentNode.parentNode.remove()">OK</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    if (duration) {
+      setTimeout(function() {
+        if (overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
+        }
+      }, duration);
+    }
   }
-  function hideTestPopup() {
-    let popup = document.getElementById('testPopup');
-    popup.style.display = 'none';
+  
+  function showConfirmOverlay(message, confirmCallback) {
+    var overlay = document.createElement('div');
+    overlay.className = 'overlay-popup';
+    overlay.innerHTML = `
+      <div class="overlay-content">
+        <p>${message}</p>
+        <div class="overlay-buttons">
+          <button class="primary-btn" id="confirmYes">Yes</button>
+          <button class="cancel-btn" id="confirmNo">No</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    document.getElementById('confirmYes').addEventListener('click', function() {
+      overlay.parentNode.removeChild(overlay);
+      if (typeof confirmCallback === 'function') {
+        confirmCallback();
+      }
+    });
+    
+    document.getElementById('confirmNo').addEventListener('click', function() {
+      overlay.parentNode.removeChild(overlay);
+    });
   }
 
-  // Test connection for Add Device form
-  function testConnectionAdd() {
-    let addressField = document.querySelector('input[name="address"]');
-    let address = addressField.value;
-    if (!address) return;
-    showTestPopup("testing...");
-    fetch("/test_connection_address?address=" + encodeURIComponent(address))
+  // Device status checking
+  
+  function checkDeviceStatus() {
+    fetch("/devices/status")
       .then(response => response.json())
       .then(data => {
-         if (data.status === "ok") {
-           showTestPopup("ok");
-         } else {
-           showTestPopup("failed");
-         }
-         setTimeout(hideTestPopup, 2000);
+        if(data.status === "success") {
+          data.devices.forEach(function(device) {
+            var row = document.querySelector('tr[data-index="' + device.index + '"]');
+            if (row) {
+              var statusCell = row.querySelector('td:nth-child(8)');
+              if(device.online) {
+                statusCell.innerHTML = '<span style="color:green;">&#9679;</span>';
+              } else {
+                statusCell.innerHTML = '<span style="color:red;">&#9679;</span>';
+              }
+            }
+          });
+        }
       })
       .catch(error => {
-         showTestPopup("failed");
-         setTimeout(hideTestPopup, 2000);
+        console.error("Error checking device status:", error);
       });
   }
+  setInterval(checkDeviceStatus, 5000);
+  checkDeviceStatus();
 
-  // Open the Edit Modal and pre-fill fields (same order as add device)
-  document.querySelectorAll('.edit-button').forEach(function(button) {
-    button.addEventListener('click', function() {
-      const index = this.getAttribute('data-index');
-      const color = this.getAttribute('data-color');
-      const friendly = this.getAttribute('data-friendly');
-      const orientation = this.getAttribute('data-orientation');
-      const address = this.getAttribute('data-address');
-      const display = this.getAttribute('data-display');
-      const resolution = this.getAttribute('data-resolution');
-      document.getElementById('editDeviceIndex').value = index;
-      document.getElementById('editColor').value = color;
-      document.getElementById('editFriendlyName').value = friendly;
-      document.getElementById('editOrientation').value = orientation;
-      document.getElementById('editAddress').value = address;
-      document.getElementById('editDisplayName').value = display;
-      document.getElementById('editResolution').value = resolution;
-      document.getElementById('editStatusIndicator').style.color = 'red';
-      document.getElementById('editModal').style.display = 'block';
+  // Modal functions for editing and advanced actions
+  function openEditModal(index, friendlyName, orientation, address) {
+    document.getElementById('editDisplayModal').style.display = 'block';
+    document.getElementById('editDeviceIndex').value = index;
+    document.getElementById('editFriendlyName').value = friendlyName;
+    document.getElementById('editOrientation').value = orientation;
+    document.getElementById('editAddress').value = address;
+  }
+
+  function openAdvancedModal(index, friendlyName) {
+    document.getElementById('advancedActionsModal').style.display = 'block';
+    document.getElementById('advancedDeviceTitle').textContent = "Advanced Actions for " + friendlyName;
+    document.getElementById('advancedActionsModal').setAttribute('data-device-index', index);
+  }
+  
+  // Device API functions: triggerSystemUpdate, triggerBackup, triggerAppUpdate remain unchanged
+  function triggerSystemUpdate() {
+    var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
+    var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
+    var deviceAddress = deviceRow.getAttribute('data-address');
+    if (!deviceAddress) {
+      showOverlayMessage("Error: Device address not found");
+      return;
+    }
+    showConfirmOverlay(
+      "This will trigger a system update and reboot the device. Continue?",
+      function() {
+        var progressOverlay = document.createElement('div');
+        progressOverlay.className = 'overlay-popup';
+        progressOverlay.innerHTML = `
+          <div class="overlay-content">
+            <p>Triggering system update...</p>
+            <div class="progress-container">
+              <div id="updateProgressBar" class="progress-bar" style="width: 0%">0%</div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(progressOverlay);
+        if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
+          deviceAddress = "http://" + deviceAddress;
+        }
+        fetch(deviceAddress + "/system_update", { method: 'POST' })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Network response was not ok");
+            }
+            return response.json();
+          })
+          .then(data => {
+            var progress = 0;
+            var interval = setInterval(function() {
+              progress += 5;
+              if (progress >= 100) {
+                progress = 100;
+                clearInterval(interval);
+                document.body.removeChild(progressOverlay);
+                showOverlayMessage("System update triggered successfully. Device will reboot.");
+                closeAdvancedActionsModal();
+              }
+              var progressBar = document.getElementById('updateProgressBar');
+              if (progressBar) {
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = progress + '%';
+              }
+            }, 500);
+          })
+          .catch(error => {
+            document.body.removeChild(progressOverlay);
+            showOverlayMessage("Error triggering system update: " + error.message);
+          });
+      }
+    );
+  }
+  
+  function triggerBackup() {
+    var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
+    var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
+    var deviceAddress = deviceRow.getAttribute('data-address');
+    if (!deviceAddress) {
+      showOverlayMessage("Error: Device address not found");
+      return;
+    }
+    showConfirmOverlay(
+      "This will create a backup of the device. This may take several minutes. Continue?",
+      function() {
+        var progressOverlay = document.createElement('div');
+        progressOverlay.className = 'overlay-popup';
+        progressOverlay.innerHTML = `
+          <div class="overlay-content">
+            <p>Creating backup...</p>
+            <div class="progress-container">
+              <div id="backupProgressBar" class="progress-bar" style="width: 0%">0%</div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(progressOverlay);
+        if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
+          deviceAddress = "http://" + deviceAddress;
+        }
+        var progress = 0;
+        var interval = setInterval(function() {
+          progress += 2;
+          if (progress >= 100) {
+            progress = 100;
+            clearInterval(interval);
+            var a = document.createElement('a');
+            a.href = deviceAddress + "/backup";
+            a.download = "backup_" + new Date().toISOString().replace(/:/g, '-') + ".img.gz";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            document.body.removeChild(progressOverlay);
+            showOverlayMessage("Backup created successfully. Download started.");
+            closeAdvancedActionsModal();
+          }
+          var progressBar = document.getElementById('backupProgressBar');
+          if (progressBar) {
+            progressBar.style.width = progress + '%';
+            progressBar.textContent = progress + '%';
+          }
+        }, 500);
+      }
+    );
+  }
+  
+  function triggerAppUpdate() {
+    var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
+    var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
+    var deviceAddress = deviceRow.getAttribute('data-address');
+    if (!deviceAddress) {
+      showOverlayMessage("Error: Device address not found");
+      return;
+    }
+    showConfirmOverlay(
+      "This will update the application on the device and reboot it. Continue?",
+      function() {
+        var progressOverlay = document.createElement('div');
+        progressOverlay.className = 'overlay-popup';
+        progressOverlay.innerHTML = `
+          <div class="overlay-content">
+            <p>Updating application...</p>
+            <div class="progress-container">
+              <div id="appUpdateProgressBar" class="progress-bar" style="width: 0%">0%</div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(progressOverlay);
+        if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
+          deviceAddress = "http://" + deviceAddress;
+        }
+        fetch(deviceAddress + "/update", { method: 'POST' })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Network response was not ok");
+            }
+            return response.json();
+          })
+          .then(data => {
+            var progress = 0;
+            var interval = setInterval(function() {
+              progress += 10;
+              if (progress >= 100) {
+                progress = 100;
+                clearInterval(interval);
+                document.body.removeChild(progressOverlay);
+                showOverlayMessage("Application updated successfully. Device will reboot.");
+                closeAdvancedActionsModal();
+              }
+              var progressBar = document.getElementById('appUpdateProgressBar');
+              if (progressBar) {
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = progress + '%';
+              }
+            }, 300);
+          })
+          .catch(function(error) {
+            document.body.removeChild(progressOverlay);
+            showOverlayMessage("Error updating application: " + error.message);
+          });
+      }
+    );
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var addNewDisplayBtn = document.getElementById('addNewDisplayBtn');
+    if (addNewDisplayBtn) {
+      addNewDisplayBtn.addEventListener('click', function() {
+        document.getElementById('addDisplayModal').style.display = 'block';
+      });
+    }
+    var addDisplayForm = document.getElementById('addDisplayForm');
+    addDisplayForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      fetchDisplayInfo('new').then(function() {
+        addDisplayForm.submit();
+      }).catch(function() {
+        addDisplayForm.submit();
+      });
+    });
+    document.getElementById('closeAddDisplayModal').addEventListener('click', function() {
+      closeAddDisplayModal();
+    });
+    document.getElementById('closeEditDisplayModal').addEventListener('click', function() {
+      closeEditDisplayModal();
+    });
+    document.getElementById('closeAdvancedActionsModal').addEventListener('click', function() {
+      closeAdvancedActionsModal();
+    });
+    var clipSettingsBtn = document.getElementById('clipSettingsBtn');
+    var clipSettingsModal = document.getElementById('clipSettingsModal');
+    var closeClipSettingsModal = document.getElementById('closeClipSettingsModal');
+    if (clipSettingsBtn) {
+      clipSettingsBtn.addEventListener('click', function() {
+        clipSettingsModal.style.display = 'block';
+      });
+    }
+    if (closeClipSettingsModal) {
+      closeClipSettingsModal.addEventListener('click', function() {
+        clipSettingsModal.style.display = 'none';
+      });
+    }
+    window.addEventListener('click', function(e) {
+      if (e.target == clipSettingsModal) {
+        clipSettingsModal.style.display = 'none';
+      }
     });
   });
 
-  function closeEditModal() {
-    document.getElementById('editModal').style.display = 'none';
+  function saveClipModel() {
+    var clipModel = document.getElementById('clip_model').value;
+    if (!clipModel) {
+      showOverlayMessage("Please select a CLIP model");
+      return;
+    }
+    var payload = {
+      clip_model: clipModel
+    };
+    showOverlayMessage("Switching to model: " + clipModel + "...", 1500);
+    fetch("{{ url_for('settings.update_clip_model') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        showOverlayMessage("CLIP model updated successfully to " + clipModel);
+      } else {
+        showOverlayMessage("Error updating CLIP model: " + data.message);
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showOverlayMessage("An error occurred while updating CLIP model.");
+    });
   }
 
-  // Test connection for Edit Device form
-  function testConnectionEdit() {
-    let address = document.getElementById('editAddress').value;
-    if (!address) return;
-    showTestPopup("testing...");
-    fetch("/test_connection_address?address=" + encodeURIComponent(address))
-      .then(response => response.json())
-      .then(data => {
-         if (data.status === "ok") {
-           document.getElementById('editStatusIndicator').style.color = 'green';
-           showTestPopup("ok");
-         } else {
-           document.getElementById('editStatusIndicator').style.color = 'red';
-           showTestPopup("failed");
-         }
-         setTimeout(hideTestPopup, 2000);
-      })
-      .catch(error => {
-         document.getElementById('editStatusIndicator').style.color = 'red';
-         showTestPopup("failed");
-         setTimeout(hideTestPopup, 2000);
-      });
+  function rerunAllTagging() {
+    showConfirmOverlay(
+      "This will rerun tagging on all images using the selected CLIP model. This may take some time depending on the number of images. Continue?",
+      function() {
+        fetch("{{ url_for('settings.rerun_all_tagging') }}", {
+          method: 'POST'
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          if (data.status === "success") {
+            showOverlayMessage("Tagging process started! This will run in the background.");
+            document.getElementById('clipSettingsModal').style.display = 'none';
+          } else {
+            showOverlayMessage("Error starting tagging process: " + data.message);
+          }
+        })
+        .catch(function(error) {
+          console.error("Error:", error);
+          showOverlayMessage("An error occurred while starting the tagging process.");
+        });
+      }
+    );
   }
 
-  // Save changes from the Edit Modal (submits the form normally)
-  function saveDeviceChanges() {
-    document.getElementById('editDeviceForm').submit();
+  function fetchDisplayInfo(mode) {
+    return new Promise(function(resolve, reject) {
+      if (mode === 'new') {
+        var addressInput = document.getElementById('newAddress');
+        var address = addressInput.value.trim();
+        if (!address) {
+          alert("Please enter the device address.");
+          reject("No address provided");
+          return;
+        }
+        fetch("/device_info?address=" + encodeURIComponent(address), { timeout: 5000 })
+          .then(function(response) {
+            if (!response.ok) {
+              throw new Error("HTTP error " + response.status);
+            }
+            return response.json();
+          })
+          .then(function(data) {
+            if (data.status === "ok") {
+              document.getElementById('newDisplayName').value = data.info.display_name;
+              document.getElementById('newResolution').value = data.info.resolution;
+              var availableColors = ['#FF5733', '#33FF57', '#3357FF', '#F39C12', '#8E44AD', '#2ECC71', '#E74C3C'];
+              var randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+              document.getElementById('newColor').value = randomColor;
+              resolve();
+            } else {
+              alert("Error fetching display info: " + data.message + "; using default values.");
+              document.getElementById('newDisplayName').value = "DefaultDisplay color";
+              document.getElementById('newResolution').value = "800x600";
+              document.getElementById('newColor').value = "#FF5733";
+              resolve();
+            }
+          })
+          .catch(function(error) {
+            console.error("Error fetching display info:", error);
+            alert("Error fetching display info; using default values.");
+            document.getElementById('newDisplayName').value = "DefaultDisplay color";
+            document.getElementById('newResolution').value = "800x600";
+            document.getElementById('newColor').value = "#FF5733";
+            resolve();
+          });
+      } else if (mode === 'edit') {
+        alert("Fetch Display Info for edit is not implemented yet.");
+        resolve();
+      }
+    });
   }
 </script>
 {% endblock %}

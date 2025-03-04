@@ -1,245 +1,793 @@
 {% extends "base.html" %}
 {% block title %}Schedule - InkyDocker{% endblock %}
+{% block head %}
+  <!-- FullCalendar CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons for FullCalendar Bootstrap 5 theme -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Load the global UMD build of FullCalendar -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js" defer></script>
+  
+  <style>
+    /* Bootstrap 5 compatible FullCalendar styling */
+    #calendar {
+      max-width: 1000px;
+      margin: 40px auto;
+      margin-bottom: 100px;
+    }
+    
+    /* Style for the event content to show thumbnails */
+    .event-thumbnail {
+      width: 100%;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 3px;
+      margin-bottom: 2px;
+    }
+    
+    /* Bootstrap 5 compatible gallery layout */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    
+    .gallery-item {
+      height: 150px !important;
+      position: relative;
+      border: 1px solid rgba(0,0,0,.125);
+      border-radius: 0.25rem;
+      overflow: hidden;
+    }
+    
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .gallery-item img:hover {
+      transform: scale(1.05);
+    }
+    
+    .img-container {
+      height: 100%;
+    }
+    
+    /* Tags display */
+    .image-tags {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 3px;
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Styling for recurring events */
+    .recurring-event {
+      border-left: 4px dashed #fff !important;
+      border-right: 4px dashed #fff !important;
+    }
+    
+    .recurring-event:before {
+      content: "↻";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      font-weight: bold;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      line-height: 16px;
+      text-align: center;
+      z-index: 100;
+    }
+    
+    /* Bootstrap 5 compatible custom modal styles */
+    .custom-modal {
+      display: none;
+      position: fixed;
+      z-index: 1050;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
+      padding: 20px;
+    }
+  </style>
+{% endblock %}
 
 {% block content %}
-<div class="container">
-  <!-- Page Header -->
-  <header class="page-header">
-    <h1>Schedule Images</h1>
-    <p>Drag and drop images onto the calendar to schedule them.</p>
+<div class="container py-4">
+  <header class="pb-3 mb-4 border-bottom">
+    <h1 class="display-5 fw-bold">Schedule Images</h1>
+    <p class="lead">Manage your scheduled image updates with our interactive calendar.</p>
   </header>
+  
+  <div id="calendar" class="mb-5"></div>
+</div>
 
-  <!-- Gallery Section -->
-  <div class="card">
-    <h2>Image Gallery</h2>
-    <div class="gallery">
-      {% for image in images %}
-        <div class="gallery-item">
-          <div class="img-container">
-            <img class="fade-img" src="{{ url_for('thumbnail', filename=image) }}" alt="{{ image }}" draggable="true" data-filename="{{ image }}">
+<!-- Bootstrap 5 Modal for adding a new scheduled event -->
+<div class="modal fade" id="eventModal" tabindex="-1" aria-labelledby="eventModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eventModalTitle">Add Scheduled Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeEventModal()"></button>
+      </div>
+      <div class="modal-body">
+        <form id="eventForm">
+          <input type="hidden" id="editingEventId" value="">
+          <div class="mb-3">
+            <label for="eventDate" class="form-label">Date &amp; Time:</label>
+            <input type="datetime-local" class="form-control" id="eventDate" name="eventDate" required>
           </div>
-        </div>
-      {% endfor %}
+          <div class="mb-3">
+            <label class="form-label">Select eInk Display:</label>
+            {% if devices %}
+              {% for device in devices %}
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="device" id="device{{ loop.index }}"
+                         value="{{ device.address }}" {% if loop.first %}checked{% endif %}>
+                  <label class="form-check-label" for="device{{ loop.index }}">
+                    {{ device.friendly_name }}
+                  </label>
+                </div>
+              {% endfor %}
+            {% else %}
+              <p class="text-danger">No devices configured. Please add devices in <a href="{{ url_for('settings.settings') }}">Settings</a>.</p>
+            {% endif %}
+          </div>
+          <div class="mb-3">
+            <label for="recurrence" class="form-label">Recurrence:</label>
+            <select class="form-select" id="recurrence" name="recurrence">
+              <option value="none">None</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Same date next month</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Choose Image:</label>
+            <div class="d-flex align-items-center">
+              <button type="button" class="btn btn-outline-primary me-2" onclick="openImageGallery()">Select Image</button>
+              <input type="hidden" id="selectedImage" name="selectedImage">
+              <span id="selectedImageName" class="text-truncate"></span>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeEventModal()">Close</button>
+        <button type="button" class="btn btn-primary" id="eventSubmitButton" onclick="document.getElementById('eventForm').dispatchEvent(new Event('submit'))">Save Event</button>
+      </div>
     </div>
-  </div>
-
-  <!-- Device Selection -->
-  <div class="card device-section">
-    <h2>Select eInk Display</h2>
-    <div class="device-options">
-      {% for device in devices %}
-        <label class="device-option">
-          <input type="radio" name="device" value="{{ device.address }}" data-friendly="{{ device.friendly_name }}" {% if loop.first %}checked{% endif %}>
-          {{ device.friendly_name }}
-        </label>
-      {% endfor %}
-      {% if devices|length == 0 %}
-        <p>No devices configured. Go to <a href="{{ url_for('settings') }}">Settings</a>.</p>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- Calendar Grid -->
-  <div class="card">
-    <h2>Weekly Calendar</h2>
-    <table class="calendar">
-      <thead>
-        <tr>
-          <th>Hour</th>
-          <th>Mon</th>
-          <th>Tue</th>
-          <th>Wed</th>
-          <th>Thu</th>
-          <th>Fri</th>
-          <th>Sat</th>
-          <th>Sun</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for hour in range(0, 25) %}
-          <tr>
-            <th style="border: 1px solid #ccc; padding: 3px;">{{ "%02d:00" % hour }}</th>
-            {% for day in range(7) %}
-              <td class="droppable" data-day="{{ day }}" data-hour="{{ hour }}" style="border: 1px solid #ccc; padding: 3px; width: 80px; height: 30px; position: relative;"></td>
-            {% endfor %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 </div>
 
-<!-- JavaScript -->
-<script>
-  var imageUrlPrefix = "{{ url_for('thumbnail', filename='') }}";
-  // Fade in gallery items
-  document.addEventListener("DOMContentLoaded", function() {
-    document.querySelectorAll('.gallery-item').forEach(function(item) {
-      setTimeout(function() {
-        item.classList.add('loaded');
-      }, 100);
-    });
-  });
+<!-- Bootstrap 5 Modal for the image gallery -->
+<div class="modal fade" id="imageGalleryModal" tabindex="-1" aria-labelledby="imageGalleryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select an Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeImageGallery()"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Search bar for filtering images by tags -->
+        <div class="mb-3">
+          <input type="text" class="form-control" id="imageSearch" placeholder="Search by tags...">
+        </div>
+        
+        <div class="gallery" id="galleryModal">
+          {% for image in images %}
+            <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
+              <div class="img-container">
+                <img src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)">
+                {% if image_tags.get(image) %}
+                  <div class="image-tags">{{ image_tags.get(image) }}</div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeImageGallery()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-  // Global variables for drag & drop
-  var draggedImage = null;
-  var draggedScheduleEvent = null;
-
-  // Helper: calculate Monday of current week
-  function getMonday(d) {
-    d = new Date(d);
-    var day = d.getDay();
-    var diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.setDate(diff));
-  }
-
-  // Enable drag from gallery
-  document.querySelectorAll('.gallery img').forEach(function(img) {
-    img.addEventListener('dragstart', function(e) {
-      draggedImage = this;
-      draggedScheduleEvent = null;
-    });
-  });
-
-  // Function to make a scheduled event draggable
-  function addDraggableToScheduledEvent(eventElement, eventId) {
-    eventElement.setAttribute('draggable', 'true');
-    eventElement.addEventListener('dragstart', function(e) {
-      draggedScheduleEvent = { element: eventElement, id: eventId };
-      draggedImage = null;
-    });
-  }
-
-  // Insert existing scheduled events into calendar cells
-  var scheduleEvents = {{ schedule_events|tojson|safe }};
-  scheduleEvents.forEach(function(event) {
-    var eventDate = new Date(event.datetime);
-    var monday = getMonday(new Date());
-    monday.setHours(0,0,0,0);
-    var dayOffset = Math.floor((eventDate - monday) / (1000 * 60 * 60 * 24));
-    var hour = eventDate.getHours();
-    var cell = document.querySelector('.droppable[data-day="'+dayOffset+'"][data-hour="'+hour+'"]');
-    if(cell) {
-      var eventDiv = document.createElement("div");
-      eventDiv.className = "scheduled-event";
-      
-      // Thumbnail
-      var thumb = document.createElement("img");
-      thumb.className = "thumbnail";
-      thumb.src = imageUrlPrefix + event.filename;
-      thumb.alt = event.filename;
-      eventDiv.appendChild(thumb);
-      
-      // Trash icon for deletion
-      var trash = document.createElement("img");
-      trash.className = "trash-icon";
-      trash.src = "{{ url_for('static', filename='trash-icon.png') }}";
-      trash.alt = "Delete";
-      trash.addEventListener("click", function(e) {
-        e.stopPropagation();
-        var urlPrefix = "{{ url_for('remove_schedule', event_id=0) }}".slice(0, -1);
-        fetch(urlPrefix + event.id, { method: 'POST' })
-          .then(response => response.json())
-          .then(data => {
-            if(data.status === "success"){
-              eventDiv.style.transition = "opacity 0.5s";
-              eventDiv.style.opacity = 0;
-              setTimeout(() => { eventDiv.remove(); }, 500);
-            }
-          })
-          .catch(error => { alert("Error removing schedule event"); });
-      });
-      eventDiv.appendChild(trash);
-      cell.appendChild(eventDiv);
-      addDraggableToScheduledEvent(eventDiv, event.id);
+<!-- Bootstrap 5 Modal for deleting recurring events -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Delete Recurring Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeDeleteModal()"></button>
+      </div>
+      <div class="modal-body text-center">
+        <p>Delete this occurrence or the entire series?</p>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button id="deleteOccurrenceBtn" class="btn btn-danger">Delete this occurrence</button>
+        <button id="deleteSeriesBtn" class="btn btn-danger">Delete entire series</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeDeleteModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+  <script>
+    var currentDeleteEventId = null; // store event id for deletion modal
+    var calendar; // Global calendar instance
+    
+    // Bootstrap 5 compatible modal functions
+    function openEventModal() {
+      var eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+      eventModal.show();
     }
-  });
-
-  // Drag and drop for calendar cells
-  document.querySelectorAll('.droppable').forEach(function(cell) {
-    cell.addEventListener('dragover', function(e) {
-      e.preventDefault();
-      cell.classList.add('over');
-    });
-    cell.addEventListener('dragleave', function(e) {
-      cell.classList.remove('over');
-    });
-    cell.addEventListener('drop', function(e) {
-      e.preventDefault();
-      cell.classList.remove('over');
-      var device = document.querySelector('input[name="device"]:checked').value;
-      var today = new Date();
-      var monday = getMonday(today);
-      monday.setHours(0,0,0,0);
-      var day = cell.getAttribute('data-day');
-      var hour = cell.getAttribute('data-hour');
-      monday.setDate(monday.getDate() + parseInt(day));
-      var year = monday.getFullYear();
-      var month = ('0' + (monday.getMonth() + 1)).slice(-2);
-      var dayNum = ('0' + monday.getDate()).slice(-2);
-      var scheduledDate = year + '-' + month + '-' + dayNum;
-      var scheduledTime = ('0' + hour).slice(-2) + ':00';
-      var scheduledDatetime = scheduledDate + ' ' + scheduledTime;
+    
+    function closeEventModal() {
+      var eventModalEl = document.getElementById('eventModal');
+      var eventModal = bootstrap.Modal.getInstance(eventModalEl);
+      if (eventModal) {
+        eventModal.hide();
+      }
+    }
+    
+    function openImageGallery() {
+      var imageModal = new bootstrap.Modal(document.getElementById('imageGalleryModal'));
+      imageModal.show();
       
-      if(draggedImage) {
-        var filename = draggedImage.getAttribute('data-filename');
-        var formData = new FormData();
-        formData.append('filename', filename);
-        formData.append('datetime', scheduledDatetime);
-        formData.append('device', device);
-        fetch("{{ url_for('add_schedule') }}", { method: 'POST', body: formData })
+      // Clear search field when opening
+      var searchField = document.getElementById('imageSearch');
+      if (searchField) {
+        searchField.value = '';
+        searchField.focus();
+        // Trigger search to show all images
+        filterImages('');
+      }
+    }
+    
+    function closeImageGallery() {
+      var imageModalEl = document.getElementById('imageGalleryModal');
+      var imageModal = bootstrap.Modal.getInstance(imageModalEl);
+      if (imageModal) {
+        imageModal.hide();
+      }
+    }
+    
+    function openDeleteModal() {
+      var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+      deleteModal.show();
+    }
+    
+    function closeDeleteModal() {
+      var deleteModalEl = document.getElementById('deleteModal');
+      var deleteModal = bootstrap.Modal.getInstance(deleteModalEl);
+      if (deleteModal) {
+        deleteModal.hide();
+      }
+    }
+    
+    // Toast notification function (Bootstrap 5)
+    function showToast(message, isError = false) {
+      const toastContainer = document.createElement('div');
+      toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+      toastContainer.style.zIndex = '1100';
+      
+      const toastEl = document.createElement('div');
+      toastEl.className = `toast align-items-center ${isError ? 'text-white bg-danger' : 'text-white bg-success'}`;
+      toastEl.setAttribute('role', 'alert');
+      toastEl.setAttribute('aria-live', 'assertive');
+      toastEl.setAttribute('aria-atomic', 'true');
+      
+      toastEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">
+            ${message}
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      `;
+      
+      toastContainer.appendChild(toastEl);
+      document.body.appendChild(toastContainer);
+      
+      const toast = new bootstrap.Toast(toastEl, {
+        autohide: true,
+        delay: 3000
+      });
+      
+      toast.show();
+      
+      // Remove the container after the toast is hidden
+      toastEl.addEventListener('hidden.bs.toast', function() {
+        if (toastContainer.parentNode) {
+          toastContainer.parentNode.removeChild(toastContainer);
+        }
+      });
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      var calendarEl = document.getElementById('calendar');
+      if (!calendarEl) return;
+      if (typeof FullCalendar === 'undefined') {
+        console.error("FullCalendar is not defined");
+        return;
+      }
+      
+      // Initialize the global calendar variable with Bootstrap 5 theming
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'timeGridWeek',
+        firstDay: 1,
+        nowIndicator: true,
+        editable: true,
+        themeSystem: 'bootstrap5', // Use Bootstrap 5 theming
+        buttonIcons: {
+          prev: 'chevron-left',
+          next: 'chevron-right',
+          prevYear: 'chevron-double-left',
+          nextYear: 'chevron-double-right'
+        },
+        headerToolbar: {
+          left: 'prev,next today refresh',
+          center: 'title',
+          right: 'timeGridWeek,timeGridDay'
+        },
+        events: '/schedule/events',
+        customButtons: {
+          refresh: {
+            text: '↻',
+            click: function() {
+              calendar.refetchEvents();
+            }
+          }
+        },
+        // Add Bootstrap 5 styling to events
+        eventClassNames: function(arg) {
+          return ['shadow-sm']; // Add subtle shadow to events
+        },
+        /*
+        UI MODERNIZATION SUGGESTIONS FOR EVENT INTERACTIONS:
+        
+        1. Add visual feedback during drag operations:
+           - Add a CSS class to the event being dragged for visual distinction
+           - Consider adding a shadow effect to indicate "lifting" the event:
+             .fc-event.is-dragging {
+               box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+               opacity: 0.8;
+               transform: scale(1.05);
+               transition: all 0.2s ease;
+             }
+        
+        2. Add smooth animations for event updates:
+           - Use CSS transitions for color changes and movements:
+             .fc-event {
+               transition: background-color 0.3s, transform 0.3s, box-shadow 0.3s;
+             }
+           - Add a highlight effect after successful updates:
+             function highlightEvent(eventEl) {
+               eventEl.classList.add('highlight-success');
+               setTimeout(() => eventEl.classList.remove('highlight-success'), 1000);
+             }
+        
+        3. Replace alert() with toast notifications:
+           - Instead of using alert() for errors, use a toast notification:
+             function showToast(message, isError = false) {
+               const toast = document.createElement('div');
+               toast.className = isError ? 'toast toast-error' : 'toast toast-success';
+               toast.textContent = message;
+               document.body.appendChild(toast);
+               setTimeout(() => {
+                 toast.classList.add('show');
+                 setTimeout(() => {
+                   toast.classList.remove('show');
+                   setTimeout(() => document.body.removeChild(toast), 300);
+                 }, 3000);
+               }, 10);
+             }
+        */
+        
+        eventDrop: function(info) {
+          var newDate = info.event.start;
+          var isoString = newDate.toISOString();
+          var timezoneOffset = newDate.getTimezoneOffset();
+          
+          fetch("/schedule/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              event_id: info.event.id,
+              datetime: isoString,
+              timezone_offset: timezoneOffset
+            })
+          })
           .then(response => response.json())
           .then(data => {
-            if(data.status === "success"){
-              var newEvent = document.createElement("div");
-              newEvent.className = "scheduled-event";
-              var thumb = document.createElement("img");
-              thumb.className = "thumbnail";
-              thumb.src = imageUrlPrefix + filename;
-              thumb.alt = filename;
-              newEvent.appendChild(thumb);
-              var trash = document.createElement("img");
-              trash.className = "trash-icon";
-              trash.src = "{{ url_for('static', filename='trash-icon.png') }}";
-              trash.alt = "Delete";
-              trash.addEventListener("click", function(e) {
-                e.stopPropagation();
-                var urlPrefix = "{{ url_for('remove_schedule', event_id=0) }}".slice(0, -1);
-                fetch(urlPrefix + data.event.id, { method: 'POST' })
-                  .then(response => response.json())
-                  .then(data => {
-                    if(data.status === "success"){
-                      newEvent.style.transition = "opacity 0.5s";
-                      newEvent.style.opacity = 0;
-                      setTimeout(() => { newEvent.remove(); }, 500);
-                    }
-                  })
-                  .catch(error => { alert("Error removing schedule event"); });
+            if(data.status !== "success"){
+              showToast("Error updating event: " + data.message, true);
+              info.revert();
+            } else {
+              showToast("Event updated successfully");
+              if (calendar) {
+                calendar.refetchEvents();
+              }
+            }
+          })
+          .catch(err => {
+            console.error("Error updating event:", err);
+            showToast("Error updating event", true);
+            info.revert();
+          });
+        },
+        eventDidMount: function(info) {
+          // Add special styling for recurring events
+          if (info.event.extendedProps.isRecurring) {
+            info.el.classList.add('recurring-event');
+          }
+          
+          // Add Bootstrap styled delete button
+          var deleteEl = document.createElement('button');
+          deleteEl.innerHTML = '&times;';
+          deleteEl.className = 'btn btn-sm btn-danger rounded-circle position-absolute';
+          deleteEl.style.top = '2px';
+          deleteEl.style.right = '2px';
+          deleteEl.style.width = '20px';
+          deleteEl.style.height = '20px';
+          deleteEl.style.padding = '0';
+          deleteEl.style.lineHeight = '1';
+          deleteEl.style.fontSize = '14px';
+          deleteEl.style.zIndex = '100';
+          info.el.appendChild(deleteEl);
+          
+          // Add thumbnail to event
+          if (info.event.extendedProps.thumbnail) {
+            var thumbnailEl = document.createElement('img');
+            thumbnailEl.src = info.event.extendedProps.thumbnail;
+            thumbnailEl.className = 'event-thumbnail';
+            thumbnailEl.alt = info.event.title;
+            thumbnailEl.style.cursor = 'pointer';
+            
+            // Add click event to open the event for editing
+            thumbnailEl.addEventListener('click', function(e) {
+              e.stopPropagation();
+              // Get event data
+              var eventData = {
+                id: info.event.id,
+                title: info.event.title,
+                start: info.event.start,
+                device: info.event.extendedProps.device,
+                filename: info.event.extendedProps.filename,
+                recurrence: info.event.extendedProps.recurrence
+              };
+              
+              // Populate the event form with this data - use local timezone
+              var startDate = eventData.start;
+              var year = startDate.getFullYear();
+              var month = String(startDate.getMonth() + 1).padStart(2, '0');
+              var day = String(startDate.getDate()).padStart(2, '0');
+              var hours = String(startDate.getHours()).padStart(2, '0');
+              var minutes = String(startDate.getMinutes()).padStart(2, '0');
+              
+              var localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
+              document.getElementById('eventDate').value = localDateStr;
+              console.log("Event edit local time:", localDateStr);
+              
+              // Select the correct device radio button
+              var deviceRadios = document.querySelectorAll('input[name="device"]');
+              for (var i = 0; i < deviceRadios.length; i++) {
+                if (deviceRadios[i].value === eventData.device) {
+                  deviceRadios[i].checked = true;
+                  break;
+                }
+              }
+              
+              // Set the recurrence dropdown
+              document.getElementById('recurrence').value = eventData.recurrence || 'none';
+              
+              // Set the selected image
+              document.getElementById('selectedImage').value = eventData.filename;
+              document.getElementById('selectedImageName').textContent = eventData.filename;
+              
+              // Set the editing event ID
+              document.getElementById('editingEventId').value = eventData.id;
+              
+              // Update modal title and button text
+              document.getElementById('eventModalTitle').textContent = 'Edit Scheduled Event';
+              document.getElementById('eventSubmitButton').value = 'Update Event';
+              
+              // Open the event modal
+              openEventModal();
+            });
+            
+            // Find the event title element and insert the thumbnail before it
+            var titleEl = info.el.querySelector('.fc-event-title');
+            if (titleEl && titleEl.parentNode) {
+              titleEl.parentNode.insertBefore(thumbnailEl, titleEl);
+              
+              // Add device name to title
+              if (info.event.extendedProps.deviceName) {
+                titleEl.textContent = info.event.title + ' on ' + info.event.extendedProps.deviceName;
+              }
+            }
+          }
+          
+          // Add click handler for delete button
+          deleteEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            // If recurring, show custom deletion modal; otherwise, delete directly.
+            if(info.event.extendedProps.recurrence && info.event.extendedProps.recurrence.toLowerCase() !== "none"){
+              currentDeleteEventId = info.event.id;
+              openDeleteModal();
+            } else {
+              // Directly delete non-recurring event without popup.
+              fetch("/schedule/remove/" + info.event.id, { method: "POST" })
+              .then(response => response.json())
+              .then(data => {
+                if(data.status === "success"){
+                  info.event.remove();
+                  showToast("Event deleted successfully");
+                } else {
+                  showToast("Error deleting event: " + data.message, true);
+                }
+              })
+              .catch(err => {
+                console.error("Error deleting event:", err);
+                showToast("Error deleting event", true);
               });
-              newEvent.appendChild(trash);
-              cell.appendChild(newEvent);
-              addDraggableToScheduledEvent(newEvent, data.event.id);
             }
-          })
-          .catch(error => {
-            alert('Error scheduling image');
           });
-      } else if(draggedScheduleEvent) {
-        var eventId = draggedScheduleEvent.id;
-        var formData = new FormData();
-        formData.append('datetime', scheduledDatetime);
-        fetch("{{ url_for('update_schedule') }}" + "?event_id=" + eventId, { method: 'POST', body: formData })
-          .then(response => response.json())
-          .then(data => {
-            if(data.status === "success"){
-              cell.appendChild(draggedScheduleEvent.element);
-            }
-          })
-          .catch(error => {
-            alert('Error updating schedule event');
-          });
+        },
+        dateClick: function(info) {
+          // Create a date object from the clicked date
+          var dtLocal = new Date(info.date);
+          
+          // Format the date in local timezone format (YYYY-MM-DDTHH:MM)
+          var year = dtLocal.getFullYear();
+          var month = String(dtLocal.getMonth() + 1).padStart(2, '0');
+          var day = String(dtLocal.getDate()).padStart(2, '0');
+          var hours = String(dtLocal.getHours()).padStart(2, '0');
+          var minutes = String(dtLocal.getMinutes()).padStart(2, '0');
+          
+          var localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
+          console.log("Clicked date local time:", localDateStr);
+          
+          openNewEventModal(localDateStr);
+        }
+      });
+      calendar.render();
+      
+      // Add event listener for page refresh
+      window.addEventListener('beforeunload', function() {
+        // Store a flag indicating that we're refreshing the page
+        localStorage.setItem('calendarRefreshing', 'true');
+      });
+      
+      // Check if we're coming back from a refresh
+      if (localStorage.getItem('calendarRefreshing') === 'true') {
+        // Clear the flag
+        localStorage.removeItem('calendarRefreshing');
+        // Force a refresh of the events
+        setTimeout(function() {
+          calendar.refetchEvents();
+          console.log("Refreshed events after page reload");
+        }, 500);
       }
     });
-  });
-</script>
+
+    function openEventModal() { document.getElementById('eventModal').style.display = 'block'; }
+    function closeEventModal() { document.getElementById('eventModal').style.display = 'none'; }
+    
+    function openImageGallery() {
+      document.getElementById('imageGalleryModal').style.display = 'block';
+      // Clear search field when opening
+      var searchField = document.getElementById('imageSearch');
+      if (searchField) {
+        searchField.value = '';
+        searchField.focus();
+        // Trigger search to show all images
+        filterImages('');
+      }
+    }
+    
+    function closeImageGallery() { document.getElementById('imageGalleryModal').style.display = 'none'; }
+    
+    function selectImage(filename, src) {
+      document.getElementById('selectedImage').value = filename;
+      document.getElementById('selectedImageName').textContent = filename;
+      // Also show the thumbnail
+      var nameSpan = document.getElementById('selectedImageName');
+      if (nameSpan) {
+        nameSpan.innerHTML = `<img src="${src}" style="height:40px;margin-right:5px;vertical-align:middle;"> ${filename}`;
+      }
+      closeImageGallery();
+    }
+    
+    function openDeleteModal() { document.getElementById('deleteModal').style.display = 'block'; }
+    function closeDeleteModal() { document.getElementById('deleteModal').style.display = 'none'; }
+    
+    // Function to filter images based on search input
+    function filterImages(searchText) {
+      searchText = searchText.toLowerCase();
+      var items = document.querySelectorAll('#galleryModal .gallery-item');
+      
+      items.forEach(function(item) {
+        var tags = item.getAttribute('data-tags') || '';
+        var filename = item.querySelector('img').getAttribute('data-filename') || '';
+        
+        if (tags.toLowerCase().includes(searchText) || filename.toLowerCase().includes(searchText) || searchText === '') {
+          item.style.display = '';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+    
+    // Add event listener for search input
+    document.addEventListener('DOMContentLoaded', function() {
+      var searchInput = document.getElementById('imageSearch');
+      if (searchInput) {
+        searchInput.addEventListener('input', function() {
+          filterImages(this.value);
+        });
+      }
+    });
+
+    document.getElementById('deleteOccurrenceBtn').addEventListener('click', function() {
+      // Skip this occurrence for recurring event.
+      fetch("/schedule/skip/" + currentDeleteEventId, { method: "POST" })
+      .then(response => response.json())
+      .then(data => {
+        if(data.status === "success"){
+          if (calendar) {
+            calendar.refetchEvents();
+            showToast("Event occurrence deleted successfully");
+          } else {
+            location.reload();
+          }
+        } else {
+          showToast("Error deleting event occurrence: " + data.message, true);
+        }
+      })
+      .catch(err => {
+        console.error("Error skipping occurrence:", err);
+        showToast("Error deleting event occurrence", true);
+      });
+      closeDeleteModal();
+    });
+
+    document.getElementById('deleteSeriesBtn').addEventListener('click', function() {
+      // Delete the entire series.
+      fetch("/schedule/remove/" + currentDeleteEventId, { method: "POST" })
+      .then(response => response.json())
+      .then(data => {
+        if(data.status === "success"){
+          if (calendar) {
+            calendar.refetchEvents();
+            showToast("Event series deleted successfully");
+          } else {
+            location.reload();
+          }
+        } else {
+          showToast("Error deleting event series: " + data.message, true);
+        }
+      })
+      .catch(err => {
+        console.error("Error deleting series:", err);
+        showToast("Error deleting event series", true);
+      });
+      closeDeleteModal();
+    });
+
+    // Reset the event form when opening for a new event
+    function resetEventForm() {
+      document.getElementById('eventForm').reset();
+      document.getElementById('selectedImage').value = '';
+      document.getElementById('selectedImageName').textContent = '';
+      document.getElementById('editingEventId').value = '';
+      document.getElementById('eventModalTitle').textContent = 'Add Scheduled Event';
+      document.getElementById('eventSubmitButton').value = 'Save Event';
+    }
+    
+    // When clicking on a date, reset the form for a new event
+    function openNewEventModal(date) {
+      resetEventForm();
+      if (date) {
+        document.getElementById('eventDate').value = date;
+      }
+      openEventModal();
+    }
+    
+    // Update the dateClick handler to use the new function
+    document.addEventListener('DOMContentLoaded', function() {
+      // Existing code will still run, this just adds additional functionality
+      var calendarEl = document.getElementById('calendar');
+      if (calendarEl && typeof FullCalendar !== 'undefined') {
+        var existingCalendar = calendarEl._fullCalendar;
+        if (existingCalendar) {
+          existingCalendar.setOption('dateClick', function(info) {
+            var dtLocal = new Date(info.date);
+            var isoStr = dtLocal.toISOString().substring(0,16);
+            openNewEventModal(isoStr);
+          });
+        }
+      }
+    });
+    
+    // Handle form submission for both adding and updating events
+    document.getElementById('eventForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var datetime = document.getElementById('eventDate').value;
+      var device = document.querySelector('input[name="device"]:checked').value;
+      var recurrence = document.getElementById('recurrence').value;
+      var filename = document.getElementById('selectedImage').value;
+      var eventId = document.getElementById('editingEventId').value;
+      
+      if (!datetime || !device || !filename) {
+        showToast("Please fill in all fields and select an image.", true);
+        return;
+      }
+      
+      // Determine if we're adding a new event or updating an existing one
+      var isUpdate = eventId !== '';
+      var url = isUpdate ? "/schedule/update" : "/schedule/add";
+      var requestData = {
+        datetime: datetime,
+        device: device,
+        recurrence: recurrence,
+        filename: filename,
+        timezone_offset: new Date().getTimezoneOffset()  // Add timezone offset
+      };
+      
+      // If updating, include the event ID
+      if (isUpdate) {
+        requestData.event_id = eventId;
+      }
+      
+      // Show immediate feedback to the user
+      closeEventModal();
+      showToast("Saving event...");
+      
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if(data.status === "success"){
+          showToast("Event saved successfully!");
+          
+          // Use the global calendar instance to refresh events
+          if (calendar) {
+            calendar.refetchEvents();
+          }
+        } else {
+          showToast("Error: " + data.message, true);
+        }
+      })
+      .catch(err => {
+        console.error("Error " + (isUpdate ? "updating" : "adding") + " event:", err);
+        showToast("Error saving event. Please try again.", true);
+      });
+    });
+  </script>
 {% endblock %}

@@ -1,0 +1,9 @@
+{
+    "output": "export.md",
+    "description": "",
+    "ignoreFile": ".export-ignore",
+    "includeFile": ".export-whitelist",
+    "maxFileSize": 1048576,
+    "removeComments": true,
+    "includeProjectStructure": true
+  }

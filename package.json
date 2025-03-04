@@ -1,0 +1,23 @@
+{
+    "name": "inkydocker",
+    "version": "1.0.0",
+    "description": "InkyDocker static assets",
+    "main": "index.js",
+    "scripts": {
+      "build": "webpack --mode production",
+      "dev": "webpack --mode development --watch"
+    },
+    "dependencies": {
+      "@fullcalendar/core": "^6.1.8",
+      "@fullcalendar/timegrid": "^6.1.8"
+    },
+    "devDependencies": {
+      "webpack": "^5.0.0",
+      "webpack-cli": "^4.0.0",
+      "css-loader": "^6.0.0",
+      "style-loader": "^3.0.0"
+    },
+    "author": "",
+    "license": "MIT"
+  }
+  

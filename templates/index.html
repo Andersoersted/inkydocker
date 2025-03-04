@@ -1,156 +1,908 @@
 {% extends "base.html" %}
-{% block title %}Image Upload - InkyDocker{% endblock %}
+{% block title %}Gallery - InkyDocker{% endblock %}
 
 {% block content %}
-<div class="container">
-  <div class="main-content">
-    <!-- Left Panel -->
-    <div class="left-panel">
-      <!-- Device Selection -->
-      <div class="card device-section">
-        <h2>Select eInk Display</h2>
-        {% if devices %}
-          <div class="device-options">
-            {% for device in devices %}
-              <label class="device-option">
-                <input type="radio" name="device" value="{{ device.address }}" data-friendly="{{ device.friendly_name }}" {% if loop.first %}checked{% endif %}>
-                {{ device.friendly_name }}
-              </label>
-            {% endfor %}
-          </div>
+<div class="container py-4">
+  <!-- Current Image Section -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header bg-light">
+      <h2 class="h4 mb-0" id="currentImageTitle">Current image on {{ devices[0].friendly_name if devices else 'N/A' }}</h2>
+    </div>
+    <div class="card-body text-center">
+      <div class="current-image-container">
+        {% if devices and devices[0].last_sent %}
+          <img
+            id="currentImage"
+            src="{{ url_for('image.uploaded_file', filename=devices[0].last_sent) }}"
+            alt="Current Image"
+            class="img-fluid rounded"
+            style="max-height: 300px;"
+            loading="lazy"
+          >
         {% else %}
-          <p>No devices configured. Go to <a href="{{ url_for('settings') }}">Settings</a>.</p>
+          <p id="currentImagePlaceholder" class="text-muted">No image available.</p>
         {% endif %}
       </div>
+      {% if devices|length > 1 %}
+        <div class="mt-3">
+          <button id="prevDevice" class="btn btn-outline-primary">&larr;</button>
+          <button id="nextDevice" class="btn btn-outline-primary">&rarr;</button>
+        </div>
+      {% endif %}
+    </div>
+  </div>
 
-      <!-- Upload Images -->
-      <div class="card upload-section">
-        <h2>Upload Images</h2>
-        <form id="uploadForm" class="upload-form" method="post" enctype="multipart/form-data">
-          <input type="file" name="file" multiple id="fileInput" required>
-          <br>
-          <input type="submit" value="Upload">
-          <div class="progress-container" id="progressContainer">
-            <div class="progress-bar" id="progressBar">0%</div>
-          </div>
-          <div id="uploadStatus"></div>
-        </form>
-      </div>
-
-      <!-- Last Sent Image -->
-      <div class="card last-sent">
-        <h2>Last Sent Image</h2>
-        {% if last_sent %}
-          <img src="{{ url_for('uploaded_file', filename=last_sent) }}" alt="Last Sent Image" class="last-sent-img">
-        {% else %}
-          <p>No image has been sent yet.</p>
-        {% endif %}
+  <!-- Status messages will be shown in the upload popup -->
+  
+  <!-- Upload/Send Status Popup - Bootstrap Toast -->
+  <div id="uploadPopup" class="toast align-items-center text-white bg-dark position-fixed top-50 start-50 translate-middle" role="alert" aria-live="assertive" aria-atomic="true" style="z-index: 1100; display: none;">
+    <div class="d-flex">
+      <div class="toast-body">
+        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+        <span id="uploadPopupText">Processing...</span>
       </div>
     </div>
-    <!-- End Left Panel -->
+  </div>
 
-    <!-- Right Panel: Gallery -->
-    <div class="gallery-section">
-      <h2>Gallery</h2>
-      <div class="gallery">
-        {% for image in images %}
-          <div class="gallery-item">
-            <div class="img-container">
-              <img src="{{ url_for('uploaded_file', filename=image) }}" alt="{{ image }}" draggable="true" data-filename="{{ image }}">
-              <div class="overlay">
-                <button class="send-button" data-image="{{ image }}">Send</button>
-                <img src="{{ url_for('static', filename='trash-icon.png') }}" alt="Delete" class="delete-icon" data-image="{{ image }}">
-              </div>
+  <!-- Main Content: Two Columns -->
+  <div class="row">
+    <!-- Left Column -->
+    <div class="col-md-4 mb-4">
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-light">
+          <h2 class="h5 mb-0">Select eInk Display</h2>
+        </div>
+        <div class="card-body">
+          {% if devices %}
+            <div class="device-options">
+              {% for device in devices %}
+                <div class="form-check mb-2">
+                  <input
+                    class="form-check-input"
+                    type="radio"
+                    name="device"
+                    id="device{{ loop.index }}"
+                    value="{{ device.address }}"
+                    data-index="{{ loop.index0 }}"
+                    data-friendly="{{ device.friendly_name }}"
+                    data-resolution="{{ device.resolution }}"
+                    {% if loop.first %}checked{% endif %}
+                  >
+                  <label class="form-check-label" for="device{{ loop.index }}">
+                    {{ device.friendly_name }}
+                  </label>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="text-danger">No devices configured. Go to <a href="{{ url_for('settings.settings') }}">Settings</a>.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-header bg-light">
+          <h2 class="h5 mb-0">Upload Images</h2>
+        </div>
+        <div class="card-body">
+          <form id="uploadForm" method="post" enctype="multipart/form-data" action="{{ url_for('image.upload_file') }}">
+            <div class="mb-3">
+              <input class="form-control" type="file" name="file" multiple id="fileInput" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+            <div class="progress mt-3" id="progressContainer" style="display: none;">
+              <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+            <div id="uploadStatus" class="mt-2"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Gallery -->
+    <div class="col-md-8">
+      <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h2 class="h5 mb-0">Gallery</h2>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <input type="text" class="form-control" id="gallerySearch" placeholder="Search images by tags...">
+          </div>
+          <div id="searchSpinner" class="text-center my-3" style="display:none;">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
             </div>
           </div>
-        {% endfor %}
+          <div class="gallery" id="gallery">
+            {% for image in images %}
+              <div class="gallery-item">
+                <div class="img-container">
+                  <img src="{{ url_for('image.uploaded_file', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" loading="lazy">
+                  <div class="overlay">
+                    <!-- Favorite icon -->
+                    <div class="favorite-icon" title="Favorite" data-image="{{ image }}">
+                      <i class="fa fa-heart"></i>
+                    </div>
+                    <!-- Send button -->
+                    <button class="btn btn-sm btn-primary send-button" data-image="{{ image }}">Send</button>
+                    <!-- Info button -->
+                    <button class="btn btn-sm btn-info info-button" data-image="{{ image }}">Info</button>
+                    <!-- Delete icon -->
+                    <div class="delete-icon" title="Delete" data-image="{{ image }}">
+                      <i class="fa fa-trash"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
       </div>
     </div>
-    <!-- End Right Panel -->
   </div>
 </div>
 
-<!-- JavaScript -->
+<!-- Bootstrap 5 Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="infoModalLabel">Image Info</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeInfoModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div class="text-center mb-4">
+          <img id="infoImagePreview" src="" alt="Info Preview" class="img-fluid rounded" style="max-height: 300px;">
+          <div class="mt-3">
+            <button type="button" class="btn btn-outline-primary" onclick="openCropModal()">Crop Image</button>
+          </div>
+        </div>
+        <div class="row">
+          <!-- Left Column: Basic Info -->
+          <div class="col-md-6" id="infoLeftColumn">
+            <p><strong>Filename:</strong> <span id="infoFilename">N/A</span></p>
+            <p><strong>Resolution:</strong> <span id="infoResolution">N/A</span></p>
+            <p><strong>Filesize:</strong> <span id="infoFilesize">N/A</span></p>
+          </div>
+          <!-- Right Column: Editable Tags & Favorite -->
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label class="form-label"><strong>Tags:</strong></label>
+              <div id="tagContainer" class="mb-2"></div>
+              <div class="input-group">
+                <input type="text" class="form-control" id="newTagInput" placeholder="Add a new tag...">
+                <button class="btn btn-outline-secondary" type="button" onclick="addTag()">Add</button>
+              </div>
+              <input type="hidden" id="infoTags">
+            </div>
+            <div class="mb-3 form-check">
+              <input type="checkbox" class="form-check-input" id="infoFavorite">
+              <label class="form-check-label" for="infoFavorite"><strong>Favorite</strong></label>
+            </div>
+            <div id="infoStatus" class="text-success mb-3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeInfoModal()">Close</button>
+        <button type="button" class="btn btn-primary" onclick="saveInfoEdits()">Save</button>
+        <button type="button" class="btn btn-outline-secondary" onclick="runOpenClip()">Re-run Tagging</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap 5 Lightbox Modal -->
+<div class="modal fade" id="lightboxModal" tabindex="-1" aria-labelledby="lightboxModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="lightboxCaption"></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="closeLightbox()"></button>
+      </div>
+      <div class="modal-body d-flex align-items-center justify-content-center">
+        <img class="img-fluid" id="lightboxImage" alt="Enlarged Image">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap 5 Crop Modal -->
+<div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cropModalLabel">Crop Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeCropModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cropContainer" style="max-height: 70vh; overflow: hidden;">
+          <img id="cropImage" src="" alt="Crop Image" class="img-fluid w-100">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeCropModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveCropData()">Save Crop</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-  // Handle file upload with progress bar
-  document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var fileInput = document.getElementById('fileInput');
-    if(fileInput.files.length === 0) {
-      alert('Please select a file.');
-      return;
+document.addEventListener("DOMContentLoaded", function() {
+  // Inject dynamic CSS for info button, favorite icon, and tag boxes
+  const styleTag = document.createElement('style');
+  styleTag.innerHTML = `
+    .info-button {
+      position: absolute;
+      left: 50%;
+      bottom: 10px;
+      transform: translateX(-50%);
+      background: #17a2b8;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      font-size: 0.9em;
     }
-    var formData = new FormData();
-    for (var i = 0; i < fileInput.files.length; i++) {
-      formData.append('file', fileInput.files[i]);
+    .info-button:hover {
+      background: #138496;
     }
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/', true);
-    xhr.upload.addEventListener("progress", function(e) {
-      if(e.lengthComputable) {
-        var percentComplete = (e.loaded / e.total) * 100;
-        var progressBar = document.getElementById('progressBar');
-        progressBar.style.width = percentComplete + '%';
-        progressBar.textContent = Math.round(percentComplete) + '%';
-        document.getElementById('progressContainer').style.display = 'block';
-      }
-    });
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        document.getElementById('uploadStatus').innerText = "Upload successful!";
-        document.getElementById('progressBar').style.width = '0%';
-        document.getElementById('progressBar').textContent = '0%';
-        setTimeout(function(){ location.reload(); }, 1000);
+    .favorite-icon i {
+      font-size: 1.5em;
+      color: #ccc;
+      transition: color 0.3s;
+    }
+    .favorite-icon.favorited i {
+      color: red;
+    }
+    .tag-box {
+      display: inline-block;
+      background-color: #e9ecef;
+      border-radius: 4px;
+      padding: 5px 10px;
+      margin: 3px;
+      font-size: 0.9em;
+    }
+    .tag-remove {
+      margin-left: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      color: #dc3545;
+    }
+    .tag-remove:hover {
+      color: #bd2130;
+    }
+  `;
+  document.head.appendChild(styleTag);
+});
+
+/* Lightbox functions with Bootstrap 5 */
+function openLightbox(src, alt) {
+  const lightboxModal = new bootstrap.Modal(document.getElementById('lightboxModal'));
+  const lightboxImage = document.getElementById('lightboxImage');
+  const lightboxCaption = document.getElementById('lightboxCaption');
+  lightboxImage.src = src;
+  lightboxCaption.innerText = alt;
+  lightboxModal.show();
+}
+function closeLightbox() {
+  const lightboxModalEl = document.getElementById('lightboxModal');
+  const lightboxModal = bootstrap.Modal.getInstance(lightboxModalEl);
+  if (lightboxModal) {
+    lightboxModal.hide();
+  }
+}
+
+/* Debounce helper */
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
+/* Gallery search */
+const searchInput = document.getElementById('gallerySearch');
+const searchSpinner = document.getElementById('searchSpinner');
+const gallery = document.getElementById('gallery');
+
+const performSearch = debounce(function() {
+  const query = searchInput.value.trim();
+  if (!query) {
+    searchSpinner.style.display = 'none';
+    location.reload();
+    return;
+  }
+  searchSpinner.style.display = 'block';
+  fetch(`/api/search_images?q=${encodeURIComponent(query)}`)
+    .then(response => response.json())
+    .then(data => {
+      searchSpinner.style.display = 'none';
+      gallery.innerHTML = "";
+      if (data.status === "success" && data.results.ids) {
+        if (data.results.ids.length === 0) {
+          gallery.innerHTML = "<p>No matching images found.</p>";
+        } else {
+          data.results.ids.forEach((id) => {
+            const imageUrl = `/images/${encodeURIComponent(id)}`;
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.innerHTML = `
+              <div class="img-container">
+                <img src="${imageUrl}" alt="${id}" data-filename="${id}" loading="lazy">
+                <div class="overlay">
+                  <div class="favorite-icon" title="Favorite" data-image="${id}">
+                    <i class="fa fa-heart"></i>
+                  </div>
+                  <button class="send-button" data-image="${id}">Send</button>
+                  <button class="info-button" data-image="${id}">Info</button>
+                  <div class="delete-icon" title="Delete" data-image="${id}">
+                    <i class="fa fa-trash"></i>
+                  </div>
+                </div>
+              </div>
+            `;
+            gallery.appendChild(item);
+          });
+        }
       } else {
-        document.getElementById('uploadStatus').innerText = "Upload failed.";
+        gallery.innerHTML = "<p>No matching images found.</p>";
       }
+    })
+    .catch(err => {
+      searchSpinner.style.display = 'none';
+      console.error("Search error:", err);
+    });
+}, 500);
+
+if (searchInput) {
+  searchInput.addEventListener('input', performSearch);
+}
+
+/* Upload form */
+const uploadForm = document.getElementById('uploadForm');
+uploadForm.addEventListener('submit', function(e) {
+  e.preventDefault();
+  const fileInput = document.getElementById('fileInput');
+  if (!fileInput.files.length) return;
+  
+  const formData = new FormData();
+  for (let i = 0; i < fileInput.files.length; i++) {
+    formData.append('file', fileInput.files[i]);
+  }
+  
+  const selectedDevice = document.querySelector('input[name="device"]:checked');
+  const deviceFriendly = selectedDevice ? selectedDevice.getAttribute('data-friendly') : "unknown display";
+  
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', uploadForm.action, true);
+
+  xhr.upload.addEventListener("progress", function(e) {
+    if (e.lengthComputable) {
+      const percentComplete = (e.loaded / e.total) * 100;
+      const progressBar = document.getElementById('progressBar');
+      progressBar.style.width = percentComplete + '%';
+      progressBar.textContent = Math.round(percentComplete) + '%';
+      document.getElementById('progressContainer').style.display = 'block';
+      
+      const popup = document.getElementById('uploadPopup');
+      popup.style.display = 'block';
+      document.getElementById('uploadPopupText').textContent = `Uploading image to ${deviceFriendly}... ${Math.round(percentComplete)}%`;
+      
+      // Show Bootstrap toast
+      const bsToast = new bootstrap.Toast(popup);
+      bsToast.show();
+    }
+  });
+
+  xhr.onload = function() {
+    const popup = document.getElementById('uploadPopup');
+    if (xhr.status === 200) {
+      popup.innerHTML = `<div class="spinner"></div> Image uploaded successfully!`;
+    } else {
+      popup.innerHTML = `<div class="spinner"></div> Error uploading image.`;
+    }
+    setTimeout(() => {
+      popup.style.display = 'none';
+      location.reload();
+    }, 1500);
+  };
+
+  xhr.onerror = function() {
+    const popup = document.getElementById('uploadPopup');
+    popup.innerHTML = `<div class="spinner"></div> Error uploading image.`;
+    setTimeout(() => {
+      popup.style.display = 'none';
+    }, 1500);
+  };
+
+  xhr.send(formData);
+});
+
+/* Send image */
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('send-button')) {
+    e.stopPropagation();
+    const imageFilename = e.target.getAttribute('data-image');
+    const selectedDevice = document.querySelector('input[name="device"]:checked');
+    if (!selectedDevice) return;
+    
+    const deviceFriendly = selectedDevice.getAttribute('data-friendly');
+    const formData = new FormData();
+    formData.append("device", selectedDevice.value);
+
+    const baseUrl = "{{ url_for('image.send_image', filename='') }}";
+    const finalUrl = baseUrl + encodeURIComponent(imageFilename);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', finalUrl, true);
+
+    xhr.upload.addEventListener("progress", function(ev) {
+      if (ev.lengthComputable) {
+        const percentComplete = (ev.loaded / ev.total) * 100;
+        const popup = document.getElementById('uploadPopup');
+        popup.style.display = 'block';
+        popup.innerHTML = `<div class="spinner"></div> Sending image to ${deviceFriendly}... ${Math.round(percentComplete)}%`;
+      }
+    });
+
+    xhr.onload = function() {
+      const popup = document.getElementById('uploadPopup');
+      if (xhr.status === 200) {
+        popup.innerHTML = `<div class="spinner"></div> Image sent successfully!`;
+      } else {
+        popup.innerHTML = `<div class="spinner"></div> Error sending image.`;
+      }
+      setTimeout(() => {
+        popup.style.display = 'none';
+        location.reload();
+      }, 1500);
     };
-    xhr.onerror = function() { document.getElementById('uploadStatus').innerText = "Upload error."; };
+
+    xhr.onerror = function() {
+      const popup = document.getElementById('uploadPopup');
+      popup.innerHTML = `<div class="spinner"></div> Error sending image.`;
+      setTimeout(() => {
+        popup.style.display = 'none';
+      }, 1500);
+    };
+
     xhr.send(formData);
-  });
+  }
+});
 
-  // Handle send button click via AJAX
-  document.querySelectorAll('.send-button').forEach(function(button) {
-    button.addEventListener('click', function(e) {
-      e.stopPropagation();
-      var imageFilename = this.getAttribute('data-image');
-      var selectedDevice = document.querySelector('input[name="device"]:checked');
-      if (!selectedDevice) {
-        alert("Please select an eInk display.");
-        return;
-      }
-      var formData = new FormData();
-      formData.append("device", selectedDevice.value);
-      fetch("{{ url_for('send_image', filename='') }}" + imageFilename, { method: 'POST', body: formData })
-        .then(response => response.text())
-        .then(data => {
-          alert("Image sent successfully!");
+/* Delete image */
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.closest('.delete-icon')) {
+    e.stopPropagation();
+    const imageFilename = e.target.closest('.delete-icon').getAttribute('data-image');
+    
+    const deleteBaseUrl = "/delete_image/";
+    const deleteUrl = deleteBaseUrl + encodeURIComponent(imageFilename);
+
+    fetch(deleteUrl, { method: 'POST' })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === "success") {
           location.reload();
-        })
-        .catch(error => {
-          alert("Error sending image");
-        });
-    });
-  });
+        } else {
+          console.error("Error deleting image:", data.message);
+        }
+      })
+      .catch(error => {
+        console.error("Error deleting image:", error);
+      });
+  }
+});
 
-  // Handle delete icon click via AJAX
-  document.querySelectorAll('.delete-icon').forEach(function(icon) {
-    icon.addEventListener('click', function(e) {
-      e.stopPropagation();
-      var imageFilename = this.getAttribute('data-image');
-      fetch("{{ url_for('delete_image', filename='') }}" + encodeURIComponent(imageFilename), { method: 'POST' })
-        .then(response => response.json())
-        .then(data => { 
-          if(data.status === "success"){
-            location.reload();
-          } else {
-            alert("Error deleting image: " + data.message);
-          }
-        })
-        .catch(error => { 
-          alert("Error deleting image");
-        });
-    });
+/* Favorite toggle */
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.closest('.favorite-icon')) {
+    e.stopPropagation();
+    const favIcon = e.target.closest('.favorite-icon');
+    const imageFilename = favIcon.getAttribute('data-image');
+    favIcon.classList.toggle('favorited');
+    const isFavorited = favIcon.classList.contains('favorited');
+    fetch("/api/update_image_metadata", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: imageFilename,
+        tags: [],  // do not modify tags in favorite toggle
+        favorite: isFavorited
+      })
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.status !== "success") {
+          console.error("Error updating favorite:", data.message);
+        }
+      })
+      .catch(err => {
+        console.error("Error updating favorite:", err);
+      });
+  }
+});
+
+/* Info Modal Logic */
+let currentInfoFilename = null;
+
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('info-button')) {
+    e.stopPropagation();
+    const filename = e.target.getAttribute('data-image');
+    currentInfoFilename = filename;
+    openInfoModal(filename);
+  }
+});
+
+// Tag management functions
+let currentTags = [];
+
+function renderTags() {
+  const tagContainer = document.getElementById('tagContainer');
+  tagContainer.innerHTML = '';
+  
+  currentTags.forEach((tag, index) => {
+    const tagElement = document.createElement('span');
+    tagElement.className = 'tag-box';
+    tagElement.innerHTML = `${tag} <span class="tag-remove" onclick="removeTag(${index})">×</span>`;
+    tagContainer.appendChild(tagElement);
   });
+  
+  // Update the hidden input with comma-separated tags
+  document.getElementById('infoTags').value = currentTags.join(', ');
+}
+
+function addTag() {
+  const newTagInput = document.getElementById('newTagInput');
+  const tag = newTagInput.value.trim();
+  
+  if (tag && !currentTags.includes(tag)) {
+    currentTags.push(tag);
+    renderTags();
+    newTagInput.value = '';
+  }
+}
+
+function removeTag(index) {
+  currentTags.splice(index, 1);
+  renderTags();
+}
+
+// Add event listener for Enter key on the new tag input
+document.addEventListener('DOMContentLoaded', function() {
+  const newTagInput = document.getElementById('newTagInput');
+  if (newTagInput) {
+    newTagInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addTag();
+      }
+    });
+  }
+});
+
+function openInfoModal(filename) {
+  const imgUrl = `/images/${encodeURIComponent(filename)}?size=info`;
+  fetch(`/api/get_image_metadata?filename=${encodeURIComponent(filename)}`)
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === "success") {
+        document.getElementById('infoImagePreview').src = imgUrl;
+        document.getElementById('infoFilename').textContent = filename;
+        document.getElementById('infoResolution').textContent = data.resolution || "N/A";
+        document.getElementById('infoFilesize').textContent = data.filesize || "N/A";
+        
+        // Set up tags
+        currentTags = data.tags || [];
+        renderTags();
+        
+        document.getElementById('infoFavorite').checked = data.favorite || false;
+        document.getElementById('infoStatus').textContent = "";
+        
+        // Show the modal using Bootstrap 5
+        const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
+        infoModal.show();
+      } else {
+        document.getElementById('infoStatus').textContent = "Error: " + data.message;
+        const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
+        infoModal.show();
+      }
+    })
+    .catch(err => {
+      console.error("Error fetching metadata:", err);
+      document.getElementById('infoStatus').textContent = "Failed to fetch metadata. Check console.";
+      const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
+      infoModal.show();
+    });
+}
+
+function closeInfoModal() {
+  const infoModalEl = document.getElementById('infoModal');
+  const infoModal = bootstrap.Modal.getInstance(infoModalEl);
+  if (infoModal) {
+    infoModal.hide();
+  }
+  currentInfoFilename = null;
+}
+
+function saveInfoEdits() {
+  if (!currentInfoFilename) return;
+  fetch("/api/update_image_metadata", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename: currentInfoFilename,
+      tags: currentTags,
+      favorite: document.getElementById('infoFavorite').checked
+    })
+  })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === "success") {
+        document.getElementById('infoStatus').textContent = "Metadata updated successfully!";
+        setTimeout(() => { closeInfoModal(); }, 1500);
+      } else {
+        document.getElementById('infoStatus').textContent = "Error updating metadata: " + data.message;
+      }
+    })
+    .catch(err => {
+      console.error("Error updating metadata:", err);
+      document.getElementById('infoStatus').textContent = "Failed to update metadata. Check console.";
+    });
+}
+
+function runOpenClip() {
+  if (!currentInfoFilename) return;
+  fetch(`/api/reembed_image?filename=${encodeURIComponent(currentInfoFilename)}`)
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === "success") {
+        currentTags = data.tags || [];
+        renderTags();
+        document.getElementById('infoStatus').textContent = "Re-ran tagging successfully!";
+      } else {
+        document.getElementById('infoStatus').textContent = "Error re-running tagging: " + data.message;
+      }
+    })
+    .catch(err => {
+      console.error("Error re-running tagging:", err);
+      document.getElementById('infoStatus').textContent = "Failed to re-run tagging. Check console.";
+    });
+}
+
+// Crop Modal Functions
+let cropperInstance = null;
+
+function openCropModal() {
+  if (!currentInfoFilename) return;
+  
+  const cropImage = document.getElementById('cropImage');
+  
+  // Set the image source to the current image
+  cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+  
+  // Show the modal using Bootstrap 5
+  const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
+  cropModal.show();
+  
+  // Initialize Cropper.js after the image is loaded
+  cropImage.onload = function() {
+    if (cropperInstance) {
+      cropperInstance.destroy();
+    }
+    
+    // Import Cropper.js dynamically if needed
+    if (typeof Cropper === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js';
+      document.head.appendChild(script);
+      
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.css';
+      document.head.appendChild(link);
+      
+      script.onload = initCropper;
+    } else {
+      initCropper();
+    }
+  };
+}
+
+function initCropper() {
+  const cropImage = document.getElementById('cropImage');
+  
+  // Get the selected device's resolution
+  const selectedDevice = document.querySelector('input[name="device"]:checked');
+  let aspectRatio = NaN; // Default to free aspect ratio
+  let targetWidth = 0;
+  let targetHeight = 0;
+  let isPortrait = false;
+  
+  if (selectedDevice) {
+    const resolution = selectedDevice.getAttribute('data-resolution');
+    if (resolution) {
+      const parts = resolution.split('x');
+      if (parts.length === 2) {
+        targetWidth = parseInt(parts[0], 10);
+        targetHeight = parseInt(parts[1], 10);
+        
+        // Check if the device is in portrait orientation
+        isPortrait = selectedDevice.parentNode.textContent.trim().toLowerCase().includes('portrait');
+        
+        if (isPortrait) {
+          // For portrait orientation, swap width and height for aspect ratio
+          aspectRatio = targetHeight / targetWidth;
+        } else {
+          aspectRatio = targetWidth / targetHeight;
+        }
+      }
+    }
+  }
+  
+  // Initialize cropper with the calculated aspect ratio
+  cropperInstance = new Cropper(cropImage, {
+    aspectRatio: aspectRatio, // Use the calculated aspect ratio
+    viewMode: 1,
+    autoCropArea: 1, // Start with maximum possible area
+    responsive: true,
+    restore: true,
+    guides: true,
+    center: true,
+    highlight: true,
+    cropBoxMovable: true,
+    cropBoxResizable: true,
+    toggleDragModeOnDblclick: true,
+    ready: function() {
+      // This function runs when the cropper is fully initialized
+      if (aspectRatio && cropperInstance) {
+        // Get the image dimensions
+        const imageData = cropperInstance.getImageData();
+        const imageWidth = imageData.naturalWidth;
+        const imageHeight = imageData.naturalHeight;
+        
+        // Calculate the optimal crop box dimensions to cover as much of the image as possible
+        // while maintaining the target aspect ratio
+        let cropBoxWidth, cropBoxHeight;
+        
+        const imageRatio = imageWidth / imageHeight;
+        
+        if (aspectRatio > imageRatio) {
+          // If target aspect ratio is wider than the image, use full width
+          cropBoxWidth = imageWidth;
+          cropBoxHeight = cropBoxWidth / aspectRatio;
+        } else {
+          // If target aspect ratio is taller than the image, use full height
+          cropBoxHeight = imageHeight;
+          cropBoxWidth = cropBoxHeight * aspectRatio;
+        }
+        
+        // Calculate the position to center the crop box
+        const left = (imageWidth - cropBoxWidth) / 2;
+        const top = (imageHeight - cropBoxHeight) / 2;
+        
+        // Set the crop box
+        cropperInstance.setCropBoxData({
+          left: left,
+          top: top,
+          width: cropBoxWidth,
+          height: cropBoxHeight
+        });
+      }
+    }
+  });
+}
+
+function closeCropModal() {
+  const cropModalEl = document.getElementById('cropModal');
+  const cropModal = bootstrap.Modal.getInstance(cropModalEl);
+  if (cropModal) {
+    cropModal.hide();
+  }
+  
+  if (cropperInstance) {
+    cropperInstance.destroy();
+    cropperInstance = null;
+  }
+}
+
+function saveCropData() {
+  if (!cropperInstance || !currentInfoFilename) return;
+  
+  const cropData = cropperInstance.getData();
+  const selectedDevice = document.querySelector('input[name="device"]:checked');
+  const deviceAddress = selectedDevice ? selectedDevice.value : null;
+  
+  fetch(`/save_crop_info/${encodeURIComponent(currentInfoFilename)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      x: cropData.x,
+      y: cropData.y,
+      width: cropData.width,
+      height: cropData.height,
+      device: deviceAddress
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      document.getElementById('infoStatus').textContent = 'Crop data saved successfully!';
+      closeCropModal();
+    } else {
+      document.getElementById('infoStatus').textContent = 'Error saving crop data: ' + data.message;
+    }
+  })
+  .catch(error => {
+    console.error('Error saving crop data:', error);
+    document.getElementById('infoStatus').textContent = 'Error saving crop data. Check console.';
+  });
+}
+
+const prevButton = document.getElementById('prevDevice');
+const nextButton = document.getElementById('nextDevice');
+// Define devices array using template data
+const devices = [];
+{% for device in devices %}
+  devices.push({
+    friendly_name: "{{ device.friendly_name|e }}",
+    address: "{{ device.address|e }}",
+    last_sent: "{{ device.last_sent|e if device.last_sent is defined else '' }}"
+  });
+{% endfor %}
+let currentDeviceIndex = 0;
+
+function updateCurrentImageDisplay() {
+  const device = devices[currentDeviceIndex];
+  const titleEl = document.getElementById('currentImageTitle');
+  const imageEl = document.getElementById('currentImage');
+  const placeholderEl = document.getElementById('currentImagePlaceholder');
+  
+  titleEl.textContent = "Current image on " + device.friendly_name;
+  if (device.last_sent) {
+    if (placeholderEl) {
+      placeholderEl.style.display = 'none';
+    }
+    if (imageEl) {
+      imageEl.src = "{{ url_for('image.uploaded_file', filename='') }}" + device.last_sent;
+      imageEl.style.display = 'block';
+    }
+  } else {
+    if (imageEl) {
+      imageEl.style.display = 'none';
+    }
+    if (placeholderEl) {
+      placeholderEl.style.display = 'block';
+    }
+  }
+}
+
+if (prevButton && nextButton) {
+  prevButton.addEventListener('click', function() {
+    currentDeviceIndex = (currentDeviceIndex - 1 + devices.length) % devices.length;
+    updateCurrentImageDisplay();
+  });
+  nextButton.addEventListener('click', function() {
+    currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
+    updateCurrentImageDisplay();
+  });
+}
+
+if (devices.length > 0) {
+  updateCurrentImageDisplay();
+}
+
+// Bulk tagging moved to settings page
 </script>
 {% endblock %}
