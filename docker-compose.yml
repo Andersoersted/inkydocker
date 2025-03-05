@@ -2,7 +2,12 @@ version: '3'
 
 services:
   inkydocker:
-    build: .
+    build:
+      context: .
+      args:
+        - USE_GPU=${USE_GPU:-false}
+        - PYTHON_VERSION=${PYTHON_VERSION:-3.13.2}
+    image: ${DOCKER_USERNAME:-yourusername}/inkydocker:${IMAGE_TAG:-latest}${USE_GPU:+-gpu}
     ports:
       - "5001:5001"
     volumes:
@@ -11,3 +16,9 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Europe/Copenhagen
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

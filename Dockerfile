@@ -1,19 +1,25 @@
 # syntax=docker/dockerfile:1
 
-# Set default build arguments
-ARG BASE_IMAGE=python:3.13.2-slim
-FROM ${BASE_IMAGE}
+# Build arguments
+ARG USE_GPU=false
+ARG PYTHON_VERSION=3.13.2
 
-# Set timezone and cache directory for models (persisted in /data/model_cache)
+# ===== BUILDER STAGE =====
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+# Set timezone and cache directory for models
 ENV TZ=Europe/Copenhagen
 ENV XDG_CACHE_HOME=/app/data/model_cache
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Install system dependencies and redis-server
+# Create necessary directories for the model cache
+RUN mkdir -p /app/data/model_cache
+
+# Pass the GPU flag to the builder stage
+ARG USE_GPU
+
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
-    sqlite3 \
-    supervisor \
-    tzdata \
     build-essential \
     gcc \
     git \
@@ -23,9 +29,60 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libpng-dev \
     libfreetype6-dev \
-    redis-server \
-    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /build
+
+# Copy requirements and tasks.py for modification
+COPY requirements.txt .
+COPY tasks.py .
+
+# If CPU-only mode is selected, modify tasks.py to force CPU usage
+RUN if [ "$USE_GPU" = "false" ]; then \
+    echo "Building CPU-only version"; \
+    sed -i 's/device = "cuda" if torch.cuda.is_available() else "cpu"/device = "cpu"  # Force CPU usage/g' tasks.py; \
+    fi
+
+# Install Python dependencies (with CPU-only PyTorch if USE_GPU=false)
+RUN if [ "$USE_GPU" = "false" ]; then \
+    # Install CPU-only PyTorch first
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    # Then install the rest of the requirements
+    pip install --no-cache-dir -r requirements.txt; \
+  else \
+    # Install with default PyTorch (with CUDA)
+    pip install --no-cache-dir -r requirements.txt; \
+  fi
+
+# Pre-download only the smallest CLIP model (ViT-B-32)
+# This significantly reduces the image size while maintaining functionality
+RUN python -c "import open_clip; \
+    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True)"
+
+# ===== FINAL STAGE =====
+FROM python:${PYTHON_VERSION}-slim
+
+# Pass the GPU flag to the final stage
+ARG USE_GPU
+
+# Set timezone and cache directory for models
+ENV TZ=Europe/Copenhagen
+ENV XDG_CACHE_HOME=/app/data/model_cache
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    sqlite3 \
+    supervisor \
+    tzdata \
+    redis-server \
+    # Runtime libraries needed for Python packages
+    libjpeg62-turbo \
+    libpng16-16 \
+    libfreetype6 \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create necessary directories for the database and model cache
 RUN mkdir -p /data /app/data/model_cache
@@ -33,19 +90,18 @@ RUN mkdir -p /data /app/data/model_cache
 # Set working directory
 WORKDIR /app
 
-# Copy only the requirements file first for caching
-COPY requirements.txt .
+# Copy Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Install Python dependencies
-RUN pip install -r requirements.txt
-
-# Pre-download all CLIP models (this layer will be cached if requirements.txt hasn't changed)
+# Download the CLIP model in the final stage too (small and quick)
 RUN python -c "import open_clip; \
-    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
-    open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', jit=False, force_quick_gelu=True); \
-    open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai', jit=False, force_quick_gelu=True)"
+    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True)"
 
-# Copy the rest of the project files
+# Copy the modified tasks.py from builder stage
+COPY --from=builder /build/tasks.py /app/tasks.py
+
+# Copy application files (except tasks.py which was already copied)
 COPY . .
 
 # Make scheduler.py executable

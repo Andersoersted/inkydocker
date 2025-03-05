@@ -4,7 +4,7 @@
 echo "Ensuring /app/data folder exists..."
 mkdir -p /app/data
 
-# Start Redis first and ensure it's running
+# Start Redis locally
 echo "Starting Redis server..."
 redis-server --daemonize yes
 sleep 2
