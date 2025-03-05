@@ -214,8 +214,12 @@ body {
     background-color: #e9ecef;
     border-radius: 4px;
     padding: 4px 8px;
-    margin: 2px;
-    font-size: 0.8em;
+    margin: 4px;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+  }
+  .tag-box:hover {
+    background-color: #d9dcdf;
   }
   .tag-remove {
     margin-left: 4px;
@@ -309,14 +313,18 @@ body {
     background: #28a745;
     color: #fff;
     border: none;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 4px;
     cursor: pointer;
     transition: background 0.3s ease;
     z-index: 6;
-    margin-bottom: 10px;
-    width: 80px;
+    margin-bottom: 8px;
+    width: 70px;
     text-align: center;
+    font-size: 0.9em;
+    /* Center the send button */
+    left: 50%;
+    transform: translateX(-50%);
   }
   .send-button:hover {
     background: #218838;
@@ -327,13 +335,16 @@ body {
     background: #17a2b8;
     color: #fff;
     border: none;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 4px;
     cursor: pointer;
     transition: background 0.3s ease;
     z-index: 6;
-    width: 80px;
+    width: 70px;
     text-align: center;
+    font-size: 0.9em;
+    /* Position the info button below the send button */
+    margin-top: 5px;
   }
   .info-button:hover {
     background: #138496;
