@@ -593,22 +593,8 @@
       }
     });
 
-    function openEventModal() { document.getElementById('eventModal').style.display = 'block'; }
-    function closeEventModal() { document.getElementById('eventModal').style.display = 'none'; }
-    
-    function openImageGallery() {
-      document.getElementById('imageGalleryModal').style.display = 'block';
-      // Clear search field when opening
-      var searchField = document.getElementById('imageSearch');
-      if (searchField) {
-        searchField.value = '';
-        searchField.focus();
-        // Trigger search to show all images
-        filterImages('');
-      }
-    }
-    
-    function closeImageGallery() { document.getElementById('imageGalleryModal').style.display = 'none'; }
+    // These functions are already defined above using Bootstrap Modal API
+    // Using the proper Bootstrap Modal API instead of direct style manipulation
     
     function selectImage(filename, src) {
       document.getElementById('selectedImage').value = filename;
@@ -620,9 +606,6 @@
       }
       closeImageGallery();
     }
-    
-    function openDeleteModal() { document.getElementById('deleteModal').style.display = 'block'; }
-    function closeDeleteModal() { document.getElementById('deleteModal').style.display = 'none'; }
     
     // Function to filter images based on search input
     function filterImages(searchText) {

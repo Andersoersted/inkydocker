@@ -50,10 +50,31 @@ def search_images():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"status": "error", "message": "Missing query parameter"}), 400
-    images = ImageDB.query.filter(ImageDB.tags.ilike(f"%{q}%")).all()
+    
+    # Get pagination parameters
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        
+        if page < 1 or per_page < 1 or per_page > 100:
+            return jsonify({"status": "error", "message": "Invalid pagination parameters"}), 400
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid pagination parameters"}), 400
+    
+    # Calculate offset for pagination
+    offset = (page - 1) * per_page
+    
+    # Get images with pagination
+    query = ImageDB.query.filter(ImageDB.tags.ilike(f"%{q}%"))
+    total_images = query.count()
+    images = query.order_by(ImageDB.id.desc()).offset(offset).limit(per_page).all()
+    
     results = {
         "ids": [img.filename for img in images],
-        "tags": [img.tags for img in images]
+        "tags": [img.tags for img in images],
+        "total": total_images,
+        "page": page,
+        "per_page": per_page
     }
     return jsonify({"status": "success", "results": results}), 200
 

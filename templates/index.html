@@ -32,17 +32,7 @@
     </div>
   </div>
 
-  <!-- Status messages will be shown in the upload popup -->
-  
-  <!-- Upload/Send Status Popup - Bootstrap Toast -->
-  <div id="uploadPopup" class="toast align-items-center text-white bg-dark position-fixed top-50 start-50 translate-middle" role="alert" aria-live="assertive" aria-atomic="true" style="z-index: 1100; display: none;">
-    <div class="d-flex">
-      <div class="toast-body">
-        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-        <span id="uploadPopupText">Processing...</span>
-      </div>
-    </div>
-  </div>
+  <!-- Status messages will be shown below the upload button -->
 
   <!-- Main Content: Two Columns -->
   <div class="row">
@@ -91,7 +81,7 @@
             </div>
             <button type="submit" class="btn btn-primary">Upload</button>
             <div class="progress mt-3" id="progressContainer" style="display: none;">
-              <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+              <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%; height: 24px; line-height: 24px;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
             </div>
             <div id="uploadStatus" class="mt-2"></div>
           </form>
@@ -115,27 +105,15 @@
             </div>
           </div>
           <div class="gallery" id="gallery">
-            {% for image in images %}
-              <div class="gallery-item">
-                <div class="img-container">
-                  <img src="{{ url_for('image.uploaded_file', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" loading="lazy">
-                  <div class="overlay">
-                    <!-- Favorite icon -->
-                    <div class="favorite-icon" title="Favorite" data-image="{{ image }}">
-                      <i class="fa fa-heart"></i>
-                    </div>
-                    <!-- Send button -->
-                    <button class="btn btn-sm btn-primary send-button" data-image="{{ image }}">Send</button>
-                    <!-- Info button -->
-                    <button class="btn btn-sm btn-info info-button" data-image="{{ image }}">Info</button>
-                    <!-- Delete icon -->
-                    <div class="delete-icon" title="Delete" data-image="{{ image }}">
-                      <i class="fa fa-trash"></i>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
+            <!-- Gallery items will be loaded here -->
+          </div>
+          <div id="loadingSpinner" class="text-center my-3" style="display:none;">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
+          <div class="text-center mt-3">
+            <button id="loadMoreBtn" class="btn btn-outline-primary">Load More</button>
           </div>
         </div>
       </div>
@@ -302,64 +280,134 @@ function closeLightbox() {
 /* Debounce helper */
 function debounce(func, wait) {
   let timeout;
-  return function(...args) {
+  return function() {
+    var context = this;
+    var args = arguments;
     clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
+    timeout = setTimeout(function() {
+      func.apply(context, args);
+    }, wait);
   };
 }
 
-/* Gallery search */
+/* Gallery pagination and search */
 const searchInput = document.getElementById('gallerySearch');
 const searchSpinner = document.getElementById('searchSpinner');
+const loadingSpinner = document.getElementById('loadingSpinner');
 const gallery = document.getElementById('gallery');
+const loadMoreBtn = document.getElementById('loadMoreBtn');
 
-const performSearch = debounce(function() {
-  const query = searchInput.value.trim();
-  if (!query) {
-    searchSpinner.style.display = 'none';
-    location.reload();
-    return;
+let currentPage = 1;
+const imagesPerPage = 20;
+let isSearchMode = false;
+let searchQuery = '';
+let allImages = [];
+
+// Function to create gallery item HTML
+function createGalleryItemHTML(image) {
+  return `
+    <div class="gallery-item">
+      <div class="img-container">
+        <img src="${image.url}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy">
+        <div class="overlay">
+          <div class="favorite-icon ${image.favorite ? 'favorited' : ''}" title="Favorite" data-image="${image.filename}">
+            <i class="fa fa-heart"></i>
+          </div>
+          <button class="btn btn-sm btn-primary send-button" data-image="${image.filename}">Send</button>
+          <button class="btn btn-sm btn-info info-button" data-image="${image.filename}">Info</button>
+          <div class="delete-icon" title="Delete" data-image="${image.filename}">
+            <i class="fa fa-trash"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Function to load images
+function loadImages(page = 1, append = false) {
+  if (!append) {
+    gallery.innerHTML = '';
   }
-  searchSpinner.style.display = 'block';
-  fetch(`/api/search_images?q=${encodeURIComponent(query)}`)
-    .then(response => response.json())
-    .then(data => {
-      searchSpinner.style.display = 'none';
-      gallery.innerHTML = "";
-      if (data.status === "success" && data.results.ids) {
-        if (data.results.ids.length === 0) {
-          gallery.innerHTML = "<p>No matching images found.</p>";
-        } else {
-          data.results.ids.forEach((id) => {
-            const imageUrl = `/images/${encodeURIComponent(id)}`;
-            const item = document.createElement('div');
-            item.className = 'gallery-item';
-            item.innerHTML = `
-              <div class="img-container">
-                <img src="${imageUrl}" alt="${id}" data-filename="${id}" loading="lazy">
-                <div class="overlay">
-                  <div class="favorite-icon" title="Favorite" data-image="${id}">
-                    <i class="fa fa-heart"></i>
-                  </div>
-                  <button class="send-button" data-image="${id}">Send</button>
-                  <button class="info-button" data-image="${id}">Info</button>
-                  <div class="delete-icon" title="Delete" data-image="${id}">
-                    <i class="fa fa-trash"></i>
-                  </div>
-                </div>
-              </div>
-            `;
-            gallery.appendChild(item);
-          });
+  
+  loadingSpinner.style.display = 'block';
+  
+  const url = isSearchMode
+    ? `/api/search_images?q=${encodeURIComponent(searchQuery)}&page=${page}&per_page=${imagesPerPage}`
+    : `/api/get_images?page=${page}&per_page=${imagesPerPage}`;
+  
+  fetch(url)
+    .then(function(response) {
+      return response.json();
+    })
+    .then(function(data) {
+      loadingSpinner.style.display = 'none';
+      
+      if (data.status === "success") {
+        const images = isSearchMode ? data.results.ids : data.images;
+        
+        if (images.length === 0 && page === 1) {
+          gallery.innerHTML = "<p>No images found.</p>";
+          loadMoreBtn.style.display = 'none';
+          return;
         }
+        
+        if (images.length < imagesPerPage) {
+          loadMoreBtn.style.display = 'none';
+        } else {
+          loadMoreBtn.style.display = 'block';
+        }
+        
+        images.forEach(function(image) {
+          const imageData = {
+            filename: isSearchMode ? image : image.filename,
+            url: `/images/${encodeURIComponent(isSearchMode ? image : image.filename)}`,
+            favorite: isSearchMode ? false : image.favorite
+          };
+          
+          const itemHTML = createGalleryItemHTML(imageData);
+          gallery.insertAdjacentHTML('beforeend', itemHTML);
+        });
       } else {
-        gallery.innerHTML = "<p>No matching images found.</p>";
+        console.error("Error loading images:", data.message);
       }
     })
-    .catch(err => {
-      searchSpinner.style.display = 'none';
-      console.error("Search error:", err);
+    .catch(function(err) {
+      loadingSpinner.style.display = 'none';
+      console.error("Error loading images:", err);
     });
+}
+
+// Load initial images
+document.addEventListener('DOMContentLoaded', function() {
+  loadImages(1);
+});
+
+// Load more images when button is clicked
+if (loadMoreBtn) {
+  loadMoreBtn.addEventListener('click', function() {
+    currentPage++;
+    loadImages(currentPage, true);
+  });
+}
+
+// Search functionality
+const performSearch = debounce(function() {
+  searchQuery = searchInput.value.trim();
+  
+  if (!searchQuery) {
+    isSearchMode = false;
+    currentPage = 1;
+    loadImages(1);
+    return;
+  }
+  
+  isSearchMode = true;
+  currentPage = 1;
+  searchSpinner.style.display = 'block';
+  
+  loadImages(1);
+  searchSpinner.style.display = 'none';
 }, 500);
 
 if (searchInput) {
@@ -391,36 +439,26 @@ uploadForm.addEventListener('submit', function(e) {
       progressBar.style.width = percentComplete + '%';
       progressBar.textContent = Math.round(percentComplete) + '%';
       document.getElementById('progressContainer').style.display = 'block';
-      
-      const popup = document.getElementById('uploadPopup');
-      popup.style.display = 'block';
-      document.getElementById('uploadPopupText').textContent = `Uploading image to ${deviceFriendly}... ${Math.round(percentComplete)}%`;
-      
-      // Show Bootstrap toast
-      const bsToast = new bootstrap.Toast(popup);
-      bsToast.show();
     }
   });
 
   xhr.onload = function() {
-    const popup = document.getElementById('uploadPopup');
     if (xhr.status === 200) {
-      popup.innerHTML = `<div class="spinner"></div> Image uploaded successfully!`;
+      document.getElementById('uploadStatus').textContent = 'Image uploaded successfully!';
+      // Instead of reloading the page, refresh the gallery
+      setTimeout(function() {
+        currentPage = 1;
+        loadImages(1);
+        document.getElementById('uploadStatus').textContent = '';
+        document.getElementById('progressContainer').style.display = 'none';
+      }, 1500);
     } else {
-      popup.innerHTML = `<div class="spinner"></div> Error uploading image.`;
+      document.getElementById('uploadStatus').textContent = 'Error uploading image.';
     }
-    setTimeout(() => {
-      popup.style.display = 'none';
-      location.reload();
-    }, 1500);
   };
 
   xhr.onerror = function() {
-    const popup = document.getElementById('uploadPopup');
-    popup.innerHTML = `<div class="spinner"></div> Error uploading image.`;
-    setTimeout(() => {
-      popup.style.display = 'none';
-    }, 1500);
+    document.getElementById('uploadStatus').textContent = 'Error uploading image.';
   };
 
   xhr.send(formData);
@@ -444,34 +482,22 @@ document.addEventListener('click', function(e) {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', finalUrl, true);
 
-    xhr.upload.addEventListener("progress", function(ev) {
-      if (ev.lengthComputable) {
-        const percentComplete = (ev.loaded / ev.total) * 100;
-        const popup = document.getElementById('uploadPopup');
-        popup.style.display = 'block';
-        popup.innerHTML = `<div class="spinner"></div> Sending image to ${deviceFriendly}... ${Math.round(percentComplete)}%`;
-      }
-    });
-
+    // No need for progress tracking for sending images
+    
     xhr.onload = function() {
-      const popup = document.getElementById('uploadPopup');
       if (xhr.status === 200) {
-        popup.innerHTML = `<div class="spinner"></div> Image sent successfully!`;
+        alert('Image sent successfully!');
+        // Update the current image display without reloading
+        setTimeout(function() {
+          updateCurrentImageDisplay();
+        }, 1000);
       } else {
-        popup.innerHTML = `<div class="spinner"></div> Error sending image.`;
+        alert('Error sending image.');
       }
-      setTimeout(() => {
-        popup.style.display = 'none';
-        location.reload();
-      }, 1500);
     };
 
     xhr.onerror = function() {
-      const popup = document.getElementById('uploadPopup');
-      popup.innerHTML = `<div class="spinner"></div> Error sending image.`;
-      setTimeout(() => {
-        popup.style.display = 'none';
-      }, 1500);
+      alert('Error sending image.');
     };
 
     xhr.send(formData);
@@ -488,15 +514,19 @@ document.addEventListener('click', function(e) {
     const deleteUrl = deleteBaseUrl + encodeURIComponent(imageFilename);
 
     fetch(deleteUrl, { method: 'POST' })
-      .then(response => response.json())
-      .then(data => {
+      .then(function(response) {
+        return response.json();
+      })
+      .then(function(data) {
         if (data.status === "success") {
-          location.reload();
+          // Refresh the gallery instead of reloading the page
+          currentPage = 1;
+          loadImages(1);
         } else {
           console.error("Error deleting image:", data.message);
         }
       })
-      .catch(error => {
+      .catch(function(error) {
         console.error("Error deleting image:", error);
       });
   }
@@ -519,13 +549,15 @@ document.addEventListener('click', function(e) {
         favorite: isFavorited
       })
     })
-      .then(resp => resp.json())
-      .then(data => {
+      .then(function(resp) {
+        return resp.json();
+      })
+      .then(function(data) {
         if (data.status !== "success") {
           console.error("Error updating favorite:", data.message);
         }
       })
-      .catch(err => {
+      .catch(function(err) {
         console.error("Error updating favorite:", err);
       });
   }
@@ -550,10 +582,10 @@ function renderTags() {
   const tagContainer = document.getElementById('tagContainer');
   tagContainer.innerHTML = '';
   
-  currentTags.forEach((tag, index) => {
+  currentTags.forEach(function(tag, index) {
     const tagElement = document.createElement('span');
     tagElement.className = 'tag-box';
-    tagElement.innerHTML = `${tag} <span class="tag-remove" onclick="removeTag(${index})">×</span>`;
+    tagElement.innerHTML = tag + ' <span class="tag-remove" onclick="removeTag(' + index + ')">×</span>';
     tagContainer.appendChild(tagElement);
   });
   
@@ -593,8 +625,10 @@ document.addEventListener('DOMContentLoaded', function() {
 function openInfoModal(filename) {
   const imgUrl = `/images/${encodeURIComponent(filename)}?size=info`;
   fetch(`/api/get_image_metadata?filename=${encodeURIComponent(filename)}`)
-    .then(resp => resp.json())
-    .then(data => {
+    .then(function(resp) {
+      return resp.json();
+    })
+    .then(function(data) {
       if (data.status === "success") {
         document.getElementById('infoImagePreview').src = imgUrl;
         document.getElementById('infoFilename').textContent = filename;
@@ -617,7 +651,7 @@ function openInfoModal(filename) {
         infoModal.show();
       }
     })
-    .catch(err => {
+    .catch(function(err) {
       console.error("Error fetching metadata:", err);
       document.getElementById('infoStatus').textContent = "Failed to fetch metadata. Check console.";
       const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
@@ -645,16 +679,18 @@ function saveInfoEdits() {
       favorite: document.getElementById('infoFavorite').checked
     })
   })
-    .then(resp => resp.json())
-    .then(data => {
+    .then(function(resp) {
+      return resp.json();
+    })
+    .then(function(data) {
       if (data.status === "success") {
         document.getElementById('infoStatus').textContent = "Metadata updated successfully!";
-        setTimeout(() => { closeInfoModal(); }, 1500);
+        setTimeout(function() { closeInfoModal(); }, 1500);
       } else {
         document.getElementById('infoStatus').textContent = "Error updating metadata: " + data.message;
       }
     })
-    .catch(err => {
+    .catch(function(err) {
       console.error("Error updating metadata:", err);
       document.getElementById('infoStatus').textContent = "Failed to update metadata. Check console.";
     });
@@ -663,8 +699,10 @@ function saveInfoEdits() {
 function runOpenClip() {
   if (!currentInfoFilename) return;
   fetch(`/api/reembed_image?filename=${encodeURIComponent(currentInfoFilename)}`)
-    .then(resp => resp.json())
-    .then(data => {
+    .then(function(resp) {
+      return resp.json();
+    })
+    .then(function(data) {
       if (data.status === "success") {
         currentTags = data.tags || [];
         renderTags();
@@ -673,7 +711,7 @@ function runOpenClip() {
         document.getElementById('infoStatus').textContent = "Error re-running tagging: " + data.message;
       }
     })
-    .catch(err => {
+    .catch(function(err) {
       console.error("Error re-running tagging:", err);
       document.getElementById('infoStatus').textContent = "Failed to re-run tagging. Check console.";
     });
@@ -835,8 +873,10 @@ function saveCropData() {
       device: deviceAddress
     })
   })
-  .then(response => response.json())
-  .then(data => {
+  .then(function(response) {
+    return response.json();
+  })
+  .then(function(data) {
     if (data.status === 'success') {
       document.getElementById('infoStatus').textContent = 'Crop data saved successfully!';
       closeCropModal();
@@ -844,7 +884,7 @@ function saveCropData() {
       document.getElementById('infoStatus').textContent = 'Error saving crop data: ' + data.message;
     }
   })
-  .catch(error => {
+  .catch(function(error) {
     console.error('Error saving crop data:', error);
     document.getElementById('infoStatus').textContent = 'Error saving crop data. Check console.';
   });
@@ -852,15 +892,8 @@ function saveCropData() {
 
 const prevButton = document.getElementById('prevDevice');
 const nextButton = document.getElementById('nextDevice');
-// Define devices array using template data
-const devices = [];
-{% for device in devices %}
-  devices.push({
-    friendly_name: "{{ device.friendly_name|e }}",
-    address: "{{ device.address|e }}",
-    last_sent: "{{ device.last_sent|e if device.last_sent is defined else '' }}"
-  });
-{% endfor %}
+// Define devices array using JSON data from template
+const devices = JSON.parse('{{ devices|tojson|safe }}');
 let currentDeviceIndex = 0;
 
 function updateCurrentImageDisplay() {

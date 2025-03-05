@@ -1,4 +1,4 @@
-from flask import Blueprint, request, redirect, url_for, render_template, flash, send_from_directory, send_file, jsonify, current_app
+from flask import Blueprint, request, redirect, url_for, render_template, flash, send_from_directory, send_file, jsonify, current_app, abort
 from models import db, ImageDB, CropInfo, SendLog, Device
 import os
 from PIL import Image
@@ -289,6 +289,44 @@ def send_image(filename):
     except Exception as e:
         current_app.logger.error("Error resizing/cropping image: %s", e)
         return f"Error processing image: {e}", 500
+
+@image_bp.route('/api/get_images', methods=['GET'])
+def get_images():
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        
+        if page < 1 or per_page < 1 or per_page > 100:
+            return jsonify({"status": "error", "message": "Invalid pagination parameters"}), 400
+        
+        # Calculate offset for pagination
+        offset = (page - 1) * per_page
+        
+        # Get images with pagination
+        images_query = ImageDB.query.order_by(ImageDB.id.desc())
+        total_images = images_query.count()
+        images_page = images_query.offset(offset).limit(per_page).all()
+        
+        # Format the response
+        images_data = []
+        for img in images_page:
+            image_data = {
+                "filename": img.filename,
+                "favorite": img.favorite if hasattr(img, 'favorite') else False,
+                "tags": img.tags.split(',') if hasattr(img, 'tags') and img.tags else []
+            }
+            images_data.append(image_data)
+        
+        return jsonify({
+            "status": "success",
+            "total": total_images,
+            "page": page,
+            "per_page": per_page,
+            "images": images_data
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f"Error getting images: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @image_bp.route('/delete_image/<filename>', methods=['POST'])
 def delete_image_endpoint(filename):

@@ -1,9 +1,10 @@
-from flask import Flask
+from flask import Flask, send_from_directory, request
 import os
 from config import Config
 from models import db
 import pillow_heif
 from tasks import celery, start_scheduler
+from datetime import timedelta
 
 # Register HEIF opener for Pillow
 pillow_heif.register_heif_opener()
@@ -39,10 +40,15 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
 
-    # Configure Celery
+    # Configure Celery with optimized Redis settings
     celery.conf.update(
         broker_url='redis://localhost:6379/0',
-        result_backend='redis://localhost:6379/0'
+        result_backend='redis://localhost:6379/0',
+        broker_connection_retry_on_startup=True,
+        broker_pool_limit=10,
+        result_expires=3600,  # Results expire after 1 hour
+        worker_prefetch_multiplier=4,  # Prefetch more tasks
+        task_acks_late=True  # Only acknowledge tasks after they are completed
     )
 
     # Note: Scheduler is now started in a dedicated process (scheduler.py)
@@ -51,6 +57,24 @@ def create_app(config_class=Config):
     
     # We no longer run fetch_device_metrics immediately here
     # The dedicated scheduler process will handle this
+
+    # Add cache control for static files
+    @app.after_request
+    def add_cache_headers(response):
+        # Add cache headers for static files
+        if request.path.startswith('/static/'):
+            # Cache static files for 1 week
+            response.cache_control.max_age = 604800  # 1 week in seconds
+            response.cache_control.public = True
+        return response
+
+    # Serve static files with cache headers
+    @app.route('/static/<path:filename>')
+    def serve_static(filename):
+        response = send_from_directory(app.static_folder, filename)
+        response.cache_control.max_age = 604800  # 1 week in seconds
+        response.cache_control.public = True
+        return response
 
     return app
 
@@ -61,4 +85,4 @@ celery.conf.update(app=app)
 
 if __name__ == '__main__':
     # When running via 'python app.py' this block will execute.
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=False, threaded=True)
