@@ -3,13 +3,11 @@
  */
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize masonry layout
-  initMasonryLayout();
-  
-  // Initialize lazy loading
-  initLazyLoading();
-  
-  // Initialize tag filtering
-  initTagFiltering();
+  setTimeout(function() {
+    initMasonryLayout();
+    // Initialize tag filtering
+    initTagFiltering();
+  }, 100);
 });
 
 /**
@@ -21,6 +19,33 @@ function initMasonryLayout() {
   
   const items = gallery.querySelectorAll('.gallery-item');
   
+  // Check if this is a modal gallery (in schedule.html) or main gallery (in index.html)
+  const isModalGallery = gallery.id === 'galleryModal';
+  
+  // For modal galleries, we don't need the masonry layout
+  if (isModalGallery) {
+    // Just make sure all images are visible
+    items.forEach(item => {
+      const img = item.querySelector('img');
+      if (img && img.getAttribute('data-src')) {
+        img.src = img.getAttribute('data-src');
+      }
+      
+      // Make sure overlay is visible on hover
+      const overlay = item.querySelector('.overlay');
+      if (overlay) {
+        item.addEventListener('mouseenter', () => {
+          overlay.style.opacity = '1';
+        });
+        item.addEventListener('mouseleave', () => {
+          overlay.style.opacity = '0';
+        });
+      }
+    });
+    return;
+  }
+  
+  // For the main gallery, use the masonry layout
   // Add resize observer to recalculate layout when images load
   const resizeObserver = new ResizeObserver(entries => {
     for (let entry of entries) {
@@ -36,76 +61,28 @@ function initMasonryLayout() {
   
   // Observe each gallery item
   items.forEach(item => {
-    // Add placeholder while image loads
-    const placeholder = document.createElement('div');
-    placeholder.className = 'img-placeholder';
-    item.appendChild(placeholder);
+    // Make sure all images are visible
+    const img = item.querySelector('img');
+    if (img && img.getAttribute('data-src')) {
+      img.src = img.getAttribute('data-src');
+    }
     
     // Start observing for size changes
     resizeObserver.observe(item);
+    
+    // Make sure overlay is visible on hover
+    const overlay = item.querySelector('.overlay');
+    if (overlay) {
+      item.addEventListener('mouseenter', () => {
+        overlay.style.opacity = '1';
+      });
+      item.addEventListener('mouseleave', () => {
+        overlay.style.opacity = '0';
+      });
+    }
   });
 }
 
-/**
- * Initialize lazy loading for gallery images
- */
-function initLazyLoading() {
-  const images = document.querySelectorAll('.gallery .img-container img');
-  
-  if ('IntersectionObserver' in window) {
-    const imageObserver = new IntersectionObserver((entries, observer) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const img = entry.target;
-          const src = img.getAttribute('data-src') || img.getAttribute('src');
-          
-          // Create a new image to preload
-          const newImg = new Image();
-          newImg.src = src;
-          
-          newImg.onload = function() {
-            // When image is loaded, update the visible image
-            img.src = src;
-            img.classList.add('loaded');
-            
-            // Remove placeholder
-            const placeholder = img.closest('.gallery-item').querySelector('.img-placeholder');
-            if (placeholder) {
-              placeholder.style.opacity = 0;
-              setTimeout(() => {
-                if (placeholder.parentNode) {
-                  placeholder.parentNode.removeChild(placeholder);
-                }
-              }, 300);
-            }
-            
-            // Stop observing the image
-            imageObserver.unobserve(img);
-          };
-        }
-      });
-    }, {
-      rootMargin: '50px 0px',
-      threshold: 0.01
-    });
-    
-    // Start observing each image
-    images.forEach(img => {
-      imageObserver.observe(img);
-      
-      // Set initial state
-      if (!img.getAttribute('data-src')) {
-        img.setAttribute('data-src', img.getAttribute('src'));
-      }
-      img.removeAttribute('src');
-    });
-  } else {
-    // Fallback for browsers that don't support IntersectionObserver
-    images.forEach(img => {
-      img.classList.add('loaded');
-    });
-  }
-}
 
 /**
  * Initialize tag filtering for gallery

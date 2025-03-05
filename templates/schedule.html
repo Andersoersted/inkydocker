@@ -33,7 +33,7 @@
     }
     
     /* Bootstrap 5 compatible gallery layout */
-    .gallery {
+    #galleryModal {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 10px;
@@ -41,7 +41,7 @@
       overflow-y: auto;
     }
     
-    .gallery-item {
+    #galleryModal .gallery-item {
       height: 150px !important;
       position: relative;
       border: 1px solid rgba(0,0,0,.125);
@@ -49,16 +49,11 @@
       overflow: hidden;
     }
     
-    .gallery-item img {
+    #galleryModal .gallery-item img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       cursor: pointer;
-      transition: transform 0.2s;
-    }
-    
-    .gallery-item img:hover {
-      transform: scale(1.05);
     }
     
     .img-container {
@@ -216,7 +211,7 @@
           {% for image in images %}
             <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
               <div class="img-container">
-                <img data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src || this.getAttribute('data-src'))">
+                <img src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)">
                 {% if image_tags.get(image) %}
                   <div class="image-tags">{{ image_tags.get(image) }}</div>
                 {% endif %}
@@ -283,14 +278,10 @@
         // Trigger search to show all images
         filterImages('');
       }
-      
-      // Initialize masonry layout and lazy loading after modal is shown
+      // Initialize masonry layout after modal is shown
       document.getElementById('imageGalleryModal').addEventListener('shown.bs.modal', function() {
         if (typeof initMasonryLayout === 'function') {
-          setTimeout(initMasonryLayout, 100);
-        }
-        if (typeof initLazyLoading === 'function') {
-          setTimeout(initLazyLoading, 100);
+          setTimeout(initMasonryLayout, 300);
         }
       }, { once: true });
     }

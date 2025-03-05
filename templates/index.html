@@ -316,13 +316,13 @@ function createGalleryItemHTML(image) {
   return `
     <div class="gallery-item" data-tags="${tags}">
       <div class="img-container">
-        <img data-src="${image.url}" alt="${image.filename}" data-filename="${image.filename}">
+        <img src="${image.url}" alt="${image.filename}" data-filename="${image.filename}">
         <div class="overlay">
           <div class="favorite-icon ${image.favorite ? 'favorited' : ''}" title="Favorite" data-image="${image.filename}">
             <i class="fa fa-heart"></i>
           </div>
-          <button class="btn btn-sm btn-primary send-button" data-image="${image.filename}">Send</button>
-          <button class="btn btn-sm btn-info info-button" data-image="${image.filename}">Info</button>
+          <button class="send-button" data-image="${image.filename}">Send</button>
+          <button class="info-button" data-image="${image.filename}">Info</button>
           <div class="delete-icon" title="Delete" data-image="${image.filename}">
             <i class="fa fa-trash"></i>
           </div>
@@ -378,12 +378,9 @@ function loadImages(page = 1, append = false) {
           gallery.insertAdjacentHTML('beforeend', itemHTML);
         });
         
-        // Initialize masonry layout and lazy loading after adding items
+        // Initialize masonry layout after adding items
         if (typeof initMasonryLayout === 'function') {
           setTimeout(initMasonryLayout, 100);
-        }
-        if (typeof initLazyLoading === 'function') {
-          setTimeout(initLazyLoading, 100);
         }
       } else {
         console.error("Error loading images:", data.message);
