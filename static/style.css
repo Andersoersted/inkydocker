@@ -234,12 +234,13 @@ body {
   /* Current image in the top section scaled down */
   .current-image-container img,
   .last-sent-img {
-    max-width: 300px;
+    max-width: 100%;
     max-height: 300px;
     width: auto;
     height: auto;
     margin: 0 auto;
     display: block;
+    object-fit: contain;
   }
   
   /* Overlay for gallery items */
@@ -310,15 +311,15 @@ body {
   /* Position buttons within overlay */
   .send-button {
     position: relative;
-    background: #28a745;
+    background-color: #28a745 !important; /* Use !important to override any other styles */
     color: #fff;
     border: none;
     padding: 6px 10px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background 0.3s ease;
+    transition: background-color 0.3s ease;
     z-index: 6;
-    margin-bottom: 8px;
+    margin-bottom: 15px; /* Increased from 8px to move it further down */
     width: 70px;
     text-align: center;
     font-size: 0.9em;
@@ -327,27 +328,34 @@ body {
     transform: translateX(-50%);
   }
   .send-button:hover {
-    background: #218838;
+    background-color: #218838 !important; /* Use !important to override any other styles */
+    /* No transform scale to prevent movement */
+    transform: translateX(-50%);
   }
   
   .info-button {
     position: relative;
-    background: #17a2b8;
+    background-color: #007bff !important; /* Changed from #17a2b8 to blue, with !important */
     color: #fff;
     border: none;
     padding: 6px 10px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background 0.3s ease;
+    transition: background-color 0.3s ease;
     z-index: 6;
     width: 70px;
     text-align: center;
     font-size: 0.9em;
-    /* Position the info button below the send button */
-    margin-top: 5px;
+    /* Position the info button below the send button with more space */
+    margin-top: 10px; /* Increased from 5px for better spacing */
+    /* Center the info button like the send button */
+    left: 50%;
+    transform: translateX(-50%);
   }
   .info-button:hover {
-    background: #138496;
+    background-color: #0069d9 !important; /* Darker blue on hover, with !important */
+    /* No transform scale to prevent movement */
+    transform: translateX(-50%);
   }
   
   /* Lightbox Modal for Image Preview */
@@ -469,8 +477,6 @@ body {
   button,
   .primary-btn,
   .btn,
-  .info-button,
-  .send-button,
   .advanced-button,
   .edit-button,
   .field-save-btn {
@@ -484,17 +490,38 @@ body {
     transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   }
+  
+  /* Gallery buttons have their own specific styling */
+  .info-button,
+  .send-button {
+    /* These buttons have their own background colors defined in their specific rules */
+    background: none;
+    padding: 6px 10px;
+    font-size: 0.9em;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
   input[type="submit"]:hover,
   button:hover,
   .primary-btn:hover,
   .btn:hover,
-  .info-button:hover,
-  .send-button:hover,
   .advanced-button:hover,
   .edit-button:hover,
   .field-save-btn:hover {
     background: linear-gradient(to right, #218838, #1e7e34);
     transform: scale(1.05);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }
+  
+  /* Override hover styles for gallery buttons to prevent movement */
+  .info-button:hover {
+    background-color: #0069d9 !important; /* Explicitly set the hover color */
+    transform: translateX(-50%); /* Keep centered without scaling */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }
+  
+  .send-button:hover {
+    background-color: #218838 !important; /* Explicitly set the hover color */
+    transform: translateX(-50%); /* Keep centered without scaling */
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
   
