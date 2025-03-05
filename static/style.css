@@ -309,53 +309,57 @@ body {
     font-size: 20px;
   }
   /* Position buttons within overlay */
-  .send-button {
-    position: relative;
+  .overlay .send-button {
+    position: absolute !important; /* Changed from relative to absolute for better centering */
     background-color: #28a745 !important; /* Use !important to override any other styles */
-    color: #fff;
-    border: none;
-    padding: 6px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    z-index: 6;
-    margin-bottom: 15px; /* Increased from 8px to move it further down */
-    width: 70px;
-    text-align: center;
-    font-size: 0.9em;
+    color: #fff !important;
+    border: none !important;
+    padding: 6px 10px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: background-color 0.3s ease !important;
+    z-index: 6 !important;
+    margin-bottom: 0 !important; /* Reset margin */
+    width: 70px !important;
+    text-align: center !important;
+    font-size: 0.9em !important;
     /* Center the send button */
-    left: 50%;
-    transform: translateX(-50%);
+    left: 50% !important;
+    top: 40% !important; /* Position from the top instead of using margin */
+    transform: translateX(-50%) !important;
   }
-  .send-button:hover {
+  .overlay .send-button:hover {
     background-color: #218838 !important; /* Use !important to override any other styles */
     /* No transform scale to prevent movement */
-    transform: translateX(-50%);
+    transform: translateX(-50%) !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
   }
   
-  .info-button {
-    position: relative;
+  .overlay .info-button {
+    position: absolute !important; /* Changed from relative to absolute for better centering */
     background-color: #007bff !important; /* Changed from #17a2b8 to blue, with !important */
-    color: #fff;
-    border: none;
-    padding: 6px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-    z-index: 6;
-    width: 70px;
-    text-align: center;
-    font-size: 0.9em;
+    color: #fff !important;
+    border: none !important;
+    padding: 6px 10px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: background-color 0.3s ease !important;
+    z-index: 6 !important;
+    width: 70px !important;
+    text-align: center !important;
+    font-size: 0.9em !important;
     /* Position the info button below the send button with more space */
-    margin-top: 10px; /* Increased from 5px for better spacing */
+    margin-top: 0 !important; /* Reset margin */
     /* Center the info button like the send button */
-    left: 50%;
-    transform: translateX(-50%);
+    left: 50% !important;
+    top: 60% !important; /* Position from the top instead of using margin */
+    transform: translateX(-50%) !important;
   }
-  .info-button:hover {
+  .overlay .info-button:hover {
     background-color: #0069d9 !important; /* Darker blue on hover, with !important */
     /* No transform scale to prevent movement */
-    transform: translateX(-50%);
+    transform: translateX(-50%) !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
   }
   
   /* Lightbox Modal for Image Preview */
@@ -492,16 +496,17 @@ body {
   }
   
   /* Gallery buttons have their own specific styling */
-  .info-button,
-  .send-button {
+  .overlay .info-button,
+  .overlay .send-button {
     /* These buttons have their own background colors defined in their specific rules */
-    background: none;
-    padding: 6px 10px;
-    font-size: 0.9em;
-    transition: background 0.3s ease, box-shadow 0.3s ease;
+    background: none !important;
+    background-image: none !important;
+    padding: 6px 10px !important;
+    font-size: 0.9em !important;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
   }
   input[type="submit"]:hover,
-  button:hover,
+  button:hover:not(.overlay .send-button):not(.overlay .info-button),
   .primary-btn:hover,
   .btn:hover,
   .advanced-button:hover,
@@ -513,16 +518,16 @@ body {
   }
   
   /* Override hover styles for gallery buttons to prevent movement */
-  .info-button:hover {
+  .overlay .info-button:hover {
     background-color: #0069d9 !important; /* Explicitly set the hover color */
-    transform: translateX(-50%); /* Keep centered without scaling */
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    transform: translateX(-50%) !important; /* Keep centered without scaling */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
   }
   
-  .send-button:hover {
+  .overlay .send-button:hover {
     background-color: #218838 !important; /* Explicitly set the hover color */
-    transform: translateX(-50%); /* Keep centered without scaling */
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    transform: translateX(-50%) !important; /* Keep centered without scaling */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
   }
   
   /* Form Elements */
