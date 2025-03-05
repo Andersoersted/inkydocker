@@ -85,12 +85,11 @@
     }
     
     .recurring-event:before {
-      content: "\F1B6"; /* Bootstrap Icons repeat symbol */
-      font-family: "bootstrap-icons";
+      content: "↻"; /* Simple repeat symbol instead of Bootstrap icon */
       position: absolute;
       top: 2px;
       left: 2px;
-      font-weight: normal;
+      font-weight: bold;
       color: white;
       background-color: rgba(0, 0, 0, 0.5);
       border-radius: 50%;
@@ -373,12 +372,14 @@
         events: '/schedule/events',
         customButtons: {
           refresh: {
-            text: '<i class="bi bi-arrow-clockwise"></i>',
+            text: '↻', // Simple text instead of HTML
             click: function() {
               calendar.refetchEvents();
             }
           }
         },
+        // Disable scrolling in the calendar itself to avoid double scrollbars
+        height: 'auto',
         // Enhanced Bootstrap 5 styling for events
         eventClassNames: function(arg) {
           return ['shadow-sm', 'rounded', 'border-0']; // Add Bootstrap 5 classes
@@ -470,7 +471,7 @@
           
           // Add Bootstrap 5 styled delete button
           var deleteEl = document.createElement('button');
-          deleteEl.innerHTML = '<i class="bi bi-x"></i>';
+          deleteEl.innerHTML = '×'; // Simple × character instead of Bootstrap icon
           deleteEl.className = 'btn btn-sm btn-danger rounded-circle position-absolute d-flex align-items-center justify-content-center';
           deleteEl.style.top = '2px';
           deleteEl.style.right = '2px';

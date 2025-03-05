@@ -725,8 +725,9 @@ function openCropModal() {
   
   const cropImage = document.getElementById('cropImage');
   
-  // Set the image source to the current image
-  cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+  // Set the image source to the current image with a cache-busting parameter
+  // to ensure we get the full-sized image, not the cached smaller version
+  cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}?nocache=${new Date().getTime()}`;
   
   // Show the modal using Bootstrap 5
   const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
