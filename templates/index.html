@@ -208,6 +208,11 @@
 </div>
 {% endblock %}
 
+{% block head %}
+{{ super() }}
+<script src="{{ url_for('static', filename='gallery.js') }}" defer></script>
+{% endblock %}
+
 {% block scripts %}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -305,10 +310,13 @@ let allImages = [];
 
 // Function to create gallery item HTML
 function createGalleryItemHTML(image) {
+  // Extract tags for filtering
+  const tags = image.tags ? image.tags.join(', ') : '';
+  
   return `
-    <div class="gallery-item">
+    <div class="gallery-item" data-tags="${tags}">
       <div class="img-container">
-        <img src="${image.url}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy">
+        <img data-src="${image.url}" alt="${image.filename}" data-filename="${image.filename}">
         <div class="overlay">
           <div class="favorite-icon ${image.favorite ? 'favorited' : ''}" title="Favorite" data-image="${image.filename}">
             <i class="fa fa-heart"></i>
@@ -362,12 +370,21 @@ function loadImages(page = 1, append = false) {
           const imageData = {
             filename: isSearchMode ? image : image.filename,
             url: `/images/${encodeURIComponent(isSearchMode ? image : image.filename)}`,
-            favorite: isSearchMode ? false : image.favorite
+            favorite: isSearchMode ? false : image.favorite,
+            tags: isSearchMode ? [] : (image.tags || [])
           };
           
           const itemHTML = createGalleryItemHTML(imageData);
           gallery.insertAdjacentHTML('beforeend', itemHTML);
         });
+        
+        // Initialize masonry layout and lazy loading after adding items
+        if (typeof initMasonryLayout === 'function') {
+          setTimeout(initMasonryLayout, 100);
+        }
+        if (typeof initLazyLoading === 'function') {
+          setTimeout(initLazyLoading, 100);
+        }
       } else {
         console.error("Error loading images:", data.message);
       }

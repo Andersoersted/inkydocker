@@ -12,7 +12,7 @@
   <!-- CLIP Model Settings Button -->
   <div class="card mb-4 shadow-sm">
     <div class="card-body text-center">
-      <button id="clipSettingsBtn" class="btn btn-primary btn-lg">CLIP Model Settings</button>
+      <button id="clipSettingsBtn" class="primary-btn" style="width: 100%; padding: 12px;">CLIP Model Settings</button>
     </div>
   </div>
 
@@ -117,12 +117,12 @@
       <span class="close" id="closeAdvancedActionsModal">&times;</span>
       <h2>Advanced Actions</h2>
       <p id="advancedDeviceTitle" style="font-weight:bold;"></p>
-      <div style="margin-top: 10px;">
+      <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
         <button type="button" class="primary-btn" onclick="triggerSystemUpdate()">System Update & Reboot</button>
         <button type="button" class="primary-btn" onclick="triggerBackup()">Create Backup</button>
         <button type="button" class="primary-btn" onclick="triggerAppUpdate()">Update Application</button>
       </div>
-      <div style="margin-top: 10px;">
+      <div style="margin-top: 15px; text-align: center;">
         <button type="button" class="primary-btn" onclick="closeAdvancedActionsModal()">Close</button>
       </div>
     </div>
@@ -150,7 +150,7 @@
         <tr data-index="{{ loop.index0 }}" data-address="{{ device.address }}">
           <td>{{ loop.index }}</td>
           <td>
-            <div style="width:20px; height:20px; border-radius:50%; background:{{ device.color }};"></div>
+            <div style="width:20px; height:20px; border-radius:50%; background-color:{{ device.color }};"></div>
           </td>
           <td>{{ device.friendly_name }}</td>
           <td>{{ device.orientation }}</td>
@@ -214,31 +214,6 @@
   .close:hover,
   .close:focus {
     color: #000;
-  }
-  .primary-btn {
-    background: linear-gradient(to right, #28a745, #218838);
-    border: none;
-    color: #fff;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 1em;
-  }
-  .primary-btn:hover {
-    background: linear-gradient(to right, #218838, #1e7e34);
-  }
-  .field-save-btn {
-    margin-top: 5px;
-    font-size: 0.9em;
-    padding: 5px 10px;
-    background-color: #007bff;
-    color: #fff;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  .field-save-btn:hover {
-    background-color: #0056b3;
   }
   .overlay-popup {
     position: fixed;
@@ -406,48 +381,23 @@
     showConfirmOverlay(
       "This will trigger a system update and reboot the device. Continue?",
       function() {
-        var progressOverlay = document.createElement('div');
-        progressOverlay.className = 'overlay-popup';
-        progressOverlay.innerHTML = `
-          <div class="overlay-content">
-            <p>Triggering system update...</p>
-            <div class="progress-container">
-              <div id="updateProgressBar" class="progress-bar" style="width: 0%">0%</div>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(progressOverlay);
+        // Show a brief message and close the modal immediately
+        showOverlayMessage("System update command sent. The device will update and reboot automatically.", 2000);
+        closeAdvancedActionsModal();
+        
+        // Send the update request in the background
         if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
           deviceAddress = "http://" + deviceAddress;
         }
+        
         fetch(deviceAddress + "/system_update", { method: 'POST' })
           .then(response => {
-            if (!response.ok) {
-              throw new Error("Network response was not ok");
-            }
-            return response.json();
+            // We don't need to wait for a response or show errors
+            console.log("System update request sent to device");
           })
-          .then(data => {
-            var progress = 0;
-            var interval = setInterval(function() {
-              progress += 5;
-              if (progress >= 100) {
-                progress = 100;
-                clearInterval(interval);
-                document.body.removeChild(progressOverlay);
-                showOverlayMessage("System update triggered successfully. Device will reboot.");
-                closeAdvancedActionsModal();
-              }
-              var progressBar = document.getElementById('updateProgressBar');
-              if (progressBar) {
-                progressBar.style.width = progress + '%';
-                progressBar.textContent = progress + '%';
-              }
-            }, 500);
-          })
-          .catch(error => {
-            document.body.removeChild(progressOverlay);
-            showOverlayMessage("Error triggering system update: " + error.message);
+          .catch(function(error) {
+            console.error("Error sending system update request:", error);
+            // Don't show an error message to the user
           });
       }
     );
@@ -464,42 +414,26 @@
     showConfirmOverlay(
       "This will create a backup of the device. This may take several minutes. Continue?",
       function() {
-        var progressOverlay = document.createElement('div');
-        progressOverlay.className = 'overlay-popup';
-        progressOverlay.innerHTML = `
-          <div class="overlay-content">
-            <p>Creating backup...</p>
-            <div class="progress-container">
-              <div id="backupProgressBar" class="progress-bar" style="width: 0%">0%</div>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(progressOverlay);
+        // Show a brief message and close the modal immediately
+        showOverlayMessage("Backup command sent. The download will start automatically.", 2000);
+        closeAdvancedActionsModal();
+        
+        // Prepare the download URL
         if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
           deviceAddress = "http://" + deviceAddress;
         }
-        var progress = 0;
-        var interval = setInterval(function() {
-          progress += 2;
-          if (progress >= 100) {
-            progress = 100;
-            clearInterval(interval);
-            var a = document.createElement('a');
-            a.href = deviceAddress + "/backup";
-            a.download = "backup_" + new Date().toISOString().replace(/:/g, '-') + ".img.gz";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            document.body.removeChild(progressOverlay);
-            showOverlayMessage("Backup created successfully. Download started.");
-            closeAdvancedActionsModal();
-          }
-          var progressBar = document.getElementById('backupProgressBar');
-          if (progressBar) {
-            progressBar.style.width = progress + '%';
-            progressBar.textContent = progress + '%';
-          }
-        }, 500);
+        
+        // Create a download link
+        var a = document.createElement('a');
+        a.href = deviceAddress + "/backup";
+        a.download = "backup_" + new Date().toISOString().replace(/:/g, '-') + ".img.gz";
+        document.body.appendChild(a);
+        
+        // Trigger the download after a short delay
+        setTimeout(function() {
+          a.click();
+          document.body.removeChild(a);
+        }, 2000);
       }
     );
   }
@@ -515,48 +449,23 @@
     showConfirmOverlay(
       "This will update the application on the device and reboot it. Continue?",
       function() {
-        var progressOverlay = document.createElement('div');
-        progressOverlay.className = 'overlay-popup';
-        progressOverlay.innerHTML = `
-          <div class="overlay-content">
-            <p>Updating application...</p>
-            <div class="progress-container">
-              <div id="appUpdateProgressBar" class="progress-bar" style="width: 0%">0%</div>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(progressOverlay);
+        // Show a brief message and close the modal immediately
+        showOverlayMessage("Update command sent. The device will update and reboot automatically.", 2000);
+        closeAdvancedActionsModal();
+        
+        // Send the update request in the background
         if (!deviceAddress.startsWith("http://") && !deviceAddress.startsWith("https://")) {
           deviceAddress = "http://" + deviceAddress;
         }
+        
         fetch(deviceAddress + "/update", { method: 'POST' })
           .then(response => {
-            if (!response.ok) {
-              throw new Error("Network response was not ok");
-            }
-            return response.json();
-          })
-          .then(data => {
-            var progress = 0;
-            var interval = setInterval(function() {
-              progress += 10;
-              if (progress >= 100) {
-                progress = 100;
-                clearInterval(interval);
-                document.body.removeChild(progressOverlay);
-                showOverlayMessage("Application updated successfully. Device will reboot.");
-                closeAdvancedActionsModal();
-              }
-              var progressBar = document.getElementById('appUpdateProgressBar');
-              if (progressBar) {
-                progressBar.style.width = progress + '%';
-                progressBar.textContent = progress + '%';
-              }
-            }, 300);
+            // We don't need to wait for a response or show errors
+            console.log("Update request sent to device");
           })
           .catch(function(error) {
-            document.body.removeChild(progressOverlay);
-            showOverlayMessage("Error updating application: " + error.message);
+            console.error("Error sending update request:", error);
+            // Don't show an error message to the user
           });
       }
     );

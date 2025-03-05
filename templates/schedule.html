@@ -7,6 +7,8 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
   <!-- Load the global UMD build of FullCalendar -->
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js" defer></script>
+  <!-- Gallery enhancements -->
+  <script src="{{ url_for('static', filename='gallery.js') }}" defer></script>
   
   <style>
     /* Bootstrap 5 compatible FullCalendar styling */
@@ -214,7 +216,7 @@
           {% for image in images %}
             <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
               <div class="img-container">
-                <img src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)">
+                <img data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src || this.getAttribute('data-src'))">
                 {% if image_tags.get(image) %}
                   <div class="image-tags">{{ image_tags.get(image) }}</div>
                 {% endif %}
@@ -281,6 +283,16 @@
         // Trigger search to show all images
         filterImages('');
       }
+      
+      // Initialize masonry layout and lazy loading after modal is shown
+      document.getElementById('imageGalleryModal').addEventListener('shown.bs.modal', function() {
+        if (typeof initMasonryLayout === 'function') {
+          setTimeout(initMasonryLayout, 100);
+        }
+        if (typeof initLazyLoading === 'function') {
+          setTimeout(initLazyLoading, 100);
+        }
+      }, { once: true });
     }
     
     function closeImageGallery() {
@@ -546,9 +558,9 @@
             if (titleEl && titleEl.parentNode) {
               titleEl.parentNode.insertBefore(thumbnailEl, titleEl);
               
-              // Add device name to title
-              if (info.event.extendedProps.deviceName) {
-                titleEl.textContent = info.event.title + ' on ' + info.event.extendedProps.deviceName;
+              // Hide the title text completely
+              if (titleEl) {
+                titleEl.style.display = 'none';
               }
             }
           }
@@ -622,10 +634,10 @@
     function selectImage(filename, src) {
       document.getElementById('selectedImage').value = filename;
       document.getElementById('selectedImageName').textContent = filename;
-      // Also show the thumbnail
+      // Only show the thumbnail, not the filename
       var nameSpan = document.getElementById('selectedImageName');
       if (nameSpan) {
-        nameSpan.innerHTML = `<img src="${src}" style="height:40px;margin-right:5px;vertical-align:middle;"> ${filename}`;
+        nameSpan.innerHTML = `<img src="${src}" style="height:40px;vertical-align:middle;">`;
       }
       closeImageGallery();
     }
