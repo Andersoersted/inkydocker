@@ -13,7 +13,7 @@
     #calendar {
       max-width: 1000px;
       margin: 40px auto;
-      margin-bottom: 100px;
+      margin-bottom: 150px; /* Increased bottom margin to prevent footer overlap */
     }
     
     /* Style for the event content to show thumbnails */
@@ -23,6 +23,11 @@
       object-fit: cover;
       border-radius: 3px;
       margin-bottom: 2px;
+    }
+    
+    /* Override any fixed positioning for footer on this page */
+    .footer {
+      position: relative !important;
     }
     
     /* Bootstrap 5 compatible gallery layout */
@@ -73,18 +78,19 @@
       text-overflow: ellipsis;
     }
     
-    /* Styling for recurring events */
+    /* Bootstrap 5 styling for recurring events */
     .recurring-event {
       border-left: 4px dashed #fff !important;
       border-right: 4px dashed #fff !important;
     }
     
     .recurring-event:before {
-      content: "↻";
+      content: "\F1B6"; /* Bootstrap Icons repeat symbol */
+      font-family: "bootstrap-icons";
       position: absolute;
       top: 2px;
       left: 2px;
-      font-weight: bold;
+      font-weight: normal;
       color: white;
       background-color: rgba(0, 0, 0, 0.5);
       border-radius: 50%;
@@ -93,9 +99,10 @@
       line-height: 16px;
       text-align: center;
       z-index: 100;
+      font-size: 10px;
     }
     
-    /* Bootstrap 5 compatible custom modal styles */
+    /* Bootstrap 5 compatible custom modal styles - using Bootstrap 5 classes where possible */
     .custom-modal {
       display: none;
       position: fixed;
@@ -107,6 +114,17 @@
       overflow: auto;
       background-color: rgba(0,0,0,0.5);
       padding: 20px;
+    }
+    
+    /* Bootstrap 5 compatible animations */
+    .fc-event-dragging {
+      opacity: 0.8;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    }
+    
+    /* Smooth transitions for events */
+    .fc-event {
+      transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s !important;
     }
   </style>
 {% endblock %}
@@ -355,15 +373,21 @@
         events: '/schedule/events',
         customButtons: {
           refresh: {
-            text: '↻',
+            text: '<i class="bi bi-arrow-clockwise"></i>',
             click: function() {
               calendar.refetchEvents();
             }
           }
         },
-        // Add Bootstrap 5 styling to events
+        // Enhanced Bootstrap 5 styling for events
         eventClassNames: function(arg) {
-          return ['shadow-sm']; // Add subtle shadow to events
+          return ['shadow-sm', 'rounded', 'border-0']; // Add Bootstrap 5 classes
+        },
+        // Bootstrap 5 styling for day headers
+        dayHeaderClassNames: 'fw-bold',
+        // Bootstrap 5 styling for today
+        dayCellClassNames: function(arg) {
+          return arg.isToday ? 'bg-light' : '';
         },
         /*
         UI MODERNIZATION SUGGESTIONS FOR EVENT INTERACTIONS:
@@ -444,17 +468,15 @@
             info.el.classList.add('recurring-event');
           }
           
-          // Add Bootstrap styled delete button
+          // Add Bootstrap 5 styled delete button
           var deleteEl = document.createElement('button');
-          deleteEl.innerHTML = '&times;';
-          deleteEl.className = 'btn btn-sm btn-danger rounded-circle position-absolute';
+          deleteEl.innerHTML = '<i class="bi bi-x"></i>';
+          deleteEl.className = 'btn btn-sm btn-danger rounded-circle position-absolute d-flex align-items-center justify-content-center';
           deleteEl.style.top = '2px';
           deleteEl.style.right = '2px';
           deleteEl.style.width = '20px';
           deleteEl.style.height = '20px';
           deleteEl.style.padding = '0';
-          deleteEl.style.lineHeight = '1';
-          deleteEl.style.fontSize = '14px';
           deleteEl.style.zIndex = '100';
           info.el.appendChild(deleteEl);
           

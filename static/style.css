@@ -401,9 +401,8 @@
     padding: 15px;
     background: #2c3e50;
     color: #bdc3c7;
-    position: fixed;
-    bottom: 0;
     width: 100%;
+    /* Position is controlled by the page-specific styles */
   }
   
   /* Accessibility Enhancements */
