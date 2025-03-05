@@ -56,8 +56,10 @@
   </div>
 
   <!-- Add New Display Button -->
-  <div class="card text-center">
-    <button id="addNewDisplayBtn" class="primary-btn">Add New Display</button>
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body text-center">
+      <button id="addNewDisplayBtn" class="primary-btn" style="width: 100%; padding: 12px;">Add New Display</button>
+    </div>
   </div>
 
   <!-- Add New Display Modal -->
@@ -150,7 +152,7 @@
         <tr data-index="{{ loop.index0 }}" data-address="{{ device.address }}">
           <td>{{ loop.index }}</td>
           <td>
-            <div style="width:20px; height:20px; border-radius:50%; background-color:{{ device.color }};"></div>
+            <div class="color-indicator" {% if device.color %}style="background-color:{{ device.color }};"{% endif %}></div>
           </td>
           <td>{{ device.friendly_name }}</td>
           <td>{{ device.orientation }}</td>
@@ -183,7 +185,7 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block head %}
 <style>
   .modal {
     display: none;
@@ -266,8 +268,16 @@
     color: white;
     transition: width 0.3s ease;
   }
+  .color-indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: #CCCCCC; /* Default color */
+  }
 </style>
+{% endblock %}
 
+{% block scripts %}
 <script>
   // Global modal closing functions
   window.closeAddDisplayModal = function() {
@@ -481,11 +491,30 @@
     var addDisplayForm = document.getElementById('addDisplayForm');
     addDisplayForm.addEventListener('submit', function(e) {
       e.preventDefault();
-      fetchDisplayInfo('new').then(function() {
-        addDisplayForm.submit();
-      }).catch(function() {
-        addDisplayForm.submit();
-      });
+      
+      // Check if color field is populated
+      var colorField = document.getElementById('newColor');
+      if (!colorField.value) {
+        // If color is not set, set a default color
+        var availableColors = ['#FF5733', '#33FF57', '#3357FF', '#F39C12', '#8E44AD', '#2ECC71', '#E74C3C'];
+        var randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+        colorField.value = randomColor;
+      }
+      
+      // Check if display name and resolution are populated
+      var displayNameField = document.getElementById('newDisplayName');
+      var resolutionField = document.getElementById('newResolution');
+      
+      if (!displayNameField.value) {
+        displayNameField.value = "DefaultDisplay";
+      }
+      
+      if (!resolutionField.value) {
+        resolutionField.value = "800x600";
+      }
+      
+      // Now submit the form
+      addDisplayForm.submit();
     });
     document.getElementById('closeAddDisplayModal').addEventListener('click', function() {
       closeAddDisplayModal();
@@ -579,7 +608,13 @@
           reject("No address provided");
           return;
         }
-        fetch("/device_info?address=" + encodeURIComponent(address), { timeout: 5000 })
+        // Create an AbortController for timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        fetch("/device_info?address=" + encodeURIComponent(address), {
+          signal: controller.signal
+        })
           .then(function(response) {
             if (!response.ok) {
               throw new Error("HTTP error " + response.status);
@@ -596,7 +631,7 @@
               resolve();
             } else {
               alert("Error fetching display info: " + data.message + "; using default values.");
-              document.getElementById('newDisplayName').value = "DefaultDisplay color";
+              document.getElementById('newDisplayName').value = "DefaultDisplay";
               document.getElementById('newResolution').value = "800x600";
               document.getElementById('newColor').value = "#FF5733";
               resolve();
@@ -604,11 +639,21 @@
           })
           .catch(function(error) {
             console.error("Error fetching display info:", error);
-            alert("Error fetching display info; using default values.");
-            document.getElementById('newDisplayName').value = "DefaultDisplay color";
+            let errorMessage = "Error fetching display info";
+            
+            if (error.name === 'AbortError') {
+              errorMessage += ": Request timed out";
+            }
+            
+            alert(errorMessage + "; using default values.");
+            document.getElementById('newDisplayName').value = "DefaultDisplay";
             document.getElementById('newResolution').value = "800x600";
             document.getElementById('newColor').value = "#FF5733";
             resolve();
+          })
+          .finally(() => {
+            // Clear the timeout to prevent memory leaks
+            clearTimeout(timeoutId);
           });
       } else if (mode === 'edit') {
         alert("Fetch Display Info for edit is not implemented yet.");
