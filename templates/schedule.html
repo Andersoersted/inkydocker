@@ -2,11 +2,21 @@
 {% block title %}Schedule - InkyDocker{% endblock %}
 {% block head %}
   <!-- FullCalendar CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.css" rel="stylesheet">
+  
   <!-- Bootstrap Icons for FullCalendar Bootstrap 5 theme -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
-  <!-- Load the global UMD build of FullCalendar -->
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js" defer></script>
+  
+  <!-- Load FullCalendar and Bootstrap 5 plugin -->
+  <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.js'></script>
+  
+  <!-- Add a simple script to check if JavaScript is running -->
+  <script>
+    console.log("JavaScript is running!");
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log("DOM is loaded!");
+    });
+  </script>
   <!-- Gallery enhancements -->
   <script src="{{ url_for('static', filename='gallery.js') }}" defer></script>
   
@@ -35,8 +45,8 @@
     /* Bootstrap 5 compatible gallery layout */
     #galleryModal {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 5px;
       max-height: 500px;
       overflow-y: auto;
     }
@@ -349,10 +359,8 @@
     document.addEventListener('DOMContentLoaded', function() {
       var calendarEl = document.getElementById('calendar');
       if (!calendarEl) return;
-      if (typeof FullCalendar === 'undefined') {
-        console.error("FullCalendar is not defined");
-        return;
-      }
+      
+      console.log("FullCalendar version:", FullCalendar.version);
       
       // Initialize the global calendar variable with Bootstrap 5 theming
       calendar = new FullCalendar.Calendar(calendarEl, {

@@ -45,20 +45,7 @@ function initMasonryLayout() {
     return;
   }
   
-  // For the main gallery, use the masonry layout
-  // Add resize observer to recalculate layout when images load
-  const resizeObserver = new ResizeObserver(entries => {
-    for (let entry of entries) {
-      const item = entry.target;
-      const height = item.getBoundingClientRect().height;
-      
-      // Calculate how many rows this item should span
-      // Each row is 10px (defined in CSS)
-      const rowSpan = Math.ceil(height / 10);
-      item.style.gridRowEnd = `span ${rowSpan}`;
-    }
-  });
-  
+  // For the main gallery, use a simpler layout
   // Observe each gallery item
   items.forEach(item => {
     // Make sure all images are visible
@@ -66,9 +53,6 @@ function initMasonryLayout() {
     if (img && img.getAttribute('data-src')) {
       img.src = img.getAttribute('data-src');
     }
-    
-    // Start observing for size changes
-    resizeObserver.observe(item);
     
     // Make sure overlay is visible on hover
     const overlay = item.querySelector('.overlay');
@@ -90,6 +74,9 @@ function initMasonryLayout() {
 function initTagFiltering() {
   const gallery = document.querySelector('.gallery');
   if (!gallery) return;
+  
+  // Skip tag filtering for modal galleries
+  if (gallery.id === 'galleryModal') return;
   
   const items = gallery.querySelectorAll('.gallery-item');
   

@@ -1,14 +1,14 @@
 /* Global Styles */
 * {
-    box-sizing: border-box;
-  }
-  body {
-    margin: 0;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    background: #f0f2f5;
-    color: #333;
-    line-height: 1.6;
-  }
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  background: #f0f2f5;
+  color: #333;
+  line-height: 1.6;
+}
   /* Standardized Grid System */
   .container {
     max-width: 1200px;
@@ -155,23 +155,25 @@
   /* Enhanced Masonry Gallery Layout */
   .gallery {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    grid-auto-rows: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 15px;
+    margin-bottom: 20px;
   }
   .gallery-item {
     position: relative;
     overflow: hidden;
     border-radius: 8px;
     transition: box-shadow 0.3s ease;
-    grid-row-end: span 15; /* Default span, will be calculated by JS */
+    height: 150px; /* Fixed height for consistency */
   }
   .gallery-item:hover {
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
   .img-container {
     height: 100%;
+    width: 100%;
     overflow: hidden;
+    position: relative;
   }
   .img-container img {
     width: 100%;
@@ -206,6 +208,25 @@
     border-color: #28a745;
   }
   
+  /* Tag box styling for info modal */
+  .tag-box {
+    display: inline-block;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin: 2px;
+    font-size: 0.8em;
+  }
+  .tag-remove {
+    margin-left: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #dc3545;
+  }
+  .tag-remove:hover {
+    color: #bd2130;
+  }
+  
   /* Current image in the top section scaled down */
   .current-image-container img,
   .last-sent-img {
@@ -229,6 +250,10 @@
     transition: opacity 0.3s ease;
     border-radius: 8px;
     z-index: 5;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
   }
   .img-container:hover .overlay {
     opacity: 1;
@@ -280,10 +305,7 @@
   }
   /* Position buttons within overlay */
   .send-button {
-    position: absolute;
-    left: 50%;
-    top: 40%;
-    transform: translate(-50%, -50%);
+    position: relative;
     background: #28a745;
     color: #fff;
     border: none;
@@ -292,16 +314,16 @@
     cursor: pointer;
     transition: background 0.3s ease;
     z-index: 6;
+    margin-bottom: 10px;
+    width: 80px;
+    text-align: center;
   }
   .send-button:hover {
     background: #218838;
   }
   
   .info-button {
-    position: absolute;
-    left: 50%;
-    top: 60%;
-    transform: translate(-50%, -50%);
+    position: relative;
     background: #17a2b8;
     color: #fff;
     border: none;
@@ -310,6 +332,8 @@
     cursor: pointer;
     transition: background 0.3s ease;
     z-index: 6;
+    width: 80px;
+    text-align: center;
   }
   .info-button:hover {
     background: #138496;

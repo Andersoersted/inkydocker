@@ -123,7 +123,7 @@
 
 <!-- Bootstrap 5 Info Modal -->
 <div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="infoModalLabel">Image Info</h5>
@@ -147,8 +147,8 @@
           <div class="col-md-6">
             <div class="mb-3">
               <label class="form-label"><strong>Tags:</strong></label>
-              <div id="tagContainer" class="mb-2"></div>
-              <div class="input-group">
+              <div id="tagContainer" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
+              <div class="input-group mt-2">
                 <input type="text" class="form-control" id="newTagInput" placeholder="Add a new tag...">
                 <button class="btn btn-outline-secondary" type="button" onclick="addTag()">Add</button>
               </div>
@@ -216,26 +216,9 @@
 {% block scripts %}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-  // Inject dynamic CSS for info button, favorite icon, and tag boxes
+  // Inject dynamic CSS for favorite icon
   const styleTag = document.createElement('style');
   styleTag.innerHTML = `
-    .info-button {
-      position: absolute;
-      left: 50%;
-      bottom: 10px;
-      transform: translateX(-50%);
-      background: #17a2b8;
-      color: #fff;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: background 0.3s ease;
-      font-size: 0.9em;
-    }
-    .info-button:hover {
-      background: #138496;
-    }
     .favorite-icon i {
       font-size: 1.5em;
       color: #ccc;
@@ -243,23 +226,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     .favorite-icon.favorited i {
       color: red;
-    }
-    .tag-box {
-      display: inline-block;
-      background-color: #e9ecef;
-      border-radius: 4px;
-      padding: 5px 10px;
-      margin: 3px;
-      font-size: 0.9em;
-    }
-    .tag-remove {
-      margin-left: 5px;
-      cursor: pointer;
-      font-weight: bold;
-      color: #dc3545;
-    }
-    .tag-remove:hover {
-      color: #bd2130;
     }
   `;
   document.head.appendChild(styleTag);
