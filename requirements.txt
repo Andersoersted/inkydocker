@@ -17,3 +17,4 @@ scikit-learn
 gunicorn
 gevent
 psutil>=5.9.0  # For memory monitoring
+pytz>=2024.1  # For timezone handling

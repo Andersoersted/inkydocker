@@ -38,7 +38,7 @@ scheduler = BackgroundScheduler(
         'misfire_grace_time': 3600  # Allow misfires up to 1 hour
     },
     executor='threadpool',  # Use threadpool executor for better performance
-    timezone='UTC'  # Use UTC for consistent timezone handling
+    timezone='Europe/Copenhagen'  # Use the same timezone as the Docker container
 )
 
 def create_app():
@@ -76,17 +76,24 @@ def start_scheduler(app):
             for event in events:
                 try:
                     import datetime
-                    from datetime import timezone
+                    import pytz
+                    
+                    # Get the Copenhagen timezone
+                    copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+                    
+                    # Parse the datetime string
                     dt = datetime.datetime.fromisoformat(event.datetime_str)
                     
                     # Ensure both datetimes are timezone-aware for comparison
-                    # If dt has a timezone, use it as is
-                    # If dt doesn't have a timezone, assume it's in UTC
+                    # If dt has a timezone, convert it to Copenhagen timezone
+                    # If dt doesn't have a timezone, assume it's in Copenhagen timezone
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                        dt = copenhagen_tz.localize(dt)
+                    else:
+                        dt = dt.astimezone(copenhagen_tz)
                     
-                    # Get current time in UTC for comparison
-                    now = datetime.datetime.now(timezone.utc)
+                    # Get current time in Copenhagen timezone for comparison
+                    now = datetime.datetime.now(copenhagen_tz)
                     
                     if dt > now:
                         scheduler.add_job(

@@ -580,10 +580,22 @@ def send_scheduled_image(event_id):
     # Reschedule recurring events
     if event.recurrence and event.recurrence.lower() != "none":
         try:
+            import pytz
+            copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+            
+            # Parse the datetime string
             dt = datetime.datetime.fromisoformat(event.datetime_str)
+            
+            # Ensure the datetime is in Copenhagen timezone
+            if dt.tzinfo is None:
+                dt = copenhagen_tz.localize(dt)
+            else:
+                dt = dt.astimezone(copenhagen_tz)
+                
         except Exception as e:
             current_app.logger.error("Error parsing datetime_str: %s", e)
             return
+            
         if event.recurrence.lower() == "daily":
             next_dt = dt + datetime.timedelta(days=1)
         elif event.recurrence.lower() == "weekly":
@@ -592,9 +604,10 @@ def send_scheduled_image(event_id):
             next_dt = dt + datetime.timedelta(days=30)
         else:
             next_dt = None
+            
         if next_dt:
             # Update the event in the database with the new date
-            event.datetime_str = next_dt.isoformat(sep=' ')
+            event.datetime_str = next_dt.isoformat()
             event.sent = False
             db.session.commit()
             

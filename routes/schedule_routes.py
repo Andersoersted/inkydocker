@@ -46,9 +46,10 @@ def get_events():
     events = ScheduleEvent.query.all()
     event_list = []
     
-    # FIXED: Use timezone-aware datetime objects to avoid "can't compare offset-naive and offset-aware datetimes" error
-    # Create now and horizon as UTC timezone-aware datetimes
-    now = datetime.datetime.now(datetime.timezone.utc)
+    # Use timezone-aware datetime objects with Copenhagen timezone
+    import pytz
+    copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+    now = datetime.datetime.now(copenhagen_tz)
     horizon = now + datetime.timedelta(days=90)
     print(f"Loading {len(events)} events from database")
     
@@ -107,12 +108,19 @@ def get_events():
         else:
             # Generate recurring occurrences from the next occurrence up to the horizon
             try:
-                # Parse the datetime string and ensure it's timezone-aware
+                # Parse the datetime string and ensure it's timezone-aware with Copenhagen timezone
+                import pytz
+                copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+                
                 start_dt = datetime.datetime.fromisoformat(ev.datetime_str)
-                # FIXED: Ensure start_dt is timezone-aware for proper comparison with now
+                
+                # Ensure start_dt is timezone-aware for proper comparison with now
                 if start_dt.tzinfo is None:
-                    # If the datetime is naive, assume it's in UTC
-                    start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+                    # If the datetime is naive, assume it's in Copenhagen timezone
+                    start_dt = copenhagen_tz.localize(start_dt)
+                else:
+                    # If the datetime already has timezone info, convert it to Copenhagen timezone
+                    start_dt = start_dt.astimezone(copenhagen_tz)
             except Exception as e:
                 print(f"Error parsing datetime for event {ev.id}: {str(e)}")
                 continue
@@ -214,13 +222,16 @@ def add_event():
             elif has_timezone:
                 print(f"Datetime already has timezone info, not applying offset: {dt}")
         
-        # FIXED: Ensure the datetime is timezone-aware and in UTC
+        # Ensure the datetime is timezone-aware and in Europe/Copenhagen
+        import pytz
+        copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+        
         if dt.tzinfo is None:
-            # If the datetime is naive (no timezone info), explicitly set it to UTC
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
+            # If the datetime is naive (no timezone info), explicitly set it to Copenhagen timezone
+            dt = copenhagen_tz.localize(dt)
         else:
-            # If the datetime already has timezone info, convert it to UTC
-            dt = dt.astimezone(datetime.timezone.utc)
+            # If the datetime already has timezone info, convert it to Copenhagen timezone
+            dt = dt.astimezone(copenhagen_tz)
             
         # FIXED: Convert to proper UTC ISO8601 string for FullCalendar
         # This ensures FullCalendar can automatically convert it to the client's local time
@@ -326,11 +337,16 @@ def update_event():
                 elif has_timezone:
                     print(f"Datetime already has timezone info, not applying offset: {dt}")
             
-            # Ensure the datetime is timezone-aware and in UTC
+            # Ensure the datetime is timezone-aware and in Europe/Copenhagen
+            import pytz
+            copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+            
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                # If the datetime is naive (no timezone info), explicitly set it to Copenhagen timezone
+                dt = copenhagen_tz.localize(dt)
             else:
-                dt = dt.astimezone(datetime.timezone.utc)
+                # If the datetime already has timezone info, convert it to Copenhagen timezone
+                dt = dt.astimezone(copenhagen_tz)
                 
             # Convert to proper UTC ISO8601 string for FullCalendar
             formatted_dt_str = dt.isoformat()
@@ -388,7 +404,18 @@ def skip_event_occurrence(event_id):
     if ev.recurrence.lower() == "none":
         return jsonify({"status": "error", "message": "Not a recurring event"}), 400
     try:
+        import pytz
+        copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+        
+        # Parse the datetime string
         dt = datetime.datetime.fromisoformat(ev.datetime_str)
+        
+        # Ensure the datetime is in Copenhagen timezone
+        if dt.tzinfo is None:
+            dt = copenhagen_tz.localize(dt)
+        else:
+            dt = dt.astimezone(copenhagen_tz)
+            
         if ev.recurrence.lower() == "daily":
             next_dt = dt + datetime.timedelta(days=1)
         elif ev.recurrence.lower() == "weekly":
@@ -399,7 +426,6 @@ def skip_event_occurrence(event_id):
             return jsonify({"status": "error", "message": "Unknown recurrence type"}), 400
         
         # Update the event in the database with the new date
-        # FIXED: Use standard ISO format for consistent datetime handling
         ev.datetime_str = next_dt.isoformat()
         ev.sent = False
         db.session.commit()
