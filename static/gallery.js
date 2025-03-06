@@ -7,8 +7,44 @@ document.addEventListener('DOMContentLoaded', function() {
     initMasonryLayout();
     // Initialize tag filtering
     initTagFiltering();
+    // Initialize lazy loading
+    initLazyLoading();
   }, 100);
 });
+
+/**
+ * Initialize lazy loading for images
+ */
+function initLazyLoading() {
+  // Check if IntersectionObserver is supported
+  if ('IntersectionObserver' in window) {
+    const lazyImageObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const lazyImage = entry.target;
+          if (lazyImage.dataset.src) {
+            lazyImage.src = lazyImage.dataset.src;
+            lazyImage.classList.remove('lazy');
+            lazyImageObserver.unobserve(lazyImage);
+          }
+        }
+      });
+    });
+
+    // Observe all images with the 'lazy' class
+    const lazyImages = document.querySelectorAll('img.lazy');
+    lazyImages.forEach(lazyImage => {
+      lazyImageObserver.observe(lazyImage);
+    });
+  } else {
+    // Fallback for browsers that don't support IntersectionObserver
+    document.querySelectorAll('img.lazy').forEach(img => {
+      if (img.dataset.src) {
+        img.src = img.dataset.src;
+      }
+    });
+  }
+}
 
 /**
  * Initialize masonry layout for gallery items
@@ -29,6 +65,7 @@ function initMasonryLayout() {
       const img = item.querySelector('img');
       if (img && img.getAttribute('data-src')) {
         img.src = img.getAttribute('data-src');
+        img.classList.remove('lazy');
       }
       
       // Make sure overlay is visible on hover
@@ -48,12 +85,6 @@ function initMasonryLayout() {
   // For the main gallery, use a simpler layout
   // Observe each gallery item
   items.forEach(item => {
-    // Make sure all images are visible
-    const img = item.querySelector('img');
-    if (img && img.getAttribute('data-src')) {
-      img.src = img.getAttribute('data-src');
-    }
-    
     // Make sure overlay is visible on hover
     const overlay = item.querySelector('.overlay');
     if (overlay) {

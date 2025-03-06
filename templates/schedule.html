@@ -221,7 +221,7 @@
           {% for image in images %}
             <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
               <div class="img-container">
-                <img src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'%3E%3C/svg%3E" data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)" class="lazy" loading="lazy">
                 {% if image_tags.get(image) %}
                   <div class="image-tags">{{ image_tags.get(image) }}</div>
                 {% endif %}
@@ -636,7 +636,14 @@
       // Only show the thumbnail, not the filename
       var nameSpan = document.getElementById('selectedImageName');
       if (nameSpan) {
-        nameSpan.innerHTML = `<img src="${src}" style="height:40px;vertical-align:middle;">`;
+        // If src is a data URI (placeholder), get the actual image URL from data-src
+        if (src.startsWith('data:')) {
+          const imgElement = document.querySelector(`img[data-filename="${filename}"]`);
+          if (imgElement && imgElement.dataset.src) {
+            src = imgElement.dataset.src;
+          }
+        }
+        nameSpan.innerHTML = `<img src="${src}" style="height:40px;vertical-align:middle;" loading="lazy">`;
       }
       closeImageGallery();
     }

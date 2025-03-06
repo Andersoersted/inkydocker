@@ -40,6 +40,61 @@
       .footer {
         flex-shrink: 0;
       }
+      
+      /* Lazy loading styles */
+      img.lazy {
+        transition: opacity 0.3s ease-in-out;
+        opacity: 0;
+      }
+      img.lazy:not([src^="data:"]) {
+        opacity: 1;
+      }
+      
+      /* Bootstrap 5 enhancements */
+      .card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border-radius: 0.5rem;
+      }
+      .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+      }
+      
+      /* Improved button styles */
+      .btn {
+        transition: all 0.2s;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      }
+      
+      /* Improved gallery item styles */
+      .gallery-item {
+        transition: all 0.3s ease;
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+      .gallery-item:hover {
+        transform: scale(1.03);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        z-index: 1;
+      }
+      
+      /* Skeleton loading placeholder */
+      .placeholder-img {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: loading-animation 1.5s infinite;
+      }
+      @keyframes loading-animation {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
     </style>
     {% block head %}{% endblock %}
   </head>
@@ -91,6 +146,45 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"
             crossorigin="anonymous"
             referrerpolicy="no-referrer"></script>
+    <!-- Global Lazy Loading -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Initialize lazy loading for all images with the lazy class
+        if ('IntersectionObserver' in window) {
+          const lazyImageObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+              if (entry.isIntersecting) {
+                const lazyImage = entry.target;
+                if (lazyImage.dataset.src) {
+                  lazyImage.src = lazyImage.dataset.src;
+                  lazyImage.classList.remove('lazy');
+                  lazyImageObserver.unobserve(lazyImage);
+                }
+              }
+            });
+          });
+
+          // Observe all images with the 'lazy' class
+          document.querySelectorAll('img.lazy').forEach(lazyImage => {
+            lazyImageObserver.observe(lazyImage);
+          });
+        } else {
+          // Fallback for browsers that don't support IntersectionObserver
+          document.querySelectorAll('img.lazy').forEach(img => {
+            if (img.dataset.src) {
+              img.src = img.dataset.src;
+              img.classList.remove('lazy');
+            }
+          });
+        }
+        
+        // Add Bootstrap 5 Toasts container
+        const toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        toastContainer.style.zIndex = '1100';
+        document.body.appendChild(toastContainer);
+      });
+    </script>
     {% block scripts %}{% endblock %}
   </body>
 </html>
