@@ -187,10 +187,18 @@
           </div>
           <div class="mb-3">
             <label class="form-label">Choose Image:</label>
-            <div class="d-flex align-items-center">
+            <div class="d-flex align-items-center mb-2">
               <button type="button" class="btn btn-outline-primary me-2" onclick="openImageGallery()">Select Image</button>
               <input type="hidden" id="selectedImage" name="selectedImage">
               <span id="selectedImageName" class="text-truncate"></span>
+            </div>
+            <div class="d-flex align-items-center">
+              <button type="button" class="btn btn-outline-secondary me-2" onclick="openBrowserlessGallery()">Select Screenshot</button>
+              <button type="button" class="btn btn-outline-info me-2" id="refreshScreenshotBtn" style="display: none;" onclick="refreshSelectedScreenshot()">
+                <i class="fas fa-sync-alt"></i> Refresh Screenshot
+              </button>
+              <input type="hidden" id="selectedScreenshot" name="selectedScreenshot">
+              <span id="selectedScreenshotName" class="text-truncate"></span>
             </div>
           </div>
         </form>
@@ -232,6 +240,51 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeImageGallery()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap 5 Modal for browserless screenshots gallery -->
+<div class="modal fade" id="browserlessGalleryModal" tabindex="-1" aria-labelledby="browserlessGalleryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select a Screenshot</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeBrowserlessGallery()"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Search bar for filtering screenshots -->
+        <div class="mb-3">
+          <input type="text" class="form-control" id="screenshotSearch" placeholder="Search by name...">
+        </div>
+        
+        <div class="gallery" id="browserlessGalleryContainer">
+          {% if screenshots %}
+            {% for screenshot in screenshots %}
+              <div class="gallery-item screenshot-item" data-name="{{ screenshot.name.lower() }}">
+                <div class="img-container">
+                  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E"
+                       data-src="/screenshots/{{ screenshot.filename }}?cropped=true"
+                       alt="{{ screenshot.name }}"
+                       data-filename="{{ screenshot.filename }}"
+                       data-id="{{ screenshot.id }}"
+                       onclick="selectScreenshot('{{ screenshot.filename }}', '{{ screenshot.name }}', '{{ screenshot.id }}', this.getAttribute('data-src'))"
+                       class="lazy"
+                       loading="lazy">
+                  <div class="image-tags">{{ screenshot.name }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="col-12 text-center py-5">
+              <p class="text-muted">No screenshots available. Add screenshots in the Browserless section.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeBrowserlessGallery()">Close</button>
       </div>
     </div>
   </div>
@@ -539,7 +592,19 @@
               
               // Set the selected image
               document.getElementById('selectedImage').value = eventData.filename;
-              document.getElementById('selectedImageName').textContent = eventData.filename;
+              
+              // Display the image thumbnail instead of just the filename
+              const nameSpan = document.getElementById('selectedImageName');
+              nameSpan.innerHTML = '';
+              
+              // Create a thumbnail image element
+              const img = document.createElement('img');
+              img.style.height = '40px';
+              img.style.verticalAlign = 'middle';
+              img.loading = 'lazy';
+              img.className = 'lazy';
+              img.src = eventData.extendedProps.thumbnail;
+              nameSpan.appendChild(img);
               
               // Set the editing event ID
               document.getElementById('editingEventId').value = eventData.id;
@@ -685,12 +750,181 @@
       });
     }
     
-    // Add event listener for search input
+    // Functions for browserless screenshots gallery
+    function openBrowserlessGallery() {
+      var browserlessModal = new bootstrap.Modal(document.getElementById('browserlessGalleryModal'));
+      browserlessModal.show();
+      
+      // Clear search field when opening
+      var searchField = document.getElementById('screenshotSearch');
+      if (searchField) {
+        searchField.value = '';
+        searchField.focus();
+        // Trigger search to show all screenshots
+        filterScreenshots('');
+      }
+    }
+    
+    function closeBrowserlessGallery() {
+      var browserlessModalEl = document.getElementById('browserlessGalleryModal');
+      var browserlessModal = bootstrap.Modal.getInstance(browserlessModalEl);
+      if (browserlessModal) {
+        browserlessModal.hide();
+      }
+    }
+    
+    function selectScreenshot(filename, name, id, src) {
+      // Store screenshot info for refresh functionality
+      currentScreenshotId = id;
+      currentScreenshotUrl = name; // Using name as URL is not directly available
+      currentScreenshotName = name;
+      
+      // Set the selected screenshot
+      document.getElementById('selectedImage').value = filename;
+      
+      // Show the thumbnail
+      var nameSpan = document.getElementById('selectedImageName');
+      if (nameSpan) {
+        // If src is a data URI (placeholder), get the actual image URL from data-src
+        if (src.startsWith('data:')) {
+          const imgElement = document.querySelector(`img[data-filename="${filename}"]`);
+          if (imgElement && imgElement.dataset.src) {
+            src = imgElement.dataset.src;
+          }
+        }
+        
+        // Create a new image with fade-in effect
+        const img = document.createElement('img');
+        img.style.height = '40px';
+        img.style.verticalAlign = 'middle';
+        img.loading = 'lazy';
+        img.className = 'lazy';
+        
+        // Set up the onload handler before setting src
+        img.onload = function() {
+          img.classList.add('loaded');
+          img.classList.add('fade-in');
+          this.onload = null;
+        };
+        
+        // Set the src to trigger loading
+        img.src = src;
+        
+        // Clear the span and append the new image
+        nameSpan.innerHTML = '';
+        nameSpan.appendChild(img);
+      }
+      
+      // Show the refresh button
+      document.getElementById('refreshScreenshotBtn').style.display = 'inline-block';
+      
+      closeBrowserlessGallery();
+    }
+    
+    function refreshSelectedScreenshot() {
+      if (!currentScreenshotId || !currentScreenshotName) {
+        showToast("No screenshot selected to refresh", true);
+        return;
+      }
+      
+      // Show loading indicator
+      const refreshBtn = document.getElementById('refreshScreenshotBtn');
+      const originalText = refreshBtn.innerHTML;
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
+      
+      // Create a status message container
+      let statusContainer = document.createElement('div');
+      statusContainer.className = 'alert alert-info mt-2';
+      statusContainer.innerHTML = 'Refreshing screenshot... This may take up to 2 minutes for slow sites.';
+      document.getElementById('selectedScreenshotName').parentNode.appendChild(statusContainer);
+      
+      // Make request to take a new screenshot
+      fetch('/api/browserless/screenshot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: currentScreenshotName,
+          url: currentScreenshotName // Using name as URL is not directly available
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'success') {
+          // Update the image with the new screenshot (with cache-busting)
+          const timestamp = new Date().getTime();
+          const imgElement = document.querySelector('#selectedImageName img');
+          if (imgElement) {
+            imgElement.src = `/screenshots/${encodeURIComponent(data.filename)}?t=${timestamp}&cropped=true`;
+          }
+          
+          // Update the selected image value
+          document.getElementById('selectedImage').value = data.filename;
+          
+          // Show success message
+          statusContainer.className = 'alert alert-success mt-2';
+          statusContainer.innerHTML = 'Screenshot refreshed successfully!';
+          
+          // Hide the status message after 5 seconds
+          setTimeout(() => {
+            if (statusContainer.parentNode) {
+              statusContainer.parentNode.removeChild(statusContainer);
+            }
+          }, 5000);
+        } else {
+          // Show error message
+          statusContainer.className = 'alert alert-danger mt-2';
+          statusContainer.innerHTML = `Error refreshing screenshot: ${data.message}`;
+        }
+        
+        // Re-enable the button
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = originalText;
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        
+        // Show error message
+        statusContainer.className = 'alert alert-danger mt-2';
+        statusContainer.innerHTML = 'Network error while refreshing the screenshot. Please try again later.';
+        
+        // Re-enable the button
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = originalText;
+      });
+    }
+    
+    // Function to filter screenshots based on search input
+    function filterScreenshots(searchText) {
+      searchText = searchText.toLowerCase();
+      var items = document.querySelectorAll('#browserlessGalleryContainer .screenshot-item');
+      
+      items.forEach(function(item) {
+        var name = item.getAttribute('data-name') || '';
+        
+        if (name.includes(searchText) || searchText === '') {
+          item.style.display = '';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+    
+    // Add event listeners for search inputs
     document.addEventListener('DOMContentLoaded', function() {
-      var searchInput = document.getElementById('imageSearch');
-      if (searchInput) {
-        searchInput.addEventListener('input', function() {
+      var imageSearch = document.getElementById('imageSearch');
+      if (imageSearch) {
+        imageSearch.addEventListener('input', function() {
           filterImages(this.value);
+        });
+      }
+      
+      var screenshotSearch = document.getElementById('screenshotSearch');
+      if (screenshotSearch) {
+        screenshotSearch.addEventListener('input', function() {
+          filterScreenshots(this.value);
         });
       }
     });
@@ -786,7 +1020,7 @@
       var eventId = document.getElementById('editingEventId').value;
       
       if (!datetime || !device || !filename) {
-        showToast("Please fill in all fields and select an image.", true);
+        showToast("Please fill in all fields and select an image or screenshot.", true);
         return;
       }
       

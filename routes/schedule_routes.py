@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, render_template
-from models import db, ScheduleEvent, Device, ImageDB
+from models import db, ScheduleEvent, Device, ImageDB, Screenshot
 import datetime
 from tasks import send_scheduled_image
 # Import the scheduler from the dedicated scheduler module instead of tasks
@@ -34,7 +34,10 @@ def schedule_page():
         if img.tags:
             image_tags[img.filename] = img.tags
     
-    return render_template("schedule.html", devices=devices, images=images, image_tags=image_tags)
+    # Get all browserless screenshots
+    screenshots = Screenshot.query.all()
+    
+    return render_template("schedule.html", devices=devices, images=images, image_tags=image_tags, screenshots=screenshots)
 
 @schedule_bp.route('/schedule/events')
 def get_events():
