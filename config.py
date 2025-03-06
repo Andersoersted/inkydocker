@@ -13,3 +13,4 @@ class Config:
     IMAGE_FOLDER = os.path.join(basedir, 'images')
     THUMBNAIL_FOLDER = os.path.join(basedir, 'images', 'thumbnails')
     DATA_FOLDER = os.path.join(basedir, 'data')
+    SCREENSHOTS_FOLDER = os.path.join(basedir, 'data', 'screenshots')

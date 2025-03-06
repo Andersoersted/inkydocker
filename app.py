@@ -28,6 +28,7 @@ def create_app(config_class=Config):
     from routes.settings_routes import settings_bp
     from routes.device_info_routes import device_info_bp
     from routes.ai_tagging_routes import ai_bp
+    from routes.browserless_routes import browserless_bp
 
     app.register_blueprint(image_bp)
     app.register_blueprint(device_bp)
@@ -35,6 +36,7 @@ def create_app(config_class=Config):
     app.register_blueprint(settings_bp)
     app.register_blueprint(device_info_bp)
     app.register_blueprint(ai_bp)
+    app.register_blueprint(browserless_bp)
 
     # Create database tables if they don't exist.
     with app.app_context():

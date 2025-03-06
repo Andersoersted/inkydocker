@@ -62,6 +62,9 @@ ni<!doctype html>
                 <a class="nav-link {% if request.endpoint.startswith('schedule.') %}active{% endif %}" href="{{ url_for('schedule.schedule_page') }}">Schedule</a>
               </li>
               <li class="nav-item">
+                <a class="nav-link {% if request.endpoint.startswith('browserless.') %}active{% endif %}" href="{{ url_for('browserless.browserless_page') }}">Browserless</a>
+              </li>
+              <li class="nav-item">
                 <a class="nav-link {% if request.endpoint.startswith('settings.') %}active{% endif %}" href="{{ url_for('settings.settings') }}">Settings</a>
               </li>
             </ul>

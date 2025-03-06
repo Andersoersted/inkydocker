@@ -3,6 +3,31 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
+class BrowserlessConfig(db.Model):
+    __tablename__ = 'browserless_config'
+    id = db.Column(db.Integer, primary_key=True)
+    address = db.Column(db.String(256), nullable=False)
+    port = db.Column(db.Integer, nullable=False)
+    token = db.Column(db.String(256), nullable=True)
+    active = db.Column(db.Boolean, default=True)
+
+class Screenshot(db.Model):
+    __tablename__ = 'screenshots'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(256), nullable=False)
+    url = db.Column(db.String(1024), nullable=False)
+    filename = db.Column(db.String(256), unique=True, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ScreenshotCropInfo(db.Model):
+    __tablename__ = 'screenshot_crop_info'
+    filename = db.Column(db.String(256), primary_key=True)
+    x = db.Column(db.Float, default=0)
+    y = db.Column(db.Float, default=0)
+    width = db.Column(db.Float)
+    height = db.Column(db.Float)
+    resolution = db.Column(db.String(32))  # Store the display resolution (e.g., "1024x768")
+
 class Device(db.Model):
     __tablename__ = 'devices'
     id = db.Column(db.Integer, primary_key=True)
