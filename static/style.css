@@ -259,6 +259,10 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    pointer-events: none; /* Allow clicks to pass through to the buttons */
+  }
+  .overlay > * {
+    pointer-events: auto; /* But enable pointer events for direct children */
   }
   .img-container:hover .overlay {
     opacity: 1;
@@ -318,7 +322,7 @@ body {
     border-radius: 4px !important;
     cursor: pointer !important;
     transition: background-color 0.3s ease !important;
-    z-index: 6 !important;
+    z-index: 10 !important; /* Increased z-index to ensure it's clickable */
     margin-bottom: 0 !important; /* Reset margin */
     width: 70px !important;
     text-align: center !important;
@@ -327,6 +331,7 @@ body {
     left: 50% !important;
     top: 40% !important; /* Position from the top instead of using margin */
     transform: translateX(-50%) !important;
+    pointer-events: auto !important; /* Ensure clicks are registered */
   }
   .overlay .send-button:hover {
     background-color: #218838 !important; /* Use !important to override any other styles */
@@ -344,7 +349,7 @@ body {
     border-radius: 4px !important;
     cursor: pointer !important;
     transition: background-color 0.3s ease !important;
-    z-index: 6 !important;
+    z-index: 10 !important; /* Increased z-index to ensure it's clickable */
     width: 70px !important;
     text-align: center !important;
     font-size: 0.9em !important;
@@ -352,8 +357,9 @@ body {
     margin-top: 0 !important; /* Reset margin */
     /* Center the info button like the send button */
     left: 50% !important;
-    top: 60% !important; /* Position from the top instead of using margin */
+    top: 75% !important; /* Moved further down from 60% to 75% to prevent overlap */
     transform: translateX(-50%) !important;
+    pointer-events: auto !important; /* Ensure clicks are registered */
   }
   .overlay .info-button:hover {
     background-color: #0069d9 !important; /* Darker blue on hover, with !important */
@@ -496,10 +502,18 @@ body {
   }
   
   /* Gallery buttons have their own specific styling */
-  .overlay .info-button,
   .overlay .send-button {
-    /* These buttons have their own background colors defined in their specific rules */
-    background: none !important;
+    /* Send button specific styling */
+    background-color: #28a745 !important;
+    background-image: none !important;
+    padding: 6px 10px !important;
+    font-size: 0.9em !important;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
+  }
+  
+  .overlay .info-button {
+    /* Info button specific styling */
+    background-color: #007bff !important;
     background-image: none !important;
     padding: 6px 10px !important;
     font-size: 0.9em !important;
