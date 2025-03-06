@@ -126,7 +126,9 @@
                         <button type="button" class="btn btn-sm btn-primary send-screenshot" data-filename="{{ screenshot.filename }}">Send</button>
                         <button type="button" class="btn btn-sm btn-info info-screenshot" data-filename="{{ screenshot.filename }}">Info</button>
                         <button type="button" class="btn btn-sm btn-success refresh-screenshot" data-id="{{ screenshot.id }}" data-url="{{ screenshot.url }}" data-name="{{ screenshot.name }}">Refresh</button>
-                        <button type="button" class="btn btn-sm btn-danger delete-screenshot" data-id="{{ screenshot.id }}">Delete</button>
+                        <button type="button" class="btn btn-sm btn-danger delete-screenshot" data-id="{{ screenshot.id }}">
+                          <i class="fas fa-times"></i>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -186,8 +188,39 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeCropModal()"></button>
       </div>
       <div class="modal-body">
-        <div id="cropContainer" style="max-height: 70vh; overflow: hidden;">
-          <img id="cropImage" src="" alt="Crop Image" class="img-fluid w-100">
+        <div class="row">
+          <div class="col-md-8">
+            <div id="cropContainer" style="max-height: 70vh; overflow: auto;">
+              <img id="cropImage" src="" alt="Crop Image" class="img-fluid w-100">
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header bg-light">
+                <h6 class="mb-0">Crop Preview</h6>
+              </div>
+              <div class="card-body text-center">
+                <div id="cropPreview" style="width: 100%; height: 200px; overflow: hidden; margin-bottom: 10px; border: 1px solid #ddd; background-color: #f8f9fa;">
+                  <img id="previewImage" src="" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                </div>
+                <small class="text-muted">This is how the image will appear on your eInk display</small>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="card">
+                <div class="card-header bg-light">
+                  <h6 class="mb-0">Crop Information</h6>
+                </div>
+                <div class="card-body">
+                  <p class="mb-1"><small><strong>X:</strong> <span id="cropX">0</span>px</small></p>
+                  <p class="mb-1"><small><strong>Y:</strong> <span id="cropY">0</span>px</small></p>
+                  <p class="mb-1"><small><strong>Width:</strong> <span id="cropWidth">0</span>px</small></p>
+                  <p class="mb-1"><small><strong>Height:</strong> <span id="cropHeight">0</span>px</small></p>
+                  <p class="mb-0"><small><strong>Aspect Ratio:</strong> <span id="cropRatio">Free</span></small></p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -631,6 +664,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function initCropper() {
     const cropImage = document.getElementById('cropImage');
+    const previewImage = document.getElementById('previewImage');
+    
+    // Set the preview image source to the same as the crop image
+    previewImage.src = cropImage.src;
     
     // Get the selected device's resolution
     const selectedDevice = document.querySelector('input[name="device"]:checked');
@@ -653,11 +690,15 @@ document.addEventListener('DOMContentLoaded', function() {
           if (isPortrait) {
             // For portrait orientation, swap width and height for aspect ratio
             aspectRatio = targetHeight / targetWidth;
+            document.getElementById('cropRatio').textContent = `${targetHeight}:${targetWidth} (Portrait)`;
           } else {
             aspectRatio = targetWidth / targetHeight;
+            document.getElementById('cropRatio').textContent = `${targetWidth}:${targetHeight} (Landscape)`;
           }
         }
       }
+    } else {
+      document.getElementById('cropRatio').textContent = 'Free';
     }
     
     // Initialize cropper with the calculated aspect ratio
@@ -673,6 +714,15 @@ document.addEventListener('DOMContentLoaded', function() {
       cropBoxMovable: true,
       cropBoxResizable: true,
       toggleDragModeOnDblclick: true,
+      preview: '#cropPreview', // Add preview container
+      
+      // Update crop information when the crop box changes
+      crop: function(event) {
+        document.getElementById('cropX').textContent = Math.round(event.detail.x);
+        document.getElementById('cropY').textContent = Math.round(event.detail.y);
+        document.getElementById('cropWidth').textContent = Math.round(event.detail.width);
+        document.getElementById('cropHeight').textContent = Math.round(event.detail.height);
+      },
       ready: function() {
         // This function runs when the cropper is fully initialized
         if (aspectRatio && cropperInstance) {
@@ -708,6 +758,13 @@ document.addEventListener('DOMContentLoaded', function() {
             width: cropBoxWidth,
             height: cropBoxHeight
           });
+          
+          // Update crop information
+          const cropData = cropperInstance.getData();
+          document.getElementById('cropX').textContent = Math.round(cropData.x);
+          document.getElementById('cropY').textContent = Math.round(cropData.y);
+          document.getElementById('cropWidth').textContent = Math.round(cropData.width);
+          document.getElementById('cropHeight').textContent = Math.round(cropData.height);
         }
       }
     });
@@ -752,6 +809,17 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(function(data) {
       if (data.status === 'success') {
         document.getElementById('infoStatus').textContent = 'Crop data saved successfully!';
+        
+        // Update the thumbnail image to show the cropped version
+        const timestamp = new Date().getTime();
+        const thumbnailImg = document.querySelector(`.screenshot-image[data-filename="${currentInfoFilename}"]`);
+        if (thumbnailImg) {
+          thumbnailImg.src = `/screenshots/${encodeURIComponent(currentInfoFilename)}?t=${timestamp}&cropped=true`;
+        }
+        
+        // Also update the info modal preview
+        document.getElementById('infoImagePreview').src = `/screenshots/${encodeURIComponent(currentInfoFilename)}?t=${timestamp}&cropped=true`;
+        
         closeCropModal();
       } else {
         document.getElementById('infoStatus').textContent = 'Error saving crop data: ' + data.message;

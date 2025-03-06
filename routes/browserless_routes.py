@@ -533,6 +533,53 @@ async def handle_cookie_consent(page):
 @browserless_bp.route('/screenshots/<filename>')
 def get_screenshot(filename):
     screenshots_folder = os.path.join(current_app.config['DATA_FOLDER'], 'screenshots')
+    
+    # Check if we should return the cropped version
+    show_cropped = request.args.get('cropped', 'false').lower() == 'true'
+    
+    if show_cropped:
+        # Check if crop info exists for this screenshot
+        crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+        
+        if crop_info and all(getattr(crop_info, attr, None) is not None for attr in ['x', 'y', 'width', 'height']):
+            try:
+                # Create a temporary cropped version
+                filepath = os.path.join(screenshots_folder, filename)
+                with Image.open(filepath) as img:
+                    # Crop the image
+                    cropped = img.crop((
+                        crop_info.x,
+                        crop_info.y,
+                        crop_info.x + crop_info.width,
+                        crop_info.y + crop_info.height
+                    ))
+                    
+                    # Create a temporary file
+                    temp_dir = os.path.join(current_app.config['DATA_FOLDER'], "temp")
+                    if not os.path.exists(temp_dir):
+                        os.makedirs(temp_dir)
+                    
+                    temp_filename = os.path.join(temp_dir, f"cropped_{filename}")
+                    cropped.save(temp_filename, format="JPEG", quality=95)
+                    
+                    # Use Flask's send_file instead of send_from_directory
+                    from flask import send_file, after_this_request
+                    
+                    @after_this_request
+                    def remove_file(response):
+                        try:
+                            os.remove(temp_filename)
+                        except Exception as error:
+                            current_app.logger.error(f"Error removing temporary file: {error}")
+                        return response
+                    
+                    return send_file(temp_filename, mimetype='image/jpeg')
+            except Exception as e:
+                current_app.logger.error(f"Error creating cropped image: {str(e)}")
+                # Fall back to original image if cropping fails
+                pass
+    
+    # Return the original image if no cropping requested or if cropping failed
     return send_from_directory(screenshots_folder, filename)
 
 @browserless_bp.route('/api/browserless/delete/<int:screenshot_id>', methods=['POST'])
