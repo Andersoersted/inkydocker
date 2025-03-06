@@ -11,6 +11,10 @@ import base64
 import asyncio
 import pyppeteer
 import logging
+import torch
+import open_clip
+from PIL import Image
+import io
 
 browserless_bp = Blueprint('browserless', __name__)
 
@@ -199,9 +203,41 @@ async def take_screenshot_with_puppeteer(url, config, filepath):
             # Try to proceed anyway - we might still be able to take a screenshot
             current_app.logger.info("Attempting to continue despite navigation error")
         
-        # Handle cookie consent using pyppeteer's native methods
-        current_app.logger.info("Handling cookie consent with pyppeteer")
-        await handle_cookie_consent(page)
+        # First, take an initial screenshot to analyze for cookie banners
+        current_app.logger.info("Taking initial screenshot to analyze for cookie banners")
+        initial_screenshot = await page.screenshot({'type': 'jpeg', 'quality': 80})
+        
+        # Use OpenCLIP to detect if a cookie banner is present
+        current_app.logger.info("Using OpenCLIP to detect cookie banners")
+        has_banner, similarity_score, matched_prompt = await detect_cookie_banner_with_clip(page)
+        
+        if has_banner:
+            current_app.logger.info(f"Cookie banner detected with {similarity_score:.2f} similarity to '{matched_prompt}'")
+            # Handle cookie consent using pyppeteer's native methods
+            current_app.logger.info("Handling cookie consent with pyppeteer")
+            await handle_cookie_consent(page)
+            
+            # Wait a moment for any animations to complete
+            await page.waitFor(2000)
+            
+            # Check if the banner is still detected after handling
+            has_banner_after, similarity_after, _ = await detect_cookie_banner_with_clip(page)
+            if has_banner_after:
+                current_app.logger.info(f"Cookie banner still detected after handling (similarity: {similarity_after:.2f}). Trying again.")
+                await handle_cookie_consent(page)
+                await page.waitFor(2000)  # Wait again after second attempt
+            else:
+                current_app.logger.info("Cookie banner successfully handled")
+                
+            # Reload the page to ensure we get a clean view without cookie banners
+            current_app.logger.info("Reloading page to get clean view")
+            try:
+                await page.reload({'waitUntil': 'domcontentloaded', 'timeout': 60000})
+                await page.waitFor(3000)  # Wait for page to stabilize
+            except Exception as e:
+                current_app.logger.warning(f"Error reloading page: {str(e)}, continuing anyway")
+        else:
+            current_app.logger.info("No cookie banner detected, proceeding with screenshot")
         
         # Take the screenshot with additional error handling
         current_app.logger.info(f"Taking screenshot and saving to {filepath}")
@@ -261,6 +297,82 @@ async def set_consent_cookies(page, domain):
         'path': '/'
     })
 
+# Function to detect cookie banners using OpenCLIP
+async def detect_cookie_banner_with_clip(page):
+    """
+    Use OpenCLIP to detect if a cookie banner is present on the page.
+    Returns True if a cookie banner is detected, False otherwise.
+    """
+    current_app.logger.info("Using OpenCLIP to detect cookie banners")
+    
+    try:
+        # Take a screenshot of the current page
+        screenshot_bytes = await page.screenshot({'type': 'jpeg', 'quality': 80})
+        
+        # Get the user's chosen CLIP model from the database
+        from models import UserConfig
+        config = UserConfig.query.first()
+        model_name = config.clip_model if config and config.clip_model else 'ViT-B-32'
+        current_app.logger.info(f"Using user-selected CLIP model: {model_name}")
+        
+        # Set device based on availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Load the model and preprocess function
+        model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai', jit=False, force_quick_gelu=True)
+        model.to(device)
+        model.eval()
+        
+        # Load and preprocess the screenshot
+        image = Image.open(io.BytesIO(screenshot_bytes))
+        image_input = preprocess(image).unsqueeze(0).to(device)
+        
+        # Prepare text prompts for cookie banners in multiple languages
+        prompts = [
+            "a cookie consent banner",
+            "accept cookies button",
+            "cookie policy notification",
+            "GDPR consent dialog",
+            "privacy settings popup",
+            "cookie preferences",
+            "accepter cookies",  # Danish
+            "accepter alle cookies",  # Danish
+            "akzeptieren cookies",  # German
+            "cookie einstellungen",  # German
+            "accepter les cookies",  # French
+            "aceptar cookies"  # Spanish
+        ]
+        
+        # Tokenize the prompts
+        tokenizer = open_clip.get_tokenizer(model_name)
+        text_tokens = tokenizer(prompts)
+        
+        # Get image and text features
+        with torch.no_grad():
+            image_features = model.encode_image(image_input)
+            text_features = model.encode_text(text_tokens)
+            
+            # Normalize the features
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+            
+            # Compute similarity scores
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+            
+            # Get the highest similarity score
+            max_similarity = similarity.max().item()
+            max_index = similarity.argmax().item()
+            
+            current_app.logger.info(f"Cookie banner detection: highest similarity {max_similarity:.2f} for '{prompts[max_index]}'")
+            
+            # Threshold for detection (may need calibration)
+            threshold = 0.3
+            return max_similarity > threshold, max_similarity, prompts[max_index]
+    
+    except Exception as e:
+        current_app.logger.error(f"Error in OpenCLIP cookie banner detection: {str(e)}")
+        return False, 0.0, None
+
 # Function to handle cookie consent using pyppeteer's native methods
 async def handle_cookie_consent(page):
     current_app.logger.info("Starting cookie consent handling with pyppeteer")
@@ -303,7 +415,7 @@ async def handle_cookie_consent(page):
                 current_app.logger.info(f"Found visible cookie consent button: {selector}")
                 await page.click(selector, {'timeout': 1000})
                 current_app.logger.info(f"Clicked cookie consent button: {selector}")
-                await page.waitForTimeout(500)  # Short wait after clicking
+                await page.waitFor(500)  # Short wait after clicking
         except Exception as e:
             # Ignore errors for individual selectors
             pass
@@ -349,7 +461,7 @@ async def handle_cookie_consent(page):
                 current_app.logger.info(f"Found element with text '{pattern}' at coordinates: {element}")
                 await page.mouse.click(element['x'], element['y'])
                 current_app.logger.info(f"Clicked element with text: {pattern}")
-                await page.waitForTimeout(500)  # Short wait after clicking
+                await page.waitFor(500)  # Short wait after clicking
         except Exception as e:
             # Ignore errors for individual text patterns
             pass
@@ -389,7 +501,7 @@ async def handle_cookie_consent(page):
         current_app.logger.info(f"Error handling iframes: {str(e)}")
     
     # Wait a bit for any animations to complete
-    await page.waitForTimeout(2000)
+    await page.waitFor(2000)  # pyppeteer uses waitFor instead of waitForTimeout
     
     # Try to hide any remaining cookie banners
     banner_selectors = [
