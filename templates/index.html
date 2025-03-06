@@ -283,7 +283,7 @@ function createGalleryItemHTML(image) {
   return `
     <div class="gallery-item" data-tags="${tags}">
       <div class="img-container">
-        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'%3E%3C/svg%3E" data-src="${image.url}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy" class="lazy">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="${image.url}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy" class="lazy">
         <div class="overlay">
           <div class="favorite-icon ${image.favorite ? 'favorited' : ''}" title="Favorite" data-image="${image.filename}">
             <i class="fa fa-heart"></i>
@@ -361,8 +361,18 @@ function loadImages(page = 1, append = false) {
                 if (entry.isIntersecting) {
                   const lazyImage = entry.target;
                   if (lazyImage.dataset.src) {
+                    // Set up the onload handler before changing src
+                    lazyImage.onload = function() {
+                      // Add loaded class for fade-in effect
+                      lazyImage.classList.add('loaded');
+                      // Add fade-in class for additional animation
+                      lazyImage.classList.add('fade-in');
+                      // Remove the onload handler to prevent memory leaks
+                      this.onload = null;
+                    };
+                    
+                    // Set the src to trigger loading
                     lazyImage.src = lazyImage.dataset.src;
-                    lazyImage.classList.remove('lazy');
                     lazyImageObserver.unobserve(lazyImage);
                   }
                 }
@@ -377,8 +387,18 @@ function loadImages(page = 1, append = false) {
             // Fallback for browsers that don't support IntersectionObserver
             gallery.querySelectorAll('img.lazy').forEach(img => {
               if (img.dataset.src) {
+                // Set up the onload handler before changing src
+                img.onload = function() {
+                  // Add loaded class for fade-in effect
+                  img.classList.add('loaded');
+                  // Add fade-in class for additional animation
+                  img.classList.add('fade-in');
+                  // Remove the onload handler to prevent memory leaks
+                  this.onload = null;
+                };
+                
+                // Set the src to trigger loading
                 img.src = img.dataset.src;
-                img.classList.remove('lazy');
               }
             });
           }
@@ -479,13 +499,29 @@ uploadForm.addEventListener('submit', function(e) {
   xhr.send(formData);
 });
 
-/* Send image */
+/* Send image with spinner and in-page notification */
 document.addEventListener('click', function(e) {
   if (e.target && e.target.classList.contains('send-button')) {
     e.stopPropagation();
-    const imageFilename = e.target.getAttribute('data-image');
+    const button = e.target;
+    const originalText = button.textContent;
+    const imageFilename = button.getAttribute('data-image');
     const selectedDevice = document.querySelector('input[name="device"]:checked');
     if (!selectedDevice) return;
+    
+    // Create or get status container
+    let statusContainer = document.getElementById('sendStatusContainer');
+    if (!statusContainer) {
+      statusContainer = document.createElement('div');
+      statusContainer.id = 'sendStatusContainer';
+      statusContainer.className = 'position-fixed bottom-0 end-0 p-3';
+      statusContainer.style.zIndex = '1050';
+      document.body.appendChild(statusContainer);
+    }
+    
+    // Show spinner in button
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sending...';
     
     const deviceFriendly = selectedDevice.getAttribute('data-friendly');
     const formData = new FormData();
@@ -496,23 +532,125 @@ document.addEventListener('click', function(e) {
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', finalUrl, true);
-
-    // No need for progress tracking for sending images
     
     xhr.onload = function() {
+      // Re-enable button and restore text
+      button.disabled = false;
+      
       if (xhr.status === 200) {
-        alert('Image sent successfully!');
+        // Show success icon in button temporarily
+        button.innerHTML = '<i class="fas fa-check"></i> Sent!';
+        
+        // Create toast notification
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-white bg-success border-0';
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+        toastEl.innerHTML = `
+          <div class="d-flex">
+            <div class="toast-body">
+              <i class="fas fa-check-circle me-2"></i> Image sent successfully to ${deviceFriendly}!
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        `;
+        statusContainer.appendChild(toastEl);
+        
+        // Initialize and show the toast
+        const toast = new bootstrap.Toast(toastEl, {
+          autohide: true,
+          delay: 3000
+        });
+        toast.show();
+        
+        // Remove the toast element when hidden
+        toastEl.addEventListener('hidden.bs.toast', function() {
+          toastEl.remove();
+        });
+        
         // Update the current image display without reloading
         setTimeout(function() {
           updateCurrentImageDisplay();
-        }, 1000);
+          // Restore original button text
+          button.innerHTML = originalText;
+        }, 2000);
       } else {
-        alert('Error sending image.');
+        // Show error in button
+        button.innerHTML = '<i class="fas fa-times"></i> Failed';
+        
+        // Create toast notification for error
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-white bg-danger border-0';
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+        toastEl.innerHTML = `
+          <div class="d-flex">
+            <div class="toast-body">
+              <i class="fas fa-exclamation-circle me-2"></i> Error sending image.
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        `;
+        statusContainer.appendChild(toastEl);
+        
+        // Initialize and show the toast
+        const toast = new bootstrap.Toast(toastEl, {
+          autohide: true,
+          delay: 5000
+        });
+        toast.show();
+        
+        // Remove the toast element when hidden
+        toastEl.addEventListener('hidden.bs.toast', function() {
+          toastEl.remove();
+        });
+        
+        // Restore original button text after delay
+        setTimeout(function() {
+          button.innerHTML = originalText;
+        }, 2000);
       }
     };
 
     xhr.onerror = function() {
-      alert('Error sending image.');
+      // Re-enable button and show error
+      button.disabled = false;
+      button.innerHTML = '<i class="fas fa-times"></i> Failed';
+      
+      // Create toast notification for network error
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast align-items-center text-white bg-danger border-0';
+      toastEl.setAttribute('role', 'alert');
+      toastEl.setAttribute('aria-live', 'assertive');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">
+            <i class="fas fa-exclamation-circle me-2"></i> Network error while sending image.
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      `;
+      statusContainer.appendChild(toastEl);
+      
+      // Initialize and show the toast
+      const toast = new bootstrap.Toast(toastEl, {
+        autohide: true,
+        delay: 5000
+      });
+      toast.show();
+      
+      // Remove the toast element when hidden
+      toastEl.addEventListener('hidden.bs.toast', function() {
+        toastEl.remove();
+      });
+      
+      // Restore original button text after delay
+      setTimeout(function() {
+        button.innerHTML = originalText;
+      }, 2000);
     };
 
     xhr.send(formData);

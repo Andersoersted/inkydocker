@@ -41,13 +41,23 @@
         flex-shrink: 0;
       }
       
-      /* Lazy loading styles */
+      /* Lazy loading styles with fade-in animation */
       img.lazy {
-        transition: opacity 0.3s ease-in-out;
+        transition: opacity 0.5s ease-in-out;
         opacity: 0;
       }
-      img.lazy:not([src^="data:"]) {
+      img.lazy.loaded {
         opacity: 1;
+      }
+      
+      /* Fade-in animation for images */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      .fade-in {
+        animation: fadeIn 0.5s ease-in-out;
       }
       
       /* Bootstrap 5 enhancements */
@@ -81,12 +91,27 @@
         z-index: 1;
       }
       
-      /* Skeleton loading placeholder */
+      /* Enhanced skeleton loading placeholder with pulse effect */
       .placeholder-img {
         background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
         background-size: 200% 100%;
         animation: loading-animation 1.5s infinite;
       }
+      
+      /* Pulse animation for image placeholders */
+      @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 0.8; }
+        100% { opacity: 0.6; }
+      }
+      
+      /* Apply pulse animation to lazy images that haven't loaded yet */
+      img.lazy:not(.loaded) {
+        animation: pulse 1.5s infinite ease-in-out;
+        background-color: #f0f0f0;
+        min-height: 100px;
+      }
+      
       @keyframes loading-animation {
         0% {
           background-position: 200% 0;
@@ -156,8 +181,18 @@
               if (entry.isIntersecting) {
                 const lazyImage = entry.target;
                 if (lazyImage.dataset.src) {
+                  // Set up the onload handler before changing src
+                  lazyImage.onload = function() {
+                    // Add loaded class for fade-in effect
+                    lazyImage.classList.add('loaded');
+                    // Add fade-in class for additional animation
+                    lazyImage.classList.add('fade-in');
+                    // Remove the onload handler to prevent memory leaks
+                    this.onload = null;
+                  };
+                  
+                  // Set the src to trigger loading
                   lazyImage.src = lazyImage.dataset.src;
-                  lazyImage.classList.remove('lazy');
                   lazyImageObserver.unobserve(lazyImage);
                 }
               }
@@ -172,8 +207,18 @@
           // Fallback for browsers that don't support IntersectionObserver
           document.querySelectorAll('img.lazy').forEach(img => {
             if (img.dataset.src) {
+              // Set up the onload handler before changing src
+              img.onload = function() {
+                // Add loaded class for fade-in effect
+                img.classList.add('loaded');
+                // Add fade-in class for additional animation
+                img.classList.add('fade-in');
+                // Remove the onload handler to prevent memory leaks
+                this.onload = null;
+              };
+              
+              // Set the src to trigger loading
               img.src = img.dataset.src;
-              img.classList.remove('lazy');
             }
           });
         }

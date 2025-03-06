@@ -221,7 +221,7 @@
           {% for image in images %}
             <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
               <div class="img-container">
-                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'%3E%3C/svg%3E" data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)" class="lazy" loading="lazy">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)" class="lazy" loading="lazy">
                 {% if image_tags.get(image) %}
                   <div class="image-tags">{{ image_tags.get(image) }}</div>
                 {% endif %}
@@ -643,7 +643,27 @@
             src = imgElement.dataset.src;
           }
         }
-        nameSpan.innerHTML = `<img src="${src}" style="height:40px;vertical-align:middle;" loading="lazy">`;
+        
+        // Create a new image with fade-in effect
+        const img = document.createElement('img');
+        img.style.height = '40px';
+        img.style.verticalAlign = 'middle';
+        img.loading = 'lazy';
+        img.className = 'lazy';
+        
+        // Set up the onload handler before setting src
+        img.onload = function() {
+          img.classList.add('loaded');
+          img.classList.add('fade-in');
+          this.onload = null;
+        };
+        
+        // Set the src to trigger loading
+        img.src = src;
+        
+        // Clear the span and append the new image
+        nameSpan.innerHTML = '';
+        nameSpan.appendChild(img);
       }
       closeImageGallery();
     }

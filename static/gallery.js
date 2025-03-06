@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
- * Initialize lazy loading for images
+ * Initialize lazy loading for images with fade-in effect
  */
 function initLazyLoading() {
   // Check if IntersectionObserver is supported
@@ -23,8 +23,18 @@ function initLazyLoading() {
         if (entry.isIntersecting) {
           const lazyImage = entry.target;
           if (lazyImage.dataset.src) {
+            // Set up the onload handler before changing src
+            lazyImage.onload = function() {
+              // Add loaded class for fade-in effect
+              lazyImage.classList.add('loaded');
+              // Add fade-in class for additional animation
+              lazyImage.classList.add('fade-in');
+              // Remove the onload handler to prevent memory leaks
+              this.onload = null;
+            };
+            
+            // Set the src to trigger loading
             lazyImage.src = lazyImage.dataset.src;
-            lazyImage.classList.remove('lazy');
             lazyImageObserver.unobserve(lazyImage);
           }
         }
@@ -40,6 +50,17 @@ function initLazyLoading() {
     // Fallback for browsers that don't support IntersectionObserver
     document.querySelectorAll('img.lazy').forEach(img => {
       if (img.dataset.src) {
+        // Set up the onload handler before changing src
+        img.onload = function() {
+          // Add loaded class for fade-in effect
+          img.classList.add('loaded');
+          // Add fade-in class for additional animation
+          img.classList.add('fade-in');
+          // Remove the onload handler to prevent memory leaks
+          this.onload = null;
+        };
+        
+        // Set the src to trigger loading
         img.src = img.dataset.src;
       }
     });
