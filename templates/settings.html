@@ -17,8 +17,8 @@
   </div>
 
   <!-- CLIP Model Settings Modal -->
-  <div id="clipSettingsModal" class="modal">
-    <div class="modal-content">
+  <div id="clipSettingsModal" class="custom-modal">
+    <div class="custom-modal-content">
       <span class="close" id="closeClipSettingsModal">&times;</span>
       <h2>CLIP Model Settings</h2>
       <form id="clipSettingsForm">
@@ -63,8 +63,8 @@
   </div>
 
   <!-- Add New Display Modal -->
-  <div id="addDisplayModal" class="modal">
-    <div class="modal-content">
+  <div id="addDisplayModal" class="custom-modal">
+    <div class="custom-modal-content">
       <span class="close" id="closeAddDisplayModal">&times;</span>
       <h2>Add New Display</h2>
       <form id="addDisplayForm" method="POST" action="{{ url_for('settings.settings') }}">
@@ -90,8 +90,8 @@
   </div>
 
   <!-- Edit Display Modal -->
-  <div id="editDisplayModal" class="modal">
-    <div class="modal-content">
+  <div id="editDisplayModal" class="custom-modal">
+    <div class="custom-modal-content">
       <span class="close" id="closeEditDisplayModal">&times;</span>
       <h2>Edit Display</h2>
       <form id="editDisplayForm" method="POST" action="{{ url_for('settings.edit_device') }}">
@@ -114,8 +114,8 @@
   </div>
 
   <!-- Advanced Actions Modal -->
-  <div id="advancedActionsModal" class="modal">
-    <div class="modal-content">
+  <div id="advancedActionsModal" class="custom-modal">
+    <div class="custom-modal-content">
       <span class="close" id="closeAdvancedActionsModal">&times;</span>
       <h2>Advanced Actions</h2>
       <p id="advancedDeviceTitle" style="font-weight:bold;"></p>
@@ -187,7 +187,7 @@
 
 {% block head %}
 <style>
-  .modal {
+  .custom-modal {
     display: none;
     position: fixed;
     z-index: 3000;
@@ -198,7 +198,7 @@
     overflow: auto;
     background-color: rgba(0, 0, 0, 0.5);
   }
-  .modal-content {
+  .custom-modal-content {
     background-color: #fff;
     margin: 10% auto;
     padding: 20px;

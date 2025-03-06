@@ -453,8 +453,8 @@ body {
     text-align: center;
   }
   
-  /* Modal for Crop and Lightbox */
-  .modal {
+  /* Custom modal for settings page - renamed to avoid conflicts with Bootstrap */
+  .custom-modal {
     display: none;
     position: fixed;
     z-index: 3000;
@@ -465,14 +465,7 @@ body {
     background-color: rgba(0,0,0,0.7);
     padding: 20px;
   }
-  .modal-content {
-    background: #fff;
-    margin: 5% auto;
-    padding: 20px;
-    border-radius: 8px;
-    width: 100%; /* Allow content to fill the modal dialog */
-    position: relative;
-  }
+  /* We're removing custom modal-content styling to rely on Bootstrap's default implementation */
   .close {
     position: absolute;
     top: 10px;
