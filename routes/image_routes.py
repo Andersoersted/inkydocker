@@ -191,22 +191,16 @@ def send_image(filename):
             # Check if device is in portrait orientation
             is_portrait = device_obj.orientation.lower() == 'portrait'
             
-            # Store device dimensions in their natural orientation
+            # Calculate aspect ratio based on device orientation
             if is_portrait:
-                # For portrait displays, the natural orientation is height > width
-                natural_dev_width = dev_width
-                natural_dev_height = dev_height
+                # For portrait displays, use height/width (taller than wide)
+                device_ratio = dev_height / dev_width
             else:
-                # For landscape displays, the natural orientation is width > height
-                natural_dev_width = dev_width
-                natural_dev_height = dev_height
-            
-            # Calculate target ratio - this is only used for auto-cropping when no crop data exists
-            # We always calculate it as width/height regardless of orientation
-            target_ratio = natural_dev_width / natural_dev_height
+                # For landscape displays, use width/height (wider than tall)
+                device_ratio = dev_width / dev_height
                 
             # Log the original image dimensions and device info
-            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}")
+            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
             
             # Step 1: Apply crop if available
             cdata = load_crop_info_from_db(filename)
@@ -243,9 +237,9 @@ def send_image(filename):
                 current_app.logger.info(f"No crop data found, using auto-centered crop")
                 orig_ratio = orig_w / orig_h
                 
-                # For auto-cropping, we use the device's natural aspect ratio
+                # For auto-cropping, we use the device's aspect ratio
                 # This ensures the image fits properly on the device
-                device_ratio = natural_dev_width / natural_dev_height
+                # device_ratio is already calculated above
                 
                 # Log the ratios for debugging
                 current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
@@ -269,7 +263,6 @@ def send_image(filename):
             current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
             
             # If portrait, rotate the image 90 degrees clockwise
-            # This rotation happens AFTER cropping, so it doesn't affect the crop selection
             if is_portrait:
                 current_app.logger.info("Rotating image for portrait orientation")
                 cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation

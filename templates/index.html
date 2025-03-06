@@ -1030,10 +1030,10 @@ function openCropModal() {
         if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
           // Set aspect ratio based on device orientation
           if (deviceOrientation === 'portrait') {
-            // For portrait, we need to use height/width
+            // For portrait, we need to use height/width (taller than wide)
             aspectRatio = height / width;
           } else {
-            // For landscape, use width/height
+            // For landscape, use width/height (wider than tall)
             aspectRatio = width / height;
           }
           console.log(`Setting aspect ratio to ${aspectRatio} for ${deviceOrientation} display (${deviceResolution})`);
@@ -1046,14 +1046,47 @@ function openCropModal() {
       viewMode: 1,
       dragMode: 'move',
       aspectRatio: aspectRatio, // Use the calculated aspect ratio based on device
-      autoCropArea: 0.8,
+      autoCropArea: 1, // Use maximum possible area (1 = 100%)
       restore: false,
       guides: true,
       center: true,
       highlight: false,
       cropBoxMovable: true,
       cropBoxResizable: true,
-      toggleDragModeOnDblclick: false
+      toggleDragModeOnDblclick: false,
+      ready: function() {
+        // When the cropper is ready, ensure the crop box is as large as possible
+        // while maintaining the aspect ratio
+        const cropperInstance = this.cropper;
+        const containerData = cropperInstance.getContainerData();
+        const imageData = cropperInstance.getImageData();
+        
+        // Calculate the maximum possible crop box size while maintaining aspect ratio
+        let maxWidth, maxHeight;
+        
+        if (aspectRatio > 0) {
+          // If image is wider than it is tall (landscape)
+          if (imageData.width / imageData.height > aspectRatio) {
+            maxHeight = imageData.height;
+            maxWidth = maxHeight * aspectRatio;
+          }
+          // If image is taller than it is wide (portrait)
+          else {
+            maxWidth = imageData.width;
+            maxHeight = maxWidth / aspectRatio;
+          }
+          
+          // Set the crop box to the maximum size
+          cropperInstance.setCropBoxData({
+            left: (containerData.width - maxWidth) / 2,
+            top: (containerData.height - maxHeight) / 2,
+            width: maxWidth,
+            height: maxHeight
+          });
+          
+          console.log(`Set initial crop box to ${maxWidth}x${maxHeight}`);
+        }
+      }
     });
     
     // Add a note about device orientation to the modal
@@ -1066,11 +1099,11 @@ function openCropModal() {
       orientationNote.className = 'alert alert-info mt-3';
       modalBody.appendChild(orientationNote);
     }
-    
     orientationNote.innerHTML = `
       <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display (${deviceResolution}).
-      <br>The crop area is locked to the correct aspect ratio for your display.
+      <br>The crop area is locked to the correct aspect ratio for your display and starts at the maximum possible size.
       <br>You can move and resize the crop area to select which part of the image to send.
+      <br>${deviceOrientation === 'portrait' ? 'The image will be rotated 90° clockwise after cropping.' : 'The image will be sent exactly as cropped, without rotation.'}
     `;
   }, { once: true });
 }
