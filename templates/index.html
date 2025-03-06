@@ -967,6 +967,9 @@ function closeInfoModal() {
   }
 }
 
+// Variable to store the cropper instance
+let cropper = null;
+
 function openCropModal() {
   // Set up crop image
   const cropImage = document.getElementById('cropImage');
@@ -976,6 +979,29 @@ function openCropModal() {
   // Show the modal
   const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
   cropModal.show();
+  
+  // Initialize cropper after the modal is shown
+  document.getElementById('cropModal').addEventListener('shown.bs.modal', function() {
+    // Destroy existing cropper if it exists
+    if (cropper) {
+      cropper.destroy();
+    }
+    
+    // Initialize Cropper.js
+    cropper = new Cropper(cropImage, {
+      viewMode: 1,
+      dragMode: 'move',
+      aspectRatio: NaN, // Free aspect ratio
+      autoCropArea: 0.8,
+      restore: false,
+      guides: true,
+      center: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false
+    });
+  }, { once: true });
 }
 
 function closeCropModal() {
@@ -984,12 +1010,69 @@ function closeCropModal() {
   if (cropModal) {
     cropModal.hide();
   }
+  
+  // Destroy cropper instance when modal is closed
+  if (cropper) {
+    cropper.destroy();
+    cropper = null;
+  }
 }
 
 function saveCropData() {
-  // This function would be implemented to save crop data
-  console.log("Saving crop data for:", currentInfoFilename);
-  closeCropModal();
+  if (!cropper) {
+    console.error("Cropper not initialized");
+    return;
+  }
+  
+  // Get crop data from cropper
+  const cropData = cropper.getData(true); // rounded to integers
+  
+  // Get selected device for resolution info
+  const selectedDevice = document.querySelector('input[name="device"]:checked');
+  const deviceData = selectedDevice ? { device: selectedDevice.value } : {};
+  
+  // Combine crop data with device info
+  const data = {
+    ...cropData,
+    ...deviceData
+  };
+  
+  // Show saving indicator
+  const saveBtn = document.querySelector('#cropModal .btn-primary');
+  const originalText = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+  
+  // Send crop data to server
+  fetch(`/save_crop_info/${encodeURIComponent(currentInfoFilename)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.status === "success") {
+      // Show success message
+      const infoStatus = document.getElementById('infoStatus');
+      infoStatus.textContent = 'Crop saved successfully!';
+      
+      // Close the crop modal
+      closeCropModal();
+    } else {
+      console.error("Error saving crop data:", result.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
+      alert("Error saving crop data: " + (result.message || "Unknown error"));
+    }
+  })
+  .catch(error => {
+    console.error("Error saving crop data:", error);
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalText;
+    alert("Error saving crop data: " + error.message);
+  });
 }
 </script>
 {% endblock %}
