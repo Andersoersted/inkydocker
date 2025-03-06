@@ -127,8 +127,26 @@ def take_screenshot():
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f"Error taking screenshot: {str(e)}")
-        return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
+        error_message = str(e)
+        current_app.logger.error(f"Error taking screenshot: {error_message}")
+        
+        # Provide more user-friendly error messages for common issues
+        if "Navigation Timeout Exceeded" in error_message:
+            user_message = "The website took too long to load. This could be due to the site being slow or unresponsive. You can try again later."
+        elif "net::ERR_NAME_NOT_RESOLVED" in error_message:
+            user_message = "Could not resolve the website address. Please check that the URL is correct."
+        elif "net::ERR_CONNECTION_REFUSED" in error_message:
+            user_message = "Connection to the website was refused. The site might be down or blocking automated access."
+        elif "browserWSEndpoint" in error_message:
+            user_message = "Could not connect to the browserless service. Please check your browserless configuration."
+        else:
+            user_message = f"Error: {error_message}"
+            
+        return jsonify({
+            "status": "error",
+            "message": user_message,
+            "technical_details": error_message
+        }), 500
 
 # Pyppeteer function to take screenshot using browserless
 async def take_screenshot_with_puppeteer(url, config, filepath):
@@ -157,200 +175,43 @@ async def take_screenshot_with_puppeteer(url, config, filepath):
         # Set common cookie consent cookies before navigation
         await set_consent_cookies(page, domain)
         
-        # Navigate to the URL with a longer timeout
+        # Navigate to the URL with a longer timeout and better error handling
         current_app.logger.info(f"Navigating to {url}")
-        await page.goto(url, {
-            'waitUntil': 'networkidle2',
-            'timeout': 60000  # 60 seconds timeout
-        })
-        
-        # Execute cookie consent handling script
-        current_app.logger.info("Executing cookie consent script")
-        await page.evaluate('''
-        () => {
-            // Universal cookie acceptance function
-            function handleCookieConsent() {
-                console.log('Starting cookie consent handling...');
-                
-                // 1. Direct cookie manipulation
-                try {
-                    // Common cookie names
-                    const cookieNames = [
-                        'cookieConsent', 'cookie_consent', 'cookies_accepted', 'gdpr_consent',
-                        'CookieConsent', 'cookieAccepted', 'cookies_policy', 'cookie_notice'
-                    ];
-                    
-                    cookieNames.forEach(name => {
-                        document.cookie = `${name}=true; path=/; max-age=31536000`;
-                        document.cookie = `${name}=1; path=/; max-age=31536000`;
-                    });
-                } catch (e) {
-                    console.log('Error setting cookies:', e);
-                }
-                
-                // 2. Click cookie consent buttons
-                
-                // Helper function to click elements by text content
-                function clickByText(text) {
-                    const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"]'));
-                    for (const el of elements) {
-                        if (!el || !el.offsetParent) continue; // Skip invisible elements
-                        
-                        const elText = (el.textContent || el.innerText || '').toLowerCase();
-                        if (elText.includes(text)) {
-                            console.log(`Clicking element with text: ${text}`);
-                            el.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-                
-                // Common selectors for cookie consent buttons
-                const selectors = [
-                    // ID-based selectors
-                    '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
-                    '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
-                    '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
-                    
-                    // Class-based selectors
-                    '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
-                    '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
-                    '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
-                    
-                    // Framework-specific selectors
-                    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-                    '#onetrust-accept-btn-handler',
-                    '.cc-accept', '.cc-allow', '.cc-dismiss',
-                    
-                    // Attribute-based selectors
-                    '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
-                    '[data-consent="accept"]', '[data-cookie-accept="all"]',
-                    '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]'
-                ];
-                
-                // Try all selectors
-                selectors.forEach(selector => {
-                    try {
-                        const elements = document.querySelectorAll(selector);
-                        elements.forEach(el => {
-                            if (el && el.offsetParent !== null) {
-                                console.log(`Clicking element with selector: ${selector}`);
-                                el.click();
-                            }
-                        });
-                    } catch (e) {
-                        // Ignore errors for individual selectors
-                    }
-                });
-                
-                // Try clicking by common text patterns in multiple languages
-                const textPatterns = [
-                    // English
-                    'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'i agree', 'ok', 'got it',
-                    // Danish
-                    'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
-                    // German
-                    'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
-                    // French
-                    'accepter', 'j\'accepte', 'tout accepter',
-                    // Spanish
-                    'aceptar', 'aceptar todo', 'permitir'
-                ];
-                
-                textPatterns.forEach(pattern => clickByText(pattern));
-                
-                // 3. Try to handle iframes
-                try {
-                    const iframes = document.querySelectorAll('iframe');
-                    iframes.forEach(iframe => {
-                        try {
-                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                            const buttons = iframeDoc.querySelectorAll('button, a');
-                            buttons.forEach(button => {
-                                const text = (button.textContent || button.innerText || '').toLowerCase();
-                                if (text.includes('accept') || text.includes('agree') || text.includes('allow')) {
-                                    button.click();
-                                }
-                            });
-                        } catch (e) {
-                            // Cross-origin iframe access will fail - this is expected
-                        }
-                    });
-                } catch (e) {
-                    console.log('Error handling iframes:', e);
-                }
-                
-                // 4. Try to remove cookie banners directly
-                const bannerSelectors = [
-                    '[class*="cookie-banner"]', '[id*="cookie-banner"]',
-                    '[class*="cookie-consent"]', '[id*="cookie-consent"]',
-                    '.cc-window', '.cc-banner', '#cookie-law-info-bar',
-                    '#cookiebanner', '#cookieConsent', '#cookie-consent',
-                    '#CybotCookiebotDialog', '#onetrust-banner-sdk'
-                ];
-                
-                bannerSelectors.forEach(selector => {
-                    try {
-                        const elements = document.querySelectorAll(selector);
-                        elements.forEach(el => {
-                            if (el && el.offsetParent !== null) {
-                                el.style.display = 'none';
-                                el.style.visibility = 'hidden';
-                                try { el.remove(); } catch (e) { /* ignore */ }
-                            }
-                        });
-                    } catch (e) {
-                        // Ignore errors
-                    }
-                });
-            }
+        try:
+            # Increase timeout to 120 seconds and use a more lenient waitUntil option
+            await page.goto(url, {
+                'waitUntil': 'domcontentloaded',  # Less strict than networkidle2
+                'timeout': 120000  # 120 seconds timeout
+            })
             
-            // Run cookie handling
-            handleCookieConsent();
-            
-            // Run again after delays to catch late-appearing banners
-            setTimeout(handleCookieConsent, 1000);
-            setTimeout(handleCookieConsent, 3000);
-        }
-        ''')
+            # After initial load, wait for network to be idle with a separate timeout
+            current_app.logger.info("Page loaded, waiting for network idle...")
+            try:
+                await page.waitForNavigation({
+                    'waitUntil': 'networkidle2',
+                    'timeout': 30000  # 30 seconds additional timeout for network idle
+                })
+            except Exception as e:
+                # If waiting for network idle times out, we can still proceed
+                current_app.logger.warning(f"Network idle timeout, but continuing: {str(e)}")
+        except Exception as e:
+            current_app.logger.error(f"Navigation error: {str(e)}")
+            # Try to proceed anyway - we might still be able to take a screenshot
+            current_app.logger.info("Attempting to continue despite navigation error")
         
-        # Wait for cookie banners to be handled
-        current_app.logger.info("Waiting for cookie banners to be handled")
-        await page.waitForTimeout(5000)
+        # Handle cookie consent using pyppeteer's native methods
+        current_app.logger.info("Handling cookie consent with pyppeteer")
+        await handle_cookie_consent(page)
         
-        # Check if any cookie banners are still visible and try again if needed
-        banner_visible = await page.evaluate('''
-        () => {
-            const bannerSelectors = [
-                '[class*="cookie"]', '[id*="cookie"]',
-                '[class*="consent"]', '[id*="consent"]',
-                '[class*="gdpr"]', '[id*="gdpr"]',
-                '.cc-window', '.cc-banner'
-            ];
-            
-            for (const selector of bannerSelectors) {
-                const elements = document.querySelectorAll(selector);
-                for (const el of elements) {
-                    if (el && el.offsetParent !== null &&
-                        el.getBoundingClientRect().height > 20 &&
-                        window.getComputedStyle(el).display !== 'none') {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        ''')
-        
-        if banner_visible:
-            current_app.logger.info("Cookie banners still visible, trying again")
-            await page.evaluate('handleCookieConsent')
-            await page.waitForTimeout(3000)
-        
-        # Take the screenshot
+        # Take the screenshot with additional error handling
         current_app.logger.info(f"Taking screenshot and saving to {filepath}")
-        await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': True})
+        try:
+            await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': True})
+        except Exception as e:
+            current_app.logger.error(f"Error taking screenshot: {str(e)}")
+            # Try with fullPage=False as a fallback
+            current_app.logger.info("Trying fallback screenshot method without fullPage option")
+            await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': False})
         
         # Close the browser connection
         await browser.close()
@@ -399,6 +260,163 @@ async def set_consent_cookies(page, domain):
         'domain': domain,
         'path': '/'
     })
+
+# Function to handle cookie consent using pyppeteer's native methods
+async def handle_cookie_consent(page):
+    current_app.logger.info("Starting cookie consent handling with pyppeteer")
+    
+    # Common selectors for cookie consent buttons
+    selectors = [
+        # ID-based selectors
+        '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
+        '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
+        '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
+        
+        # Class-based selectors
+        '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
+        '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
+        '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
+        
+        # Framework-specific selectors
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+        '#onetrust-accept-btn-handler',
+        '.cc-accept', '.cc-allow', '.cc-dismiss',
+        
+        # Attribute-based selectors
+        '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
+        '[data-consent="accept"]', '[data-cookie-accept="all"]',
+        '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]'
+    ]
+    
+    # Try clicking each selector
+    for selector in selectors:
+        try:
+            # Check if the element exists and is visible
+            visible = await page.evaluate('''
+                (selector) => {
+                    const el = document.querySelector(selector);
+                    return el && el.offsetParent !== null;
+                }
+            ''', selector)
+            
+            if visible:
+                current_app.logger.info(f"Found visible cookie consent button: {selector}")
+                await page.click(selector, {'timeout': 1000})
+                current_app.logger.info(f"Clicked cookie consent button: {selector}")
+                await page.waitForTimeout(500)  # Short wait after clicking
+        except Exception as e:
+            # Ignore errors for individual selectors
+            pass
+    
+    # Try to find and click buttons by text content
+    text_patterns = [
+        # English
+        'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'i agree', 'ok', 'got it',
+        # Danish
+        'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
+        # German
+        'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
+        # French
+        'accepter', 'tout accepter',
+        # Spanish
+        'aceptar', 'aceptar todo', 'permitir'
+    ]
+    
+    for pattern in text_patterns:
+        try:
+            # Find elements containing the text
+            elements = await page.evaluate('''
+                (pattern) => {
+                    const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"]'));
+                    return elements
+                        .filter(el => {
+                            if (!el || !el.offsetParent) return false; // Skip invisible elements
+                            const text = (el.textContent || el.innerText || '').toLowerCase();
+                            return text.includes(pattern);
+                        })
+                        .map(el => {
+                            const rect = el.getBoundingClientRect();
+                            return {
+                                x: rect.left + rect.width / 2,
+                                y: rect.top + rect.height / 2
+                            };
+                        });
+                }
+            ''', pattern)
+            
+            # Click each element at its center coordinates
+            for element in elements:
+                current_app.logger.info(f"Found element with text '{pattern}' at coordinates: {element}")
+                await page.mouse.click(element['x'], element['y'])
+                current_app.logger.info(f"Clicked element with text: {pattern}")
+                await page.waitForTimeout(500)  # Short wait after clicking
+        except Exception as e:
+            # Ignore errors for individual text patterns
+            pass
+    
+    # Try to handle iframes
+    try:
+        # Get all iframes
+        iframes = await page.querySelectorAll('iframe')
+        
+        for i, iframe in enumerate(iframes):
+            try:
+                # Try to access the iframe's content
+                frame = page.frames[i + 1]  # +1 because the first frame is the main page
+                
+                if frame:
+                    # Try to click accept buttons in the iframe
+                    for selector in selectors:
+                        try:
+                            visible = await frame.evaluate('''
+                                (selector) => {
+                                    const el = document.querySelector(selector);
+                                    return el && el.offsetParent !== null;
+                                }
+                            ''', selector)
+                            
+                            if visible:
+                                current_app.logger.info(f"Found visible cookie consent button in iframe: {selector}")
+                                await frame.click(selector, {'timeout': 1000})
+                                current_app.logger.info(f"Clicked cookie consent button in iframe: {selector}")
+                        except Exception:
+                            # Ignore errors for individual selectors in iframes
+                            pass
+            except Exception:
+                # Ignore errors for individual iframes
+                pass
+    except Exception as e:
+        current_app.logger.info(f"Error handling iframes: {str(e)}")
+    
+    # Wait a bit for any animations to complete
+    await page.waitForTimeout(2000)
+    
+    # Try to hide any remaining cookie banners
+    banner_selectors = [
+        '[class*="cookie-banner"]', '[id*="cookie-banner"]',
+        '[class*="cookie-consent"]', '[id*="cookie-consent"]',
+        '.cc-window', '.cc-banner', '#cookie-law-info-bar',
+        '#cookiebanner', '#cookieConsent', '#cookie-consent',
+        '#CybotCookiebotDialog', '#onetrust-banner-sdk'
+    ]
+    
+    for selector in banner_selectors:
+        try:
+            await page.evaluate('''
+                (selector) => {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach(el => {
+                        if (el && el.offsetParent !== null) {
+                            el.style.display = 'none';
+                            el.style.visibility = 'hidden';
+                            try { el.remove(); } catch (e) { /* ignore */ }
+                        }
+                    });
+                }
+            ''', selector)
+        except Exception:
+            # Ignore errors for individual banner selectors
+            pass
 
 @browserless_bp.route('/screenshots/<filename>')
 def get_screenshot(filename):

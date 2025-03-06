@@ -219,6 +219,34 @@
   .screenshot-thumbnail:hover .screenshot-overlay {
     opacity: 1;
   }
+  
+  .refresh-status {
+    min-height: 60px;
+    transition: all 0.3s ease;
+  }
+  
+  .refresh-status .alert {
+    margin-bottom: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Add a timeout indicator */
+  .timeout-indicator {
+    width: 100%;
+    height: 4px;
+    background-color: #e9ecef;
+    margin-top: 5px;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  
+  .timeout-progress {
+    height: 100%;
+    width: 0%;
+    background-color: #007bff;
+    transition: width 1s linear;
+  }
 </style>
 {% endblock %}
 
@@ -359,13 +387,62 @@ document.addEventListener('DOMContentLoaded', function() {
       const card = this.closest('.card');
       const img = card.querySelector('img');
       const originalSrc = img.src;
+      
+      // Create a status message element if it doesn't exist
+      let statusEl = card.querySelector('.refresh-status');
+      if (!statusEl) {
+        statusEl = document.createElement('div');
+        statusEl.className = 'refresh-status mt-2';
+        card.querySelector('.card-body').appendChild(statusEl);
+      }
+      
+      // Update status message
+      statusEl.innerHTML = '<div class="alert alert-info">Starting refresh...</div>';
+      
+      // Show loading image
       img.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22286%22%20height%3D%22180%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20286%20180%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_17a3f093956%20text%20%7B%20fill%3A%23999%3Bfont-weight%3Anormal%3Bfont-family%3A-apple-system%2CBlinkMacSystemFont%2C%26quot%3BSegoe%20UI%26quot%3B%2CRoboto%2C%26quot%3BHelvetica%20Neue%26quot%3B%2CArial%2C%26quot%3BNoto%20Sans%26quot%3B%2Csans-serif%2C%26quot%3BApple%20Color%20Emoji%26quot%3B%2C%26quot%3BSegoe%20UI%20Emoji%26quot%3B%2C%26quot%3BSegoe%20UI%20Symbol%26quot%3B%2C%26quot%3BNoto%20Color%20Emoji%26quot%3B%2C%20monospace%3Bfont-size%3A14pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_17a3f093956%22%3E%3Crect%20width%3D%22286%22%20height%3D%22180%22%20fill%3D%22%23373940%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%22108.5390625%22%20y%3D%2296.3%22%3ERefreshing...%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
       
       // Disable the button while refreshing
       this.disabled = true;
       this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
       
-      // Make request to take a new screenshot
+      // Add timeout indicator
+      statusEl.innerHTML = `
+        <div class="alert alert-info">Connecting to website... This may take up to 2 minutes for slow sites.</div>
+        <div class="timeout-indicator">
+          <div class="timeout-progress" id="timeout-progress-${id}"></div>
+        </div>
+      `;
+      
+      // Start the timeout indicator animation
+      const progressBar = document.getElementById(`timeout-progress-${id}`);
+      let progressWidth = 0;
+      const totalTime = 120; // 120 seconds max timeout
+      const updateInterval = 1; // Update every second
+      const increment = (100 / totalTime) * updateInterval;
+      
+      const progressTimer = setInterval(() => {
+        progressWidth += increment;
+        if (progressWidth >= 100) {
+          clearInterval(progressTimer);
+        } else {
+          progressBar.style.width = `${progressWidth}%`;
+          
+          // Update status message at certain points
+          if (progressWidth > 25 && progressWidth < 26) {
+            statusEl.querySelector('.alert').innerHTML = 'Still connecting... The website might be slow to respond.';
+          } else if (progressWidth > 50 && progressWidth < 51) {
+            statusEl.querySelector('.alert').innerHTML = 'Waiting for page to load and handling cookie consent dialogs...';
+          } else if (progressWidth > 75 && progressWidth < 76) {
+            statusEl.querySelector('.alert').innerHTML = 'Almost there... Taking the screenshot.';
+          }
+        }
+      }, updateInterval * 1000);
+      
+      // Make request to take a new screenshot with a longer timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 150000); // 2.5 minute timeout
+      
       fetch('/api/browserless/screenshot', {
         method: 'POST',
         headers: {
@@ -374,10 +451,15 @@ document.addEventListener('DOMContentLoaded', function() {
         body: JSON.stringify({
           name: name,
           url: url
-        })
+        }),
+        signal: controller.signal
       })
       .then(response => response.json())
       .then(data => {
+        // Clear the progress timer and timeout
+        clearInterval(progressTimer);
+        clearTimeout(timeoutId);
+        
         if (data.status === 'success') {
           // Update the image with the new screenshot (with cache-busting)
           const timestamp = new Date().getTime();
@@ -390,10 +472,25 @@ document.addEventListener('DOMContentLoaded', function() {
             const formattedDate = now.toISOString().slice(0, 16).replace('T', ' ');
             lastUpdatedEl.innerHTML = `<a href="${url}" target="_blank">${url}</a><br>Last updated: ${formattedDate}`;
           }
+          
+          // Show success message
+          statusEl.innerHTML = '<div class="alert alert-success">Screenshot refreshed successfully!</div>';
+          
+          // Hide the status message after 5 seconds
+          setTimeout(() => {
+            statusEl.innerHTML = '';
+          }, 5000);
         } else {
           // Restore original image on error
           img.src = originalSrc;
-          alert(`Error refreshing screenshot: ${data.message}`);
+          
+          // Show error message with details if available
+          let errorMessage = data.message || 'Unknown error';
+          let technicalDetails = data.technical_details ? `<br><small class="text-muted">Technical details: ${data.technical_details}</small>` : '';
+          
+          statusEl.innerHTML = `<div class="alert alert-danger">
+            ${errorMessage}${technicalDetails}
+          </div>`;
         }
         
         // Re-enable the button
@@ -401,10 +498,22 @@ document.addEventListener('DOMContentLoaded', function() {
         this.textContent = 'Refresh';
       })
       .catch(error => {
+        // Clear the progress timer and timeout
+        clearInterval(progressTimer);
+        clearTimeout(timeoutId);
+        
         console.error('Error:', error);
         // Restore original image on error
         img.src = originalSrc;
-        alert('An error occurred while refreshing the screenshot');
+        
+        // Show appropriate error message
+        let errorMessage = 'Network error while refreshing the screenshot.';
+        
+        if (error.name === 'AbortError') {
+          errorMessage = 'The request took too long and was aborted. The website might be very slow or unresponsive.';
+        }
+        
+        statusEl.innerHTML = `<div class="alert alert-danger">${errorMessage} Please try again later.</div>`;
         
         // Re-enable the button
         this.disabled = false;
