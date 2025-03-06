@@ -4,7 +4,7 @@ from config import Config
 from models import db
 from flask_migrate import Migrate
 import pillow_heif
-from tasks import celery, start_scheduler
+from tasks import celery
 from datetime import timedelta
 
 # Register HEIF opener for Pillow
@@ -56,8 +56,7 @@ def create_app(config_class=Config):
     )
 
     # Note: Scheduler is now started in a dedicated process (scheduler.py)
-    # We still call the function for backward compatibility, but it doesn't start the scheduler
-    start_scheduler(app)
+    # We no longer need to call start_scheduler here
     
     # We no longer run fetch_device_metrics immediately here
     # The dedicated scheduler process will handle this

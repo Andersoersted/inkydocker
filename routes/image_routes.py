@@ -191,14 +191,15 @@ def send_image(filename):
             # Check if device is in portrait orientation
             is_portrait = device_obj.orientation.lower() == 'portrait'
             
-            # If portrait, swap width and height for target ratio calculation
+            # Calculate target ratio based on device orientation
+            # This ratio is used for cropping and should always be width/height in the device's natural orientation
             if is_portrait:
-                target_ratio = dev_height / dev_width
+                target_ratio = dev_height / dev_width  # For portrait displays, use height/width
             else:
-                target_ratio = dev_width / dev_height
+                target_ratio = dev_width / dev_height  # For landscape displays, use width/height
                 
             # Log the original image dimensions and target ratio
-            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, target ratio: {target_ratio}")
+            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, target ratio: {target_ratio}, device orientation: {device_obj.orientation}")
             
             # Step 1: Apply crop if available
             cdata = load_crop_info_from_db(filename)
@@ -223,28 +224,40 @@ def send_image(filename):
                         current_app.logger.info(f"Using stored crop data: ({x}, {y}, {w}, {h})")
                         cropped = orig_img.crop((x, y, x+w, y+h))
                     else:
-                        # If resolutions don't match, we need to recalculate the crop
-                        # to maintain the correct aspect ratio
-                        current_app.logger.info(f"Recalculating crop to match target ratio")
+                        # If resolutions don't match, we still use the user's crop selection directly
+                        # without recalculating based on the image rotation
+                        current_app.logger.info(f"Using stored crop data with resolution adjustment")
                         cropped = orig_img.crop((x, y, x+w, y+h))
                         crop_w, crop_h = cropped.size
-                        crop_ratio = crop_w / crop_h
                         
-                        # Adjust the crop to match the target ratio
-                        if crop_ratio > target_ratio:
-                            new_width = int(crop_h * target_ratio)
-                            left = (crop_w - new_width) // 2
-                            crop_box = (left, 0, left + new_width, crop_h)
-                        else:
-                            new_height = int(crop_w / target_ratio)
-                            top = (crop_h - new_height) // 2
-                            crop_box = (0, top, crop_w, top + new_height)
-                        cropped = cropped.crop(crop_box)
+                        # We only need to adjust the crop to match the target ratio
+                        # This ensures the crop matches the device's aspect ratio regardless of image rotation
+                        crop_ratio = crop_w / crop_h
+                        current_app.logger.info(f"Crop dimensions: {crop_w}x{crop_h}, crop ratio: {crop_ratio}, target ratio: {target_ratio}")
+                        
+                        # Only adjust if the ratios are significantly different
+                        if abs(crop_ratio - target_ratio) > 0.01:
+                            current_app.logger.info(f"Adjusting crop to match target ratio")
+                            if crop_ratio > target_ratio:
+                                # Crop is too wide, need to narrow it
+                                new_width = int(crop_h * target_ratio)
+                                left = (crop_w - new_width) // 2
+                                crop_box = (left, 0, left + new_width, crop_h)
+                            else:
+                                # Crop is too tall, need to shorten it
+                                new_height = int(crop_w / target_ratio)
+                                top = (crop_h - new_height) // 2
+                                crop_box = (0, top, crop_w, top + new_height)
+                            cropped = cropped.crop(crop_box)
+                            current_app.logger.info(f"Adjusted crop dimensions: {cropped.size}")
             
             # If no valid crop data, create an auto-centered crop with the correct aspect ratio
             if not cdata or "x" not in cdata:
                 current_app.logger.info(f"No crop data found, using auto-centered crop")
                 orig_ratio = orig_w / orig_h
+                
+                # Log the ratios for debugging
+                current_app.logger.info(f"Original image ratio: {orig_ratio}, target ratio: {target_ratio}")
                 
                 if orig_ratio > target_ratio:
                     # Image is wider than target ratio, use full height
@@ -259,11 +272,13 @@ def send_image(filename):
                 
                 current_app.logger.info(f"Auto crop box: {crop_box}")
                 cropped = orig_img.crop(crop_box)
+                current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
 
             # Step 2: Resize the cropped image to match the target resolution
-            current_app.logger.info(f"Cropped image size: {cropped.size}")
+            current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
             
             # If portrait, rotate the image 90 degrees clockwise and swap dimensions
+            # This rotation happens AFTER cropping, so it doesn't affect the crop selection
             if is_portrait:
                 current_app.logger.info("Rotating image for portrait orientation")
                 cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
@@ -272,7 +287,7 @@ def send_image(filename):
             else:
                 final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
             
-            current_app.logger.info(f"Final image size: {final_img.size}")
+            current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
             
             # Save the processed image as a temporary file
             temp_dir = os.path.join(data_folder, "temp")

@@ -52,48 +52,47 @@ def create_app():
     
     return app
 
-def start_scheduler(app):
+# Function to load and schedule events from the database
+def load_scheduled_events(app):
     """
-    Start the APScheduler with the Flask app context.
-    This function should only be called once in this dedicated process.
+    Load all scheduled events from the database and schedule them.
+    This function is called periodically to pick up new events.
     """
     with app.app_context():
-        # Import the necessary functions
-        from tasks import fetch_device_metrics, send_scheduled_image
+        from tasks import send_scheduled_image
         from models import ScheduleEvent
+        import datetime
+        import pytz
         
-        # Schedule the fetch_device_metrics task to run every 60 seconds (reduced from 5 seconds to prevent log flooding)
-        scheduler.add_job(
-            fetch_device_metrics,
-            'interval',
-            seconds=60,
-            id='fetch_device_metrics'
-        )
-        
-        # Load all scheduled events from the database and schedule them
         try:
+            # Clear any existing scheduled events to avoid duplicates
+            for job in scheduler.get_jobs():
+                if job.id.startswith('event_'):
+                    job.remove()
+            
+            # Load all scheduled events from the database
             events = ScheduleEvent.query.filter_by(sent=False).all()
+            logger.info(f"Loading {len(events)} scheduled events from database")
+            
+            # Get the Copenhagen timezone
+            copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+            
+            # Get current time in Copenhagen timezone for comparison
+            now = datetime.datetime.now(copenhagen_tz)
+            
+            scheduled_count = 0
+            past_count = 0
+            
             for event in events:
                 try:
-                    import datetime
-                    import pytz
-                    
-                    # Get the Copenhagen timezone
-                    copenhagen_tz = pytz.timezone('Europe/Copenhagen')
-                    
                     # Parse the datetime string
                     dt = datetime.datetime.fromisoformat(event.datetime_str)
                     
-                    # Ensure both datetimes are timezone-aware for comparison
-                    # If dt has a timezone, convert it to Copenhagen timezone
-                    # If dt doesn't have a timezone, assume it's in Copenhagen timezone
+                    # Ensure the datetime is in Copenhagen timezone
                     if dt.tzinfo is None:
                         dt = copenhagen_tz.localize(dt)
                     else:
                         dt = dt.astimezone(copenhagen_tz)
-                    
-                    # Get current time in Copenhagen timezone for comparison
-                    now = datetime.datetime.now(copenhagen_tz)
                     
                     if dt > now:
                         scheduler.add_job(
@@ -103,12 +102,44 @@ def start_scheduler(app):
                             args=[event.id],
                             id=f'event_{event.id}'
                         )
-                        logger.info(f"Scheduled event {event.id} for {dt}")
+                        scheduled_count += 1
+                    else:
+                        past_count += 1
                 except Exception as e:
                     logger.error(f"Error scheduling event {event.id}: {e}")
+            
+            logger.info(f"Scheduled {scheduled_count} events, {past_count} events were in the past")
+            
         except Exception as e:
             logger.error(f"Error loading scheduled events: {e}")
-            logger.info("Continuing without loading scheduled events")
+
+def start_scheduler(app):
+    """
+    Start the APScheduler with the Flask app context.
+    This function should only be called once in this dedicated process.
+    """
+    with app.app_context():
+        # Import the necessary functions
+        from tasks import fetch_device_metrics
+        
+        # Schedule the fetch_device_metrics task to run every 60 seconds
+        scheduler.add_job(
+            fetch_device_metrics,
+            'interval',
+            seconds=60,
+            id='fetch_device_metrics'
+        )
+        
+        # Schedule a job to check for new events every 60 seconds
+        scheduler.add_job(
+            lambda: load_scheduled_events(app),
+            'interval',
+            seconds=60,
+            id='check_for_new_events'
+        )
+        
+        # Initial load of scheduled events
+        load_scheduled_events(app)
         
         # Start the scheduler
         scheduler.start()

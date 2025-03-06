@@ -157,8 +157,8 @@
         <form id="eventForm">
           <input type="hidden" id="editingEventId" value="">
           <div class="mb-3">
-            <label for="eventDate" class="form-label">Date &amp; Time:</label>
-            <input type="datetime-local" class="form-control" id="eventDate" name="eventDate" required>
+            <label for="eventDate" class="form-label">Date &amp; Time (24-hour format):</label>
+            <input type="datetime-local" class="form-control" id="eventDate" name="eventDate" required step="60">
           </div>
           <div class="mb-3">
             <label class="form-label">Select eInk Display:</label>
@@ -425,6 +425,18 @@
         nowIndicator: true,
         editable: true,
         themeSystem: 'bootstrap5', // Use Bootstrap 5 theming
+        // Use 24-hour format instead of AM/PM
+        eventTimeFormat: {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        },
+        // Use 24-hour format for slot labels (time displayed on the left side)
+        slotLabelFormat: {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        },
         buttonIcons: {
           prev: 'chevron-left',
           next: 'chevron-right',
@@ -501,15 +513,14 @@
         eventDrop: function(info) {
           var newDate = info.event.start;
           var isoString = newDate.toISOString();
-          var timezoneOffset = newDate.getTimezoneOffset();
           
           fetch("/schedule/update", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               event_id: info.event.id,
-              datetime: isoString,
-              timezone_offset: timezoneOffset
+              datetime: isoString
+              // Removed timezone_offset - we want to use the time exactly as entered
             })
           })
           .then(response => response.json())
@@ -1054,8 +1065,8 @@
         device: device,
         recurrence: recurrence,
         filename: filename,
-        refresh_screenshot: refreshScreenshot,
-        timezone_offset: new Date().getTimezoneOffset()  // Add timezone offset
+        refresh_screenshot: refreshScreenshot
+        // Removed timezone_offset - we want to use the time exactly as entered
       };
       
       // If updating, include the event ID

@@ -210,17 +210,9 @@ def add_event():
             # Parse the datetime string
             dt = datetime.datetime.fromisoformat(datetime_str)
             
-            # FIXED: Only apply timezone offset for naive datetimes (without timezone info)
-            # When a user creates a new event with a local time (e.g., "2025-03-02T20:00"),
-            # we need to convert it to UTC by subtracting the timezone offset
-            if not has_timezone and timezone_offset:
-                # CRITICAL FIX: For Europe/Copenhagen (UTC+1:00), getTimezoneOffset() returns -60
-                # But we need to SUBTRACT 1 hour to convert from local to UTC
-                # So we need to ADD the timezone offset (which is negative for timezones ahead of UTC)
-                dt = dt + datetime.timedelta(minutes=timezone_offset)
-                print(f"Applied timezone offset: +{timezone_offset} minutes, new datetime: {dt}")
-            elif has_timezone:
-                print(f"Datetime already has timezone info, not applying offset: {dt}")
+            # IMPORTANT: We're now ignoring timezone offsets completely
+            # We'll use the time exactly as entered, in the Docker container's timezone
+            print(f"Using datetime exactly as entered: {dt}")
         
         # Ensure the datetime is timezone-aware and in Europe/Copenhagen
         import pytz
@@ -327,15 +319,9 @@ def update_event():
                 # Parse the datetime string
                 dt = datetime.datetime.fromisoformat(new_datetime)
                 
-                # Only apply timezone offset if the datetime doesn't already have timezone info
-                if timezone_offset and not has_timezone:
-                    # CRITICAL FIX: For Europe/Copenhagen (UTC+1:00), getTimezoneOffset() returns -60
-                    # But we need to SUBTRACT 1 hour to convert from local to UTC
-                    # So we need to ADD the timezone offset (which is negative for timezones ahead of UTC)
-                    dt = dt + datetime.timedelta(minutes=timezone_offset)
-                    print(f"Applied timezone offset: +{timezone_offset} minutes, new datetime: {dt}")
-                elif has_timezone:
-                    print(f"Datetime already has timezone info, not applying offset: {dt}")
+                # IMPORTANT: We're now ignoring timezone offsets completely
+                # We'll use the time exactly as entered, in the Docker container's timezone
+                print(f"Using datetime exactly as entered: {dt}")
             
             # Ensure the datetime is timezone-aware and in Europe/Copenhagen
             import pytz

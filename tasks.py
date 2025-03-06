@@ -452,15 +452,22 @@ def send_scheduled_image(event_id):
     from utils.image_helpers import add_send_log_entry
     from flask import current_app
     
+    current_app.logger.info(f"Starting send_scheduled_image for event {event_id}")
+    
     try:
         event = ScheduleEvent.query.get(event_id)
         if not event:
             current_app.logger.error("Event not found: %s", event_id)
             return
+        
+        current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
+        
         device_obj = Device.query.filter_by(address=event.device).first()
         if not device_obj:
             current_app.logger.error("Device not found for event %s", event_id)
             return
+        
+        current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
 
         # Check if this is a screenshot that needs to be refreshed
         if event.refresh_screenshot:
@@ -562,17 +569,24 @@ def send_scheduled_image(event_id):
             final_img.save(temp_filename, format="JPEG", quality=95)
         
         cmd = f'curl "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
+        current_app.logger.info(f"Sending image with command: {cmd}")
+        
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        current_app.logger.info(f"Curl command result: returncode={result.returncode}, stdout={result.stdout}")
+        
         os.remove(temp_filename)
         
         if result.returncode == 0:
+            current_app.logger.info(f"Successfully sent image to device {device_obj.friendly_name}")
             event.sent = True
             db.session.commit()
             device_obj.last_sent = event.filename
             db.session.commit()
             add_send_log_entry(event.filename)
+            current_app.logger.info(f"Updated database: event {event.id} marked as sent")
         else:
-            current_app.logger.error("Error sending image: %s", result.stderr)
+            current_app.logger.error(f"Error sending image: {result.stderr}")
     except Exception as e:
         current_app.logger.error("Error in send_scheduled_image: %s", e)
         return
@@ -681,10 +695,4 @@ def fetch_device_metrics(self):
         return {"status": "error", "message": "Error checking device status"}
 
 # The scheduler functionality has been moved to scheduler.py
-# This function is kept as a stub for backward compatibility
-def start_scheduler(app):
-    """
-    This function is deprecated and no longer starts the scheduler.
-    The scheduler is now started in a dedicated process (scheduler.py).
-    """
-    app.logger.info("Scheduler initialization skipped - now handled by dedicated process")
+# The start_scheduler function has been removed as it's no longer needed
