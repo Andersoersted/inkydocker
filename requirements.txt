@@ -4,6 +4,7 @@ pillow-heif==0.21.0
 Flask-SQLAlchemy==3.1.1
 cryptography
 requests>=2.31.0  # Required for browserless API calls
+pyppeteer>=1.0.2  # For direct Puppeteer control of browserless
 Flask-Migrate
 ollama
 httpx

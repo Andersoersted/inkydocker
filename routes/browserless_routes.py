@@ -8,6 +8,9 @@ from io import BytesIO
 from utils.crop_helpers import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry
 import subprocess
 import base64
+import asyncio
+import pyppeteer
+import logging
 
 browserless_bp = Blueprint('browserless', __name__)
 
@@ -75,426 +78,22 @@ def take_screenshot():
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
     filename = f"screenshot_{timestamp}.jpg"
     
-    # Prepare the browserless API URL
-    browserless_url = f"http://{config.address}:{config.port}/screenshot"
+    # Create screenshots folder if it doesn't exist
+    screenshots_folder = os.path.join(current_app.config['DATA_FOLDER'], 'screenshots')
+    if not os.path.exists(screenshots_folder):
+        os.makedirs(screenshots_folder)
     
-    # Prepare the payload for browserless
-    payload = {
-        "url": data['url'],
-        "options": {
-            "fullPage": True,
-            "type": "jpeg",
-            "quality": 90,
-            "waitUntil": "networkidle2"  # Wait until network is idle
-        },
-        "cookies": [],  # Empty array to initialize cookies
-        "gotoOptions": {
-            "waitUntil": "networkidle2",
-            "timeout": 60000  # Increased timeout to 60 seconds
-        }
-    }
+    # Path for the screenshot file
+    filepath = os.path.join(screenshots_folder, filename)
     
-    # Try to set common cookie consent cookies for the domain
-    domain = data['url'].split('//')[-1].split('/')[0]
-    if domain.startswith('www.'):
-        domain = domain[4:]  # Remove www. prefix
-    
-    # Set common cookie consent cookies that work across many sites
-    payload["cookies"] = [
-        # General cookie consent cookies
-        {"name": "cookieConsent", "value": "true", "domain": f".{domain}"},
-        {"name": "cookie_consent", "value": "true", "domain": f".{domain}"},
-        {"name": "cookies_accepted", "value": "true", "domain": f".{domain}"},
-        {"name": "cookies_consent", "value": "true", "domain": f".{domain}"},
-        {"name": "cookieConsent", "value": "1", "domain": f".{domain}"},
-        {"name": "cookie_consent", "value": "1", "domain": f".{domain}"},
-        {"name": "gdpr_consent", "value": "true", "domain": f".{domain}"},
-        {"name": "gdpr_consent", "value": "1", "domain": f".{domain}"},
-        {"name": "cookieConsentDate", "value": datetime.now().strftime("%Y-%m-%d"), "domain": f".{domain}"},
-        
-        # Common cookie banner framework cookies
-        {"name": "CookieConsent", "value": "{stamp:%27-1%27%2Cnecessary:true%2Cpreferences:true%2Cstatistics:true%2Cmarketing:true%2Cmethod:%27explicit%27%2Cver:1}", "domain": f".{domain}"},
-        {"name": "euconsent-v2", "value": "CPwqAEAPwqAEAAHABBENDECsAP_AAH_AAAAAJNNf_X__b3_j-_5_f_t0eY1P9_7_v-0zjhfdt-8N3f_X_L8X42M7vF36pq4KuR4Eu3LBIQdlHOHcTUmw6okVrzPsbk2cr7NKJ7PEmnMbO2dYGH9_n93TuZKY7__8___z_v-v_v____f_7-3_3__5_X---_e_V399zLv9____39nP___9v-_9_____4IhgEmGpeQBdiWODJtGlUKIEYVhIdAKACigGFoisIHVwU7K4CPUEDABAagIwIgQYgoxYBAAIBAEhEQEgB4IBEARAIAAQAqwEIACNgEFgBYGAQACgGhYgRQBCBIQZHBUcpgQFSLRQT2ViCUHexphCGWeBFAo_oqEBGs0QLAyEhYOY4AkBLxZIHmKF8gAAAAA.YAAAAAAAAAAA", "domain": f".{domain}"},
-        {"name": "OptanonConsent", "value": "isGpcEnabled=0&datestamp=Wed+Mar+06+2024+09%3A45%3A00+GMT%2B0100+(Central+European+Standard+Time)&version=202209.1.0&isIABGlobal=false&hosts=&consentId=47bcd4dd-f4c4-4b04-b78b-37f7e1484595&interactionCount=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1&geolocation=DK%3B84&AwaitingReconsent=false", "domain": f".{domain}"},
-        
-        # Site-specific cookies for common Danish sites
-        {"name": "CybotCookiebotDialogConsent", "value": "00000000000000000000000000000000", "domain": f".{domain}"},
-        {"name": "cb_user_accepted_cookies", "value": "1", "domain": f".{domain}"},
-        {"name": "cookie_consent_level", "value": "all", "domain": f".{domain}"}
-    ]
-    
-    # Add a comprehensive cookie handling script
-    payload["addScriptTag"] = [{
-        "content": """
-            // Universal cookie acceptance function
-            function handleCookieConsent() {
-                console.log('Starting cookie consent handling...');
-                
-                // 1. Direct cookie manipulation - set common cookie consent flags
-                try {
-                    // Common cookie names used for consent
-                    const commonCookieNames = [
-                        'cookieConsent', 'cookie_consent', 'cookies_accepted', 'gdpr_consent',
-                        'CookieConsent', 'cookieAccepted', 'cookies_policy', 'cookie_notice',
-                        'cookie-notice-dismissed', 'allowCookies', 'acceptCookies'
-                    ];
-                    
-                    // Set all these cookies to accepted values
-                    commonCookieNames.forEach(name => {
-                        document.cookie = `${name}=true; path=/; max-age=31536000`;
-                        document.cookie = `${name}=1; path=/; max-age=31536000`;
-                        document.cookie = `${name}=accepted; path=/; max-age=31536000`;
-                    });
-                    
-                    console.log('Set consent cookies directly');
-                } catch (e) {
-                    console.log('Error setting cookies directly:', e);
-                }
-                
-                // 2. Try to find and click cookie consent buttons
-                
-                // Common cookie banner frameworks and their selectors
-                const frameworkSelectors = {
-                    // CookieBot
-                    'CookieBot': ['#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-                                 '.CybotCookiebotDialogBodyButton',
-                                 '[id*="CybotCookiebot"][id*="Button"][id*="Accept"]'],
-                    // OneTrust
-                    'OneTrust': ['#onetrust-accept-btn-handler',
-                                '.onetrust-close-btn-handler',
-                                '.ot-sdk-button[aria-label*="Accept"]'],
-                    // Cookie-Script
-                    'CookieScript': ['.cookiescript_accept',
-                                    '#cookiescript_accept',
-                                    '[data-cs-accept-cookies]'],
-                    // Cookielaw.org
-                    'Cookielaw': ['.optanon-allow-all',
-                                 '#optanon-popup-bottom .accept-cookies-button'],
-                    // Cookie Notice
-                    'CookieNotice': ['.cn-set-cookie',
-                                    '.cn-accept-cookie',
-                                    '#cn-accept-cookie'],
-                    // GDPR Cookie Consent
-                    'GDPRCookieConsent': ['.cli_action_button[data-cli_action="accept"]',
-                                         '#cookie_action_close_header',
-                                         '.cli-accept-all-btn'],
-                    // Cookiefirst
-                    'Cookiefirst': ['.cookiefirst-accept-all',
-                                   '[data-cookiefirst-action="accept"]'],
-                    // Complianz
-                    'Complianz': ['.cmplz-accept',
-                                 '.cc-accept-all',
-                                 '.cmplz-btn.cmplz-accept'],
-                    // Borlabs Cookie
-                    'Borlabs': ['#CookieBoxSaveButton',
-                               '.borlabs-cookie-accept',
-                               '#borlabs-cookie-btn-accept-all'],
-                    // Termly
-                    'Termly': ['.termly-styles-btn-accept',
-                              '[data-role="accept-button"]'],
-                    // Osano
-                    'Osano': ['.osano-cm-accept-all',
-                             '.osano-cm-button--type_accept'],
-                    // Quantcast
-                    'Quantcast': ['.qc-cmp2-summary-buttons button:last-child',
-                                 '[aria-label*="AGREE"]',
-                                 '.qc-cmp-button']
-                };
-                
-                // Try all framework selectors
-                for (const [framework, selectors] of Object.entries(frameworkSelectors)) {
-                    selectors.forEach(selector => {
-                        try {
-                            const elements = document.querySelectorAll(selector);
-                            if (elements.length > 0) {
-                                console.log(`Found ${framework} consent elements with selector: ${selector}`);
-                                elements.forEach(el => {
-                                    if (el && el.offsetParent !== null) {
-                                        console.log(`Clicking ${framework} element:`, selector);
-                                        el.click();
-                                    }
-                                });
-                            }
-                        } catch (e) {
-                            console.log(`Error with ${framework} selector:`, e);
-                        }
-                    });
-                }
-                
-                // 3. Generic selectors based on common patterns
-                const genericSelectors = [
-                    // ID-based selectors
-                    '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
-                    '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
-                    '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
-                    
-                    // Class-based selectors
-                    '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
-                    '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
-                    '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
-                    
-                    // Attribute-based selectors
-                    '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
-                    '[data-consent="accept"]', '[data-cookie-accept="all"]',
-                    '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]',
-                    '[title*="Accept cookies"]', '[title*="accept all"]'
-                ];
-                
-                genericSelectors.forEach(selector => {
-                    try {
-                        const elements = document.querySelectorAll(selector);
-                        if (elements.length > 0) {
-                            console.log(`Found generic consent elements with selector: ${selector}`);
-                            elements.forEach(el => {
-                                if (el && el.offsetParent !== null) {
-                                    console.log('Clicking generic element:', selector);
-                                    el.click();
-                                }
-                            });
-                        }
-                    } catch (e) {
-                        console.log('Error with generic selector:', e);
-                    }
-                });
-                
-                // 4. Text-based approach for buttons and links
-                const textPatterns = {
-                    // Common accept text patterns in various languages
-                    acceptPatterns: [
-                        'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'allow cookies',
-                        'agree', 'agree to all', 'i agree', 'consent', 'i consent', 'ok', 'okay',
-                        'got it', 'understood', 'continue', 'proceed', 'save', 'confirm',
-                        // Danish
-                        'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
-                        // German
-                        'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
-                        // French
-                        'accepter', 'j\'accepte', 'tout accepter', 'autoriser',
-                        // Spanish
-                        'aceptar', 'aceptar todo', 'permitir', 'estoy de acuerdo',
-                        // Italian
-                        'accetto', 'accetta tutto', 'consento', 'va bene'
-                    ],
-                    // Common cookie-related text patterns
-                    cookiePatterns: [
-                        'cookie', 'cookies', 'gdpr', 'privacy', 'consent', 'data',
-                        // Danish
-                        'samtykke', 'privat', 'privatlivspolitik',
-                        // German
-                        'datenschutz', 'einwilligung',
-                        // French
-                        'confidentialité', 'consentement',
-                        // Spanish
-                        'privacidad', 'consentimiento',
-                        // Italian
-                        'privacy', 'consenso'
-                    ]
-                };
-                
-                // Find all clickable elements
-                const clickableElements = document.querySelectorAll('button, a, div[role="button"], span[role="button"], [tabindex="0"]');
-                
-                clickableElements.forEach(el => {
-                    if (el && el.offsetParent !== null) { // Check if visible
-                        const text = (el.textContent || el.innerText || '').toLowerCase();
-                        
-                        // Check if element contains both accept and cookie related text
-                        const hasAcceptText = textPatterns.acceptPatterns.some(pattern => text.includes(pattern));
-                        const hasCookieText = textPatterns.cookiePatterns.some(pattern => text.includes(pattern));
-                        
-                        if (hasAcceptText && hasCookieText) {
-                            console.log('Clicking text-matched element:', text);
-                            el.click();
-                        } else if (hasAcceptText && (el.id || el.className || '').toLowerCase().includes('cookie')) {
-                            // Also click if it has accept text and cookie in id/class
-                            console.log('Clicking element with accept text and cookie in id/class:', text);
-                            el.click();
-                        }
-                    }
-                });
-                
-                // 5. Try to handle iframes that might contain cookie banners
-                try {
-                    const iframes = document.querySelectorAll('iframe');
-                    iframes.forEach(iframe => {
-                        // Check if iframe might be a cookie banner
-                        const src = iframe.src || '';
-                        const id = iframe.id || '';
-                        const className = iframe.className || '';
-                        
-                        if (src.includes('cookie') || id.includes('cookie') || className.includes('cookie') ||
-                            src.includes('consent') || id.includes('consent') || className.includes('consent') ||
-                            src.includes('privacy') || id.includes('privacy') || className.includes('privacy')) {
-                            
-                            console.log('Found potential cookie iframe:', src || id || className);
-                            
-                            try {
-                                // Try to access iframe content (will fail for cross-origin)
-                                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                                
-                                // Look for accept buttons in the iframe
-                                const acceptButtons = iframeDoc.querySelectorAll('button, a');
-                                acceptButtons.forEach(button => {
-                                    const text = (button.textContent || button.innerText || '').toLowerCase();
-                                    if (textPatterns.acceptPatterns.some(pattern => text.includes(pattern))) {
-                                        console.log('Clicking iframe button:', text);
-                                        button.click();
-                                    }
-                                });
-                            } catch (e) {
-                                // Cross-origin iframe access will fail - this is expected
-                                console.log('Could not access iframe content (likely cross-origin)');
-                            }
-                        }
-                    });
-                } catch (e) {
-                    console.log('Error handling iframes:', e);
-                }
-                
-                // 6. Try to handle shadow DOM elements
-                try {
-                    function processShadowDOM(root) {
-                        // Get all elements with shadow roots
-                        const elementsWithShadowRoots = Array.from(root.querySelectorAll('*'))
-                            .filter(el => el.shadowRoot);
-                        
-                        elementsWithShadowRoots.forEach(el => {
-                            console.log('Processing shadow DOM element:', el.tagName);
-                            
-                            // Process buttons in this shadow root
-                            const shadowButtons = el.shadowRoot.querySelectorAll('button, a');
-                            shadowButtons.forEach(button => {
-                                const text = (button.textContent || button.innerText || '').toLowerCase();
-                                if (textPatterns.acceptPatterns.some(pattern => text.includes(pattern)) &&
-                                    textPatterns.cookiePatterns.some(pattern => text.includes(pattern))) {
-                                    console.log('Clicking shadow DOM button:', text);
-                                    button.click();
-                                }
-                            });
-                            
-                            // Recursively process nested shadow roots
-                            processShadowDOM(el.shadowRoot);
-                        });
-                    }
-                    
-                    // Start processing from document root
-                    processShadowDOM(document);
-                } catch (e) {
-                    console.log('Error handling shadow DOM:', e);
-                }
-                
-                console.log('Completed cookie consent handling');
-                window.cookiesHandled = true;
-            }
-            
-            // Run cookie handling immediately
-            handleCookieConsent();
-            
-            // Run again after a delay to catch banners that appear later
-            setTimeout(handleCookieConsent, 2000);
-            setTimeout(handleCookieConsent, 5000);
-        """
-    }]
-    
-    # Add a delay script to ensure we wait after cookie handling
-    payload["addScriptTag"].append({
-        "content": """
-            // Add a delay to ensure cookie banners are handled
-            function waitForCookieHandling() {
-                return new Promise(resolve => {
-                    // Check if cookies have been handled
-                    if (window.cookiesHandled) {
-                        console.log('Cookies already handled, continuing...');
-                        // Even if cookies are handled, wait a bit to ensure banners are gone
-                        setTimeout(() => {
-                            console.log('Extra wait after cookie handling complete...');
-                            resolve();
-                        }, 5000); // Wait 5 more seconds after handling
-                        return;
-                    }
-                    
-                    // Wait for cookie handling to complete
-                    console.log('Waiting for cookie handling...');
-                    setTimeout(() => {
-                        console.log('Wait complete, continuing...');
-                        resolve();
-                    }, 12000); // Wait 12 seconds for cookie handling
-                });
-            }
-            
-            // Function to check if page has cookie banners still visible
-            function hasCookieBanners() {
-                // Common cookie banner selectors
-                const bannerSelectors = [
-                    '[class*="cookie"]', '[id*="cookie"]',
-                    '[class*="consent"]', '[id*="consent"]',
-                    '[class*="gdpr"]', '[id*="gdpr"]',
-                    '[class*="privacy"]', '[id*="privacy"]',
-                    '.cc-window', '.cc-banner', '.cookie-banner',
-                    '#cookie-notice', '#cookie-banner', '#cookie-law-info-bar',
-                    '#cookiebanner', '#cookieConsent', '#cookie-consent'
-                ];
-                
-                // Check if any banner is visible
-                for (const selector of bannerSelectors) {
-                    const elements = document.querySelectorAll(selector);
-                    for (const el of elements) {
-                        if (el && el.offsetParent !== null &&
-                            el.getBoundingClientRect().height > 20 && // Must have some height
-                            window.getComputedStyle(el).display !== 'none' &&
-                            window.getComputedStyle(el).visibility !== 'hidden') {
-                            console.log('Found visible cookie banner:', selector);
-                            return true;
-                        }
-                    }
-                }
-                
-                return false;
-            }
-            
-            // This will be awaited by browserless before taking the screenshot
-            window.waitForScreenshot = async () => {
-                // First wait for cookie handling
-                await waitForCookieHandling();
-                
-                // Then check if any banners are still visible
-                if (hasCookieBanners()) {
-                    console.log('Cookie banners still visible, trying to handle again...');
-                    // Try one more time to handle cookies
-                    if (typeof handleCookieConsent === 'function') {
-                        handleCookieConsent();
-                    }
-                    
-                    // Wait a bit more
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                }
-                
-                return true;
-            };
-        """
-    })
-    
-    # Prepare headers with token if available
-    headers = {}
-    if config.token:
-        headers['Authorization'] = f'Bearer {config.token}'
-    
+    # Use asyncio to run the pyppeteer code
     try:
-        # Make request to browserless
-        response = requests.post(browserless_url, json=payload, headers=headers)
-        
-        if response.status_code != 200:
-            return jsonify({
-                "status": "error", 
-                "message": f"Browserless API error: {response.status_code} - {response.text}"
-            }), 500
-        
-        # Save the screenshot to file
-        screenshots_folder = os.path.join(current_app.config['DATA_FOLDER'], 'screenshots')
-        filepath = os.path.join(screenshots_folder, filename)
-        
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
+        # Run the screenshot function in an asyncio event loop
+        screenshot_data = asyncio.run(take_screenshot_with_puppeteer(
+            url=data['url'],
+            config=config,
+            filepath=filepath
+        ))
         
         # Create or update screenshot record
         existing_screenshot = Screenshot.query.filter_by(name=data['name']).first()
@@ -522,7 +121,7 @@ def take_screenshot():
         db.session.commit()
         
         return jsonify({
-            "status": "success", 
+            "status": "success",
             "message": "Screenshot taken successfully",
             "filename": filename
         }), 200
@@ -530,6 +129,276 @@ def take_screenshot():
     except Exception as e:
         current_app.logger.error(f"Error taking screenshot: {str(e)}")
         return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
+
+# Pyppeteer function to take screenshot using browserless
+async def take_screenshot_with_puppeteer(url, config, filepath):
+    current_app.logger.info(f"Connecting to browserless at ws://{config.address}:{config.port}")
+    
+    # Construct the WebSocket endpoint with token if available
+    ws_endpoint = f"ws://{config.address}:{config.port}"
+    if config.token:
+        ws_endpoint += f"?token={config.token}"
+    
+    try:
+        # Connect to browserless instance
+        browser = await pyppeteer.connect(browserWSEndpoint=ws_endpoint)
+        
+        # Create a new page
+        page = await browser.newPage()
+        
+        # Set viewport size
+        await page.setViewport({'width': 1280, 'height': 900})
+        
+        # Extract domain for cookie handling
+        domain = url.split('//')[-1].split('/')[0]
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Set common cookie consent cookies before navigation
+        await set_consent_cookies(page, domain)
+        
+        # Navigate to the URL with a longer timeout
+        current_app.logger.info(f"Navigating to {url}")
+        await page.goto(url, {
+            'waitUntil': 'networkidle2',
+            'timeout': 60000  # 60 seconds timeout
+        })
+        
+        # Execute cookie consent handling script
+        current_app.logger.info("Executing cookie consent script")
+        await page.evaluate('''
+        () => {
+            // Universal cookie acceptance function
+            function handleCookieConsent() {
+                console.log('Starting cookie consent handling...');
+                
+                // 1. Direct cookie manipulation
+                try {
+                    // Common cookie names
+                    const cookieNames = [
+                        'cookieConsent', 'cookie_consent', 'cookies_accepted', 'gdpr_consent',
+                        'CookieConsent', 'cookieAccepted', 'cookies_policy', 'cookie_notice'
+                    ];
+                    
+                    cookieNames.forEach(name => {
+                        document.cookie = `${name}=true; path=/; max-age=31536000`;
+                        document.cookie = `${name}=1; path=/; max-age=31536000`;
+                    });
+                } catch (e) {
+                    console.log('Error setting cookies:', e);
+                }
+                
+                // 2. Click cookie consent buttons
+                
+                // Helper function to click elements by text content
+                function clickByText(text) {
+                    const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"]'));
+                    for (const el of elements) {
+                        if (!el || !el.offsetParent) continue; // Skip invisible elements
+                        
+                        const elText = (el.textContent || el.innerText || '').toLowerCase();
+                        if (elText.includes(text)) {
+                            console.log(`Clicking element with text: ${text}`);
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                
+                // Common selectors for cookie consent buttons
+                const selectors = [
+                    // ID-based selectors
+                    '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
+                    '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
+                    '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
+                    
+                    // Class-based selectors
+                    '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
+                    '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
+                    '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
+                    
+                    // Framework-specific selectors
+                    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+                    '#onetrust-accept-btn-handler',
+                    '.cc-accept', '.cc-allow', '.cc-dismiss',
+                    
+                    // Attribute-based selectors
+                    '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
+                    '[data-consent="accept"]', '[data-cookie-accept="all"]',
+                    '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]'
+                ];
+                
+                // Try all selectors
+                selectors.forEach(selector => {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            if (el && el.offsetParent !== null) {
+                                console.log(`Clicking element with selector: ${selector}`);
+                                el.click();
+                            }
+                        });
+                    } catch (e) {
+                        // Ignore errors for individual selectors
+                    }
+                });
+                
+                // Try clicking by common text patterns in multiple languages
+                const textPatterns = [
+                    // English
+                    'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'i agree', 'ok', 'got it',
+                    // Danish
+                    'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
+                    // German
+                    'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
+                    // French
+                    'accepter', 'j\'accepte', 'tout accepter',
+                    // Spanish
+                    'aceptar', 'aceptar todo', 'permitir'
+                ];
+                
+                textPatterns.forEach(pattern => clickByText(pattern));
+                
+                // 3. Try to handle iframes
+                try {
+                    const iframes = document.querySelectorAll('iframe');
+                    iframes.forEach(iframe => {
+                        try {
+                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            const buttons = iframeDoc.querySelectorAll('button, a');
+                            buttons.forEach(button => {
+                                const text = (button.textContent || button.innerText || '').toLowerCase();
+                                if (text.includes('accept') || text.includes('agree') || text.includes('allow')) {
+                                    button.click();
+                                }
+                            });
+                        } catch (e) {
+                            // Cross-origin iframe access will fail - this is expected
+                        }
+                    });
+                } catch (e) {
+                    console.log('Error handling iframes:', e);
+                }
+                
+                // 4. Try to remove cookie banners directly
+                const bannerSelectors = [
+                    '[class*="cookie-banner"]', '[id*="cookie-banner"]',
+                    '[class*="cookie-consent"]', '[id*="cookie-consent"]',
+                    '.cc-window', '.cc-banner', '#cookie-law-info-bar',
+                    '#cookiebanner', '#cookieConsent', '#cookie-consent',
+                    '#CybotCookiebotDialog', '#onetrust-banner-sdk'
+                ];
+                
+                bannerSelectors.forEach(selector => {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            if (el && el.offsetParent !== null) {
+                                el.style.display = 'none';
+                                el.style.visibility = 'hidden';
+                                try { el.remove(); } catch (e) { /* ignore */ }
+                            }
+                        });
+                    } catch (e) {
+                        // Ignore errors
+                    }
+                });
+            }
+            
+            // Run cookie handling
+            handleCookieConsent();
+            
+            // Run again after delays to catch late-appearing banners
+            setTimeout(handleCookieConsent, 1000);
+            setTimeout(handleCookieConsent, 3000);
+        }
+        ''')
+        
+        # Wait for cookie banners to be handled
+        current_app.logger.info("Waiting for cookie banners to be handled")
+        await page.waitForTimeout(5000)
+        
+        # Check if any cookie banners are still visible and try again if needed
+        banner_visible = await page.evaluate('''
+        () => {
+            const bannerSelectors = [
+                '[class*="cookie"]', '[id*="cookie"]',
+                '[class*="consent"]', '[id*="consent"]',
+                '[class*="gdpr"]', '[id*="gdpr"]',
+                '.cc-window', '.cc-banner'
+            ];
+            
+            for (const selector of bannerSelectors) {
+                const elements = document.querySelectorAll(selector);
+                for (const el of elements) {
+                    if (el && el.offsetParent !== null &&
+                        el.getBoundingClientRect().height > 20 &&
+                        window.getComputedStyle(el).display !== 'none') {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        ''')
+        
+        if banner_visible:
+            current_app.logger.info("Cookie banners still visible, trying again")
+            await page.evaluate('handleCookieConsent')
+            await page.waitForTimeout(3000)
+        
+        # Take the screenshot
+        current_app.logger.info(f"Taking screenshot and saving to {filepath}")
+        await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': True})
+        
+        # Close the browser connection
+        await browser.close()
+        
+        return True
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in pyppeteer: {str(e)}")
+        raise e
+
+# Helper function to set consent cookies
+async def set_consent_cookies(page, domain):
+    # Common cookie consent name patterns
+    cookie_names = [
+        "cookieConsent", "cookie_consent", "cookies_accepted", "cookies_consent",
+        "gdpr_consent", "CookieConsent", "CybotCookiebotDialogConsent", "euconsent-v2"
+    ]
+    
+    # Set cookies with different values
+    for name in cookie_names:
+        await page.setCookie({
+            'name': name,
+            'value': 'true',
+            'domain': domain,
+            'path': '/'
+        })
+        
+        await page.setCookie({
+            'name': name,
+            'value': '1',
+            'domain': domain,
+            'path': '/'
+        })
+    
+    # Set some specific framework cookies
+    await page.setCookie({
+        'name': 'CookieConsent',
+        'value': 'stamp:-1|necessary:true|preferences:true|statistics:true|marketing:true|method:explicit|ver:1',
+        'domain': domain,
+        'path': '/'
+    })
+    
+    await page.setCookie({
+        'name': 'OptanonConsent',
+        'value': 'isGpcEnabled=0&datestamp=Wed+Mar+06+2024+10%3A00%3A00+GMT%2B0100&version=202209.1.0&isIABGlobal=false&hosts=&consentId=47bcd4dd-f4c4-4b04-b78b-37f7e1484595&interactionCount=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0002%3A1%2CC0003%3A1%2CC0004%3A1',
+        'domain': domain,
+        'path': '/'
+    })
 
 @browserless_bp.route('/screenshots/<filename>')
 def get_screenshot(filename):

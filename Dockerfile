@@ -94,9 +94,8 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Download the CLIP model in the final stage too (small and quick)
-RUN python -c "import open_clip; \
-    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True)"
+# The CLIP model is already downloaded in the builder stage and copied with the site-packages
+# No need to download it again, which can cause network timeouts
 
 # Copy the modified tasks.py from builder stage
 COPY --from=builder /build/tasks.py /app/tasks.py
