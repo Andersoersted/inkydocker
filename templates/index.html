@@ -983,6 +983,30 @@ function openCropModal() {
     saveBtn.textContent = 'Save Crop';
   }
   
+  // Get selected device information
+  const selectedDevice = document.querySelector('input[name="device"]:checked');
+  let deviceOrientation = 'landscape'; // Default to landscape
+  let deviceResolution = '800x600'; // Default resolution
+  
+  if (selectedDevice) {
+    // Get device resolution from data attribute
+    deviceResolution = selectedDevice.getAttribute('data-resolution') || '800x600';
+    
+    // Find the device in the devices array to get orientation
+    const deviceIndex = selectedDevice.getAttribute('data-index');
+    const deviceRow = document.querySelector(`tr[data-index="${deviceIndex}"]`);
+    if (deviceRow) {
+      const orientationCell = deviceRow.querySelector('td:nth-child(4)');
+      if (orientationCell) {
+        deviceOrientation = orientationCell.textContent.trim().toLowerCase();
+      }
+    }
+  }
+  
+  // Add device info to the modal title
+  const modalTitle = document.getElementById('cropModalLabel');
+  modalTitle.textContent = `Crop Image for ${deviceOrientation} display (${deviceResolution})`;
+  
   // Show the modal
   const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
   cropModal.show();
@@ -998,7 +1022,7 @@ function openCropModal() {
     cropper = new Cropper(cropImage, {
       viewMode: 1,
       dragMode: 'move',
-      aspectRatio: NaN, // Free aspect ratio
+      aspectRatio: NaN, // Still use free aspect ratio to allow user flexibility
       autoCropArea: 0.8,
       restore: false,
       guides: true,
@@ -1008,6 +1032,22 @@ function openCropModal() {
       cropBoxResizable: true,
       toggleDragModeOnDblclick: false
     });
+    
+    // Add a note about device orientation to the modal
+    const modalBody = document.querySelector('#cropModal .modal-body');
+    let orientationNote = document.getElementById('orientationNote');
+    
+    if (!orientationNote) {
+      orientationNote = document.createElement('div');
+      orientationNote.id = 'orientationNote';
+      orientationNote.className = 'alert alert-info mt-3';
+      modalBody.appendChild(orientationNote);
+    }
+    
+    orientationNote.innerHTML = `
+      <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display.
+      <br>Your crop selection will be preserved exactly as you choose it.
+    `;
   }, { once: true });
 }
 
