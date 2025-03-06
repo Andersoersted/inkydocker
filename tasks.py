@@ -482,19 +482,20 @@ def send_scheduled_image(event_id):
                     if not config:
                         current_app.logger.error("No active browserless configuration found")
                     else:
-                        # Take a new screenshot
-                        import asyncio
-                        from routes.browserless_routes import take_screenshot_with_puppeteer
+                        # Generate a new filename for the refreshed screenshot
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+                        new_filename = f"screenshot_{timestamp}.jpg"
+                        current_app.logger.info(f"New filename for refreshed screenshot: {new_filename}")
                         
                         # Create screenshots folder if it doesn't exist
                         screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
                         if not os.path.exists(screenshots_folder):
                             os.makedirs(screenshots_folder)
                         
-                        # Path for the screenshot file
-                        filepath = os.path.join(screenshots_folder, screenshot.filename)
+                        # Path for the new screenshot file
+                        filepath = os.path.join(screenshots_folder, new_filename)
                         
-                        # Take the screenshot
+                        # Take the new screenshot
                         asyncio.run(take_screenshot_with_puppeteer(
                             url=screenshot.url,
                             config=config,
@@ -502,6 +503,35 @@ def send_scheduled_image(event_id):
                         ))
                         
                         current_app.logger.info(f"Screenshot refreshed successfully: {filepath}")
+                        
+                        # Copy crop info from old screenshot to new one
+                        from models import ScreenshotCropInfo
+                        old_crop_info = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
+                        if old_crop_info:
+                            current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename}")
+                            # Check if crop info already exists for the new filename
+                            new_crop_info = ScreenshotCropInfo.query.filter_by(filename=new_filename).first()
+                            if not new_crop_info:
+                                new_crop_info = ScreenshotCropInfo(filename=new_filename)
+                                db.session.add(new_crop_info)
+                            
+                            # Copy all crop data
+                            new_crop_info.x = old_crop_info.x
+                            new_crop_info.y = old_crop_info.y
+                            new_crop_info.width = old_crop_info.width
+                            new_crop_info.height = old_crop_info.height
+                            new_crop_info.resolution = old_crop_info.resolution
+                            db.session.commit()
+                        
+                        # Update the screenshot record in the database
+                        screenshot.filename = new_filename
+                        screenshot.last_updated = datetime.datetime.utcnow()
+                        
+                        # Update the event to use the new filename
+                        event.filename = new_filename
+                        db.session.commit()
+                        
+                        current_app.logger.info(f"Updated event to use new screenshot filename: {new_filename}")
                 except Exception as e:
                     current_app.logger.error(f"Error refreshing screenshot: {e}")
 
@@ -537,24 +567,46 @@ def send_scheduled_image(event_id):
             else:
                 target_ratio = dev_width / dev_height
                 
-            cdata = load_crop_info_from_db(event.filename)
-            if cdata:
-                x = cdata.get("x", 0)
-                y = cdata.get("y", 0)
-                w = cdata.get("width", orig_w)
-                h = cdata.get("height", orig_h)
+            # First check for ScreenshotCropInfo for screenshots
+            from models import ScreenshotCropInfo
+            screenshot_crop = None
+            if event.filename.startswith("screenshot_"):
+                screenshot_crop = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
+                if screenshot_crop:
+                    current_app.logger.info(f"Found ScreenshotCropInfo for {event.filename}")
+            
+            # If screenshot crop info exists, use it
+            if screenshot_crop:
+                x = screenshot_crop.x
+                y = screenshot_crop.y
+                w = screenshot_crop.width
+                h = screenshot_crop.height
+                current_app.logger.info(f"Using screenshot crop data: x={x}, y={y}, w={w}, h={h}")
                 cropped = orig_img.crop((x, y, x + w, y + h))
             else:
-                orig_ratio = orig_w / orig_h
-                if orig_ratio > target_ratio:
-                    new_width = int(orig_h * target_ratio)
-                    left = (orig_w - new_width) // 2
-                    crop_box = (left, 0, left + new_width, orig_h)
+                # Otherwise check for regular CropInfo
+                cdata = load_crop_info_from_db(event.filename)
+                if cdata:
+                    x = cdata.get("x", 0)
+                    y = cdata.get("y", 0)
+                    w = cdata.get("width", orig_w)
+                    h = cdata.get("height", orig_h)
+                    current_app.logger.info(f"Using regular crop data: x={x}, y={y}, w={w}, h={h}")
+                    cropped = orig_img.crop((x, y, x + w, y + h))
                 else:
-                    new_height = int(orig_w / target_ratio)
-                    top = (orig_h - new_height) // 2
-                    crop_box = (0, top, orig_w, top + new_height)
-                cropped = orig_img.crop(crop_box)
+                    # If no crop data, create an auto-centered crop
+                    current_app.logger.info("No crop data found, using auto-centered crop")
+                    orig_ratio = orig_w / orig_h
+                    if orig_ratio > target_ratio:
+                        new_width = int(orig_h * target_ratio)
+                        left = (orig_w - new_width) // 2
+                        crop_box = (left, 0, left + new_width, orig_h)
+                    else:
+                        new_height = int(orig_w / target_ratio)
+                        top = (orig_h - new_height) // 2
+                        crop_box = (0, top, orig_w, top + new_height)
+                    current_app.logger.info(f"Auto crop box: {crop_box}")
+                    cropped = orig_img.crop(crop_box)
             
             # If portrait, rotate the image 90 degrees clockwise and swap dimensions
             if is_portrait:
