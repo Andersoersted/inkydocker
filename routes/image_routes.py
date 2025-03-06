@@ -190,14 +190,18 @@ def send_image(filename):
             
             # Check if device is in portrait orientation
             is_portrait = device_obj.orientation.lower() == 'portrait'
+            current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
             
             # Calculate aspect ratio based on device orientation
+            # This ratio is used for cropping to ensure the image fits the display correctly
             if is_portrait:
                 # For portrait displays, use height/width (taller than wide)
                 device_ratio = dev_height / dev_width
+                current_app.logger.info(f"Portrait display: using height/width ratio = {device_ratio}")
             else:
                 # For landscape displays, use width/height (wider than tall)
                 device_ratio = dev_width / dev_height
+                current_app.logger.info(f"Landscape display: using width/height ratio = {device_ratio}")
                 
             # Log the original image dimensions and device info
             current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
@@ -237,9 +241,9 @@ def send_image(filename):
                 current_app.logger.info(f"No crop data found, using auto-centered crop")
                 orig_ratio = orig_w / orig_h
                 
-                # For auto-cropping, we use the device's aspect ratio
+                # For auto-cropping, we use the device's aspect ratio based on orientation
                 # This ensures the image fits properly on the device
-                # device_ratio is already calculated above
+                # device_ratio is already calculated above based on orientation
                 
                 # Log the ratios for debugging
                 current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
@@ -259,19 +263,31 @@ def send_image(filename):
                 cropped = orig_img.crop(crop_box)
                 current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
 
-            # Step 2: Resize the cropped image to match the target resolution
+            # Step 2: Resize and rotate the cropped image to match the target resolution and orientation
             current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
+            
+            # Check if device is in portrait orientation directly from the database
+            is_portrait = device_obj.orientation.lower() == 'portrait'
+            current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
+            current_app.logger.info(f"Device resolution from database: {device_obj.resolution} (width x height)")
             
             # If portrait, rotate the image 90 degrees clockwise
             if is_portrait:
-                current_app.logger.info("Rotating image for portrait orientation")
+                current_app.logger.info(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
                 cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
                 current_app.logger.info(f"After rotation size: {cropped.size}")
+                
                 # For portrait displays, we swap width and height in the final resize
+                # This is because the physical display is rotated, but the native resolution
+                # is still reported as if it were in landscape
+                current_app.logger.info(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
                 final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)
+                current_app.logger.info(f"Final image size after portrait resize: {final_img.size}")
             else:
+                current_app.logger.info(f"Device is in LANDSCAPE mode, no rotation needed")
                 # For landscape displays, we use the normal dimensions
                 final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
+                current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
             
             current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
             
