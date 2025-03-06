@@ -9,6 +9,13 @@ from alembic import context
 config = context.config
 fileConfig(config.config_file_name)
 
+# Get the SQLAlchemy URI from the config.py file directly
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import Config
+config.set_main_option('sqlalchemy.url', Config.SQLALCHEMY_DATABASE_URI)
+
 # Determine the project root and ensure the data folder exists.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 data_dir = os.path.join(project_root, 'data')
@@ -21,7 +28,7 @@ if not os.path.exists(db_path):
     open(db_path, 'a').close()
 
 # Import all your models so that they are registered with SQLAlchemy's metadata.
-from models import db, Device, ImageDB, CropInfo, SendLog, ScheduleEvent, UserConfig, DeviceMetrics
+from models import db, Device, ImageDB, CropInfo, SendLog, ScheduleEvent, UserConfig, BrowserlessConfig, Screenshot, ScreenshotCropInfo
 target_metadata = db.metadata
 
 def run_migrations_offline():

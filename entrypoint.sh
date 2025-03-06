@@ -23,9 +23,18 @@ else
   echo "Redis is running."
 fi
 
-echo "Creating database tables..."
-python -c "from app import app; from models import db; app.app_context().push(); db.create_all()"
-echo "Database tables created successfully."
+# Check if the database file exists
+if [ ! -f /app/data/mydb.sqlite ]; then
+  echo "Creating database tables for the first time..."
+  python -c "from app import app; from models import db; app.app_context().push(); db.create_all()"
+  echo "Database tables created successfully."
+else
+  echo "Database already exists, skipping table creation."
+fi
+
+echo "Running database migrations..."
+cd /app && python -m flask db upgrade
+echo "Database migrations applied successfully."
 
 echo "Starting Supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

@@ -2,6 +2,7 @@ from flask import Flask, send_from_directory, request
 import os
 from config import Config
 from models import db
+from flask_migrate import Migrate
 import pillow_heif
 from tasks import celery, start_scheduler
 from datetime import timedelta
@@ -18,8 +19,9 @@ def create_app(config_class=Config):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-    # Initialize database without migrations
+    # Initialize database with migrations
     db.init_app(app)
+    migrate = Migrate(app, db)
 
     # Register blueprints
     from routes.image_routes import image_bp

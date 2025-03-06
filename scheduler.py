@@ -76,8 +76,19 @@ def start_scheduler(app):
             for event in events:
                 try:
                     import datetime
+                    from datetime import timezone
                     dt = datetime.datetime.fromisoformat(event.datetime_str)
-                    if dt > datetime.datetime.now():
+                    
+                    # Ensure both datetimes are timezone-aware for comparison
+                    # If dt has a timezone, use it as is
+                    # If dt doesn't have a timezone, assume it's in UTC
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    
+                    # Get current time in UTC for comparison
+                    now = datetime.datetime.now(timezone.utc)
+                    
+                    if dt > now:
                         scheduler.add_job(
                             send_scheduled_image,
                             'date',

@@ -789,17 +789,15 @@ function openInfoModal(filename) {
   infoModal.show();
   
   // Load image data
-  fetch(`/api/image_info/${encodeURIComponent(filename)}`)
+  fetch(`/api/get_image_metadata?filename=${encodeURIComponent(filename)}`)
     .then(response => response.json())
     .then(data => {
       if (data.status === "success") {
-        const info = data.info;
-        
         // Update basic info
-        document.getElementById('infoFilename').textContent = info.filename;
-        document.getElementById('infoResolution').textContent = info.resolution || 'N/A';
-        document.getElementById('infoFilesize').textContent = info.filesize || 'N/A';
-        document.getElementById('infoFavorite').checked = info.favorite || false;
+        document.getElementById('infoFilename').textContent = filename;
+        document.getElementById('infoResolution').textContent = data.resolution || 'N/A';
+        document.getElementById('infoFilesize').textContent = data.filesize || 'N/A';
+        document.getElementById('infoFavorite').checked = data.favorite || false;
         
         // Update preview image
         const previewImg = document.getElementById('infoImagePreview');
@@ -810,8 +808,8 @@ function openInfoModal(filename) {
         const tagContainer = document.getElementById('tagContainer');
         tagContainer.innerHTML = '';
         
-        if (info.tags && info.tags.length > 0) {
-          info.tags.forEach(tag => {
+        if (data.tags && data.tags.length > 0) {
+          data.tags.forEach(tag => {
             const tagEl = document.createElement('span');
             tagEl.className = 'badge bg-primary me-1 mb-1 p-2';
             tagEl.textContent = tag;
@@ -828,7 +826,7 @@ function openInfoModal(filename) {
             tagContainer.appendChild(tagEl);
           });
           
-          document.getElementById('infoTags').value = info.tags.join(',');
+          document.getElementById('infoTags').value = data.tags.join(',');
         }
       } else {
         console.error("Error loading image info:", data.message);
