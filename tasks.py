@@ -447,304 +447,325 @@ def send_scheduled_image(event_id):
     """
     Send a scheduled image to a device.
     """
-    from models import ScheduleEvent, Device, db, Screenshot
-    from utils.crop_helpers import load_crop_info_from_db
-    from utils.image_helpers import add_send_log_entry
-    from flask import current_app
+    # Import the app and create an application context
+    # This is needed when the function is called directly by the scheduler
+    import logging
+    import asyncio
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting send_scheduled_image for event {event_id}")
     
-    current_app.logger.info(f"Starting send_scheduled_image for event {event_id}")
-    
-    try:
-        event = ScheduleEvent.query.get(event_id)
-        if not event:
-            current_app.logger.error("Event not found: %s", event_id)
-            return
+    # Create a Flask app context to use current_app
+    from app import app as flask_app
+    with flask_app.app_context():
+        from models import ScheduleEvent, Device, db, Screenshot
+        from utils.crop_helpers import load_crop_info_from_db
+        from utils.image_helpers import add_send_log_entry
+        from flask import current_app
+        from routes.browserless_routes import take_screenshot_with_puppeteer
         
-        current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
+        current_app.logger.info(f"Created Flask app context for event {event_id}")
         
-        device_obj = Device.query.filter_by(address=event.device).first()
-        if not device_obj:
-            current_app.logger.error("Device not found for event %s", event_id)
-            return
-        
-        current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
-
-        # Check if this is a screenshot that needs to be refreshed
-        if event.refresh_screenshot:
-            # Check if the filename exists in the screenshots table
-            screenshot = Screenshot.query.filter_by(filename=event.filename).first()
-            if screenshot:
-                current_app.logger.info(f"Refreshing screenshot {screenshot.name} before sending")
-                try:
-                    # Get browserless config
-                    from models import BrowserlessConfig
-                    config = BrowserlessConfig.query.filter_by(active=True).first()
-                    if not config:
-                        current_app.logger.error("No active browserless configuration found")
-                    else:
-                        # Generate a new filename for the refreshed screenshot
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-                        new_filename = f"screenshot_{timestamp}.jpg"
-                        current_app.logger.info(f"New filename for refreshed screenshot: {new_filename}")
-                        
-                        # Create screenshots folder if it doesn't exist
-                        screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
-                        if not os.path.exists(screenshots_folder):
-                            os.makedirs(screenshots_folder)
-                        
-                        # Path for the new screenshot file
-                        filepath = os.path.join(screenshots_folder, new_filename)
-                        
-                        # Take the new screenshot
-                        asyncio.run(take_screenshot_with_puppeteer(
-                            url=screenshot.url,
-                            config=config,
-                            filepath=filepath
-                        ))
-                        
-                        current_app.logger.info(f"Screenshot refreshed successfully: {filepath}")
-                        
-                        # Copy crop info from old screenshot to new one
-                        from models import ScreenshotCropInfo
-                        old_crop_info = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
-                        if old_crop_info:
-                            current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename}")
-                            # Check if crop info already exists for the new filename
-                            new_crop_info = ScreenshotCropInfo.query.filter_by(filename=new_filename).first()
-                            if not new_crop_info:
-                                new_crop_info = ScreenshotCropInfo(filename=new_filename)
-                                db.session.add(new_crop_info)
-                            
-                            # Copy all crop data
-                            new_crop_info.x = old_crop_info.x
-                            new_crop_info.y = old_crop_info.y
-                            new_crop_info.width = old_crop_info.width
-                            new_crop_info.height = old_crop_info.height
-                            new_crop_info.resolution = old_crop_info.resolution
-                            db.session.commit()
-                        
-                        # Update the screenshot record in the database
-                        screenshot.filename = new_filename
-                        screenshot.last_updated = datetime.datetime.utcnow()
-                        
-                        # Update the event to use the new filename
-                        event.filename = new_filename
-                        db.session.commit()
-                        
-                        current_app.logger.info(f"Updated event to use new screenshot filename: {new_filename}")
-                except Exception as e:
-                    current_app.logger.error(f"Error refreshing screenshot: {e}")
-
-        image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
-        data_folder = current_app.config.get("DATA_FOLDER", "./data")
-        screenshots_folder = os.path.join(data_folder, 'screenshots')
-        
-        # Check if the file is a screenshot or a regular image
-        filepath = os.path.join(screenshots_folder, event.filename)
-        if not os.path.exists(filepath):
-            # Try in the regular images folder
-            filepath = os.path.join(image_folder, event.filename)
-            if not os.path.exists(filepath):
-                current_app.logger.error("Image file not found: %s", filepath)
+        try:
+            event = ScheduleEvent.query.get(event_id)
+            if not event:
+                current_app.logger.error("Event not found: %s", event_id)
                 return
-
-        addr = device_obj.address
-        if not (addr.startswith("http://") or addr.startswith("https://")):
-            addr = "http://" + addr
-
-        with Image.open(filepath) as orig_img:
-            orig_w, orig_h = orig_img.size
-            parts = device_obj.resolution.split("x")
-            dev_width = int(parts[0])
-            dev_height = int(parts[1])
             
-            # Check if device is in portrait orientation
-            is_portrait = device_obj.orientation.lower() == 'portrait'
+            current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
             
-            # If portrait, swap width and height for target ratio calculation
-            if is_portrait:
-                target_ratio = dev_height / dev_width
-            else:
-                target_ratio = dev_width / dev_height
+            device_obj = Device.query.filter_by(address=event.device).first()
+            if not device_obj:
+                current_app.logger.error("Device not found for event %s", event_id)
+                return
+            
+            current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
+    
+            # Check if this is a screenshot that needs to be refreshed
+            if event.refresh_screenshot:
+                # Check if the filename exists in the screenshots table
+                screenshot = Screenshot.query.filter_by(filename=event.filename).first()
+                if screenshot:
+                    current_app.logger.info(f"Refreshing screenshot {screenshot.name} before sending")
+                    try:
+                        # Get browserless config
+                        from models import BrowserlessConfig
+                        config = BrowserlessConfig.query.filter_by(active=True).first()
+                        if not config:
+                            current_app.logger.error("No active browserless configuration found")
+                        else:
+                            # Generate a new filename for the refreshed screenshot
+                            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+                            new_filename = f"screenshot_{timestamp}.jpg"
+                            current_app.logger.info(f"New filename for refreshed screenshot: {new_filename}")
+                            
+                            # Create screenshots folder if it doesn't exist
+                            screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
+                            if not os.path.exists(screenshots_folder):
+                                os.makedirs(screenshots_folder)
+                            
+                            # Path for the new screenshot file
+                            filepath = os.path.join(screenshots_folder, new_filename)
+                            
+                            # Take the new screenshot
+                            asyncio.run(take_screenshot_with_puppeteer(
+                                url=screenshot.url,
+                                config=config,
+                                filepath=filepath
+                            ))
+                            
+                            current_app.logger.info(f"Screenshot refreshed successfully: {filepath}")
+                            
+                            # Copy crop info from old screenshot to new one
+                            from models import ScreenshotCropInfo
+                            old_crop_info = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
+                            if old_crop_info:
+                                current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename}")
+                                # Check if crop info already exists for the new filename
+                                new_crop_info = ScreenshotCropInfo.query.filter_by(filename=new_filename).first()
+                                if not new_crop_info:
+                                    new_crop_info = ScreenshotCropInfo(filename=new_filename)
+                                    db.session.add(new_crop_info)
+                                
+                                # Copy all crop data
+                                new_crop_info.x = old_crop_info.x
+                                new_crop_info.y = old_crop_info.y
+                                new_crop_info.width = old_crop_info.width
+                                new_crop_info.height = old_crop_info.height
+                                new_crop_info.resolution = old_crop_info.resolution
+                                db.session.commit()
+                            
+                            # Update the screenshot record in the database
+                            screenshot.filename = new_filename
+                            screenshot.last_updated = datetime.datetime.utcnow()
+                            
+                            # Update the event to use the new filename
+                            event.filename = new_filename
+                            db.session.commit()
+                            
+                            current_app.logger.info(f"Updated event to use new screenshot filename: {new_filename}")
+                    except Exception as e:
+                        current_app.logger.error(f"Error refreshing screenshot: {e}")
+    
+            image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
+            data_folder = current_app.config.get("DATA_FOLDER", "./data")
+            screenshots_folder = os.path.join(data_folder, 'screenshots')
+            
+            # Check if the file is a screenshot or a regular image
+            filepath = os.path.join(screenshots_folder, event.filename)
+            if not os.path.exists(filepath):
+                # Try in the regular images folder
+                filepath = os.path.join(image_folder, event.filename)
+                if not os.path.exists(filepath):
+                    current_app.logger.error("Image file not found: %s", filepath)
+                    return
+    
+            addr = device_obj.address
+            if not (addr.startswith("http://") or addr.startswith("https://")):
+                addr = "http://" + addr
+    
+            with Image.open(filepath) as orig_img:
+                orig_w, orig_h = orig_img.size
+                parts = device_obj.resolution.split("x")
+                dev_width = int(parts[0])
+                dev_height = int(parts[1])
                 
-            # First check for ScreenshotCropInfo for screenshots
-            from models import ScreenshotCropInfo
-            screenshot_crop = None
-            if event.filename.startswith("screenshot_"):
-                screenshot_crop = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
+                # Check if device is in portrait orientation
+                is_portrait = device_obj.orientation.lower() == 'portrait'
+                
+                # If portrait, swap width and height for target ratio calculation
+                if is_portrait:
+                    target_ratio = dev_height / dev_width
+                else:
+                    target_ratio = dev_width / dev_height
+                    
+                # First check for ScreenshotCropInfo for screenshots
+                from models import ScreenshotCropInfo
+                screenshot_crop = None
+                if event.filename.startswith("screenshot_"):
+                    screenshot_crop = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
+                    if screenshot_crop:
+                        current_app.logger.info(f"Found ScreenshotCropInfo for {event.filename}")
+                
+                # If screenshot crop info exists, use it
                 if screenshot_crop:
-                    current_app.logger.info(f"Found ScreenshotCropInfo for {event.filename}")
-            
-            # If screenshot crop info exists, use it
-            if screenshot_crop:
-                x = screenshot_crop.x
-                y = screenshot_crop.y
-                w = screenshot_crop.width
-                h = screenshot_crop.height
-                current_app.logger.info(f"Using screenshot crop data: x={x}, y={y}, w={w}, h={h}")
-                cropped = orig_img.crop((x, y, x + w, y + h))
-            else:
-                # Otherwise check for regular CropInfo
-                cdata = load_crop_info_from_db(event.filename)
-                if cdata:
-                    x = cdata.get("x", 0)
-                    y = cdata.get("y", 0)
-                    w = cdata.get("width", orig_w)
-                    h = cdata.get("height", orig_h)
-                    current_app.logger.info(f"Using regular crop data: x={x}, y={y}, w={w}, h={h}")
+                    x = screenshot_crop.x
+                    y = screenshot_crop.y
+                    w = screenshot_crop.width
+                    h = screenshot_crop.height
+                    current_app.logger.info(f"Using screenshot crop data: x={x}, y={y}, w={w}, h={h}")
                     cropped = orig_img.crop((x, y, x + w, y + h))
                 else:
-                    # If no crop data, create an auto-centered crop
-                    current_app.logger.info("No crop data found, using auto-centered crop")
-                    orig_ratio = orig_w / orig_h
-                    if orig_ratio > target_ratio:
-                        new_width = int(orig_h * target_ratio)
-                        left = (orig_w - new_width) // 2
-                        crop_box = (left, 0, left + new_width, orig_h)
+                    # Otherwise check for regular CropInfo
+                    cdata = load_crop_info_from_db(event.filename)
+                    if cdata:
+                        x = cdata.get("x", 0)
+                        y = cdata.get("y", 0)
+                        w = cdata.get("width", orig_w)
+                        h = cdata.get("height", orig_h)
+                        current_app.logger.info(f"Using regular crop data: x={x}, y={y}, w={w}, h={h}")
+                        cropped = orig_img.crop((x, y, x + w, y + h))
                     else:
-                        new_height = int(orig_w / target_ratio)
-                        top = (orig_h - new_height) // 2
-                        crop_box = (0, top, orig_w, top + new_height)
-                    current_app.logger.info(f"Auto crop box: {crop_box}")
-                    cropped = orig_img.crop(crop_box)
-            
-            # If portrait, rotate the image 90 degrees clockwise and swap dimensions
-            if is_portrait:
-                cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
-            else:
-                final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
-            temp_dir = os.path.join(data_folder, "temp")
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            temp_filename = os.path.join(temp_dir, f"temp_{event.filename}")
-            final_img.save(temp_filename, format="JPEG", quality=95)
-        
-        cmd = f'curl "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
-        current_app.logger.info(f"Sending image with command: {cmd}")
-        
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
-        current_app.logger.info(f"Curl command result: returncode={result.returncode}, stdout={result.stdout}")
-        
-        os.remove(temp_filename)
-        
-        if result.returncode == 0:
-            current_app.logger.info(f"Successfully sent image to device {device_obj.friendly_name}")
-            event.sent = True
-            db.session.commit()
-            device_obj.last_sent = event.filename
-            db.session.commit()
-            add_send_log_entry(event.filename)
-            current_app.logger.info(f"Updated database: event {event.id} marked as sent")
-        else:
-            current_app.logger.error(f"Error sending image: {result.stderr}")
-    except Exception as e:
-        current_app.logger.error("Error in send_scheduled_image: %s", e)
-        return
-
-    # Reschedule recurring events
-    if event.recurrence and event.recurrence.lower() != "none":
-        try:
-            import pytz
-            copenhagen_tz = pytz.timezone('Europe/Copenhagen')
-            
-            # Parse the datetime string
-            dt = datetime.datetime.fromisoformat(event.datetime_str)
-            
-            # Ensure the datetime is in Copenhagen timezone
-            if dt.tzinfo is None:
-                dt = copenhagen_tz.localize(dt)
-            else:
-                dt = dt.astimezone(copenhagen_tz)
+                        # If no crop data, create an auto-centered crop
+                        current_app.logger.info("No crop data found, using auto-centered crop")
+                        orig_ratio = orig_w / orig_h
+                        if orig_ratio > target_ratio:
+                            new_width = int(orig_h * target_ratio)
+                            left = (orig_w - new_width) // 2
+                            crop_box = (left, 0, left + new_width, orig_h)
+                        else:
+                            new_height = int(orig_w / target_ratio)
+                            top = (orig_h - new_height) // 2
+                            crop_box = (0, top, orig_w, top + new_height)
+                        current_app.logger.info(f"Auto crop box: {crop_box}")
+                        cropped = orig_img.crop(crop_box)
                 
+                # If portrait, rotate the image 90 degrees clockwise and swap dimensions
+                if is_portrait:
+                    cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
+                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
+                else:
+                    final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
+                temp_dir = os.path.join(data_folder, "temp")
+                if not os.path.exists(temp_dir):
+                    os.makedirs(temp_dir)
+                temp_filename = os.path.join(temp_dir, f"temp_{event.filename}")
+                final_img.save(temp_filename, format="JPEG", quality=95)
+            
+            cmd = f'curl "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
+            current_app.logger.info(f"Sending image with command: {cmd}")
+            
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            current_app.logger.info(f"Curl command result: returncode={result.returncode}, stdout={result.stdout}")
+            
+            os.remove(temp_filename)
+            
+            if result.returncode == 0:
+                current_app.logger.info(f"Successfully sent image to device {device_obj.friendly_name}")
+                event.sent = True
+                db.session.commit()
+                device_obj.last_sent = event.filename
+                db.session.commit()
+                add_send_log_entry(event.filename)
+                current_app.logger.info(f"Updated database: event {event.id} marked as sent")
+            else:
+                current_app.logger.error(f"Error sending image: {result.stderr}")
         except Exception as e:
-            current_app.logger.error("Error parsing datetime_str: %s", e)
+            current_app.logger.error("Error in send_scheduled_image: %s", e)
             return
-            
-        if event.recurrence.lower() == "daily":
-            next_dt = dt + datetime.timedelta(days=1)
-        elif event.recurrence.lower() == "weekly":
-            next_dt = dt + datetime.timedelta(weeks=1)
-        elif event.recurrence.lower() == "monthly":
-            next_dt = dt + datetime.timedelta(days=30)
-        else:
-            next_dt = None
-            
-        if next_dt:
-            # Update the event in the database with the new date
-            event.datetime_str = next_dt.isoformat()
-            event.sent = False
-            db.session.commit()
-            
-            # Note: We don't schedule the job here anymore
-            # The dedicated scheduler process will pick up this event on its next run
-            current_app.logger.info(f"Rescheduled event {event.id} for {next_dt}")
+    
+        # Reschedule recurring events
+        if event.recurrence and event.recurrence.lower() != "none":
+            try:
+                import pytz
+                copenhagen_tz = pytz.timezone('Europe/Copenhagen')
+                
+                # Parse the datetime string
+                dt = datetime.datetime.fromisoformat(event.datetime_str)
+                
+                # Ensure the datetime is in Copenhagen timezone
+                if dt.tzinfo is None:
+                    dt = copenhagen_tz.localize(dt)
+                else:
+                    dt = dt.astimezone(copenhagen_tz)
+                    
+            except Exception as e:
+                current_app.logger.error("Error parsing datetime_str: %s", e)
+                return
+                
+            if event.recurrence.lower() == "daily":
+                next_dt = dt + datetime.timedelta(days=1)
+            elif event.recurrence.lower() == "weekly":
+                next_dt = dt + datetime.timedelta(weeks=1)
+            elif event.recurrence.lower() == "monthly":
+                next_dt = dt + datetime.timedelta(days=30)
+            else:
+                next_dt = None
+                
+            if next_dt:
+                # Update the event in the database with the new date
+                event.datetime_str = next_dt.isoformat()
+                event.sent = False
+                db.session.commit()
+                
+                # Note: We don't schedule the job here anymore
+                # The dedicated scheduler process will pick up this event on its next run
+                current_app.logger.info(f"Rescheduled event {event.id} for {next_dt}")
 
 @celery.task(bind=True, ignore_result=True)
-def fetch_device_metrics(self):
+def fetch_device_metrics(self=None):
     """
     Check if devices are online and update their status in the database.
     This task runs periodically to ensure we have up-to-date status information.
     Logging has been minimized to prevent log flooding.
+    
+    Note: The self parameter is optional to allow this function to be called
+    both as a Celery task and directly by the scheduler.
     """
-    from models import Device, db
-    from flask import current_app
-    import httpx
-    
-    # Disable httpx logging
+    # Import the app and create an application context if needed
+    # This is needed when the function is called directly by the scheduler
     import logging
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logger = logging.getLogger(__name__)
     
-    try:
-        devices = Device.query.all()
-        status_changes = 0
+    # Create a Flask app context to use current_app
+    from app import app as flask_app
+    with flask_app.app_context():
+        from models import Device, db
+        from flask import current_app
+        import httpx
         
-        for device in devices:
-            try:
-                # Ensure the address has a scheme
-                address = device.address
-                if not (address.startswith("http://") or address.startswith("https://")):
-                    address = "http://" + address
-                
-                # Store previous status to detect changes
-                was_online = device.online
-                
-                # Try to connect to the device's display_info endpoint
+        # Disable httpx logging
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+        try:
+            devices = Device.query.all()
+            status_changes = 0
+            
+            for device in devices:
                 try:
-                    # Use a short timeout to avoid blocking
-                    response = httpx.get(f"{address}/display_info", timeout=5.0)
+                    # Ensure the address has a scheme
+                    address = device.address
+                    if not (address.startswith("http://") or address.startswith("https://")):
+                        address = "http://" + address
                     
-                    if response.status_code == 200:
-                        # Only update and log if status changed
-                        if not was_online:
-                            device.online = True
-                            db.session.commit()
-                            status_changes += 1
-                    else:
-                        # Only update and log if status changed
+                    # Store previous status to detect changes
+                    was_online = device.online
+                    
+                    # Try to connect to the device's display_info endpoint
+                    try:
+                        # Use a short timeout to avoid blocking
+                        response = httpx.get(f"{address}/display_info", timeout=5.0)
+                        
+                        if response.status_code == 200:
+                            # Only update and log if status changed
+                            if not was_online:
+                                device.online = True
+                                db.session.commit()
+                                status_changes += 1
+                        else:
+                            # Only update and log if status changed
+                            if was_online:
+                                device.online = False
+                                db.session.commit()
+                                status_changes += 1
+                    except Exception:
+                        # Only update if status changed
                         if was_online:
                             device.online = False
                             db.session.commit()
                             status_changes += 1
                 except Exception:
-                    # Only update if status changed
-                    if was_online:
-                        device.online = False
-                        db.session.commit()
-                        status_changes += 1
-            except Exception:
-                # Silently continue to next device
-                pass
+                    # Silently continue to next device
+                    pass
+                    
+            # Only log if there were status changes
+            if status_changes > 0:
+                current_app.logger.info(f"Updated status for {status_changes} devices")
                 
-        # Only log if there were status changes
-        if status_changes > 0:
-            current_app.logger.info(f"Updated status for {status_changes} devices")
-            
-        return {"status": "success", "message": f"Checked status of {len(devices)} devices"}
-    except Exception:
-        # Catch all exceptions to prevent task failures
-        return {"status": "error", "message": "Error checking device status"}
+            return {"status": "success", "message": f"Checked status of {len(devices)} devices"}
+        except Exception:
+            # Catch all exceptions to prevent task failures
+            return {"status": "error", "message": "Error checking device status"}
 
 # The scheduler functionality has been moved to scheduler.py
 # The start_scheduler function has been removed as it's no longer needed
