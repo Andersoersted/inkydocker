@@ -1018,11 +1018,34 @@ function openCropModal() {
       cropper.destroy();
     }
     
-    // Initialize Cropper.js
+    // Calculate the aspect ratio based on device resolution and orientation
+    let aspectRatio = NaN; // Default to free aspect ratio
+    
+    if (deviceResolution) {
+      const parts = deviceResolution.split('x');
+      if (parts.length === 2) {
+        const width = parseInt(parts[0], 10);
+        const height = parseInt(parts[1], 10);
+        
+        if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+          // Set aspect ratio based on device orientation
+          if (deviceOrientation === 'portrait') {
+            // For portrait, we need to use height/width
+            aspectRatio = height / width;
+          } else {
+            // For landscape, use width/height
+            aspectRatio = width / height;
+          }
+          console.log(`Setting aspect ratio to ${aspectRatio} for ${deviceOrientation} display (${deviceResolution})`);
+        }
+      }
+    }
+    
+    // Initialize Cropper.js with the calculated aspect ratio
     cropper = new Cropper(cropImage, {
       viewMode: 1,
       dragMode: 'move',
-      aspectRatio: NaN, // Still use free aspect ratio to allow user flexibility
+      aspectRatio: aspectRatio, // Use the calculated aspect ratio based on device
       autoCropArea: 0.8,
       restore: false,
       guides: true,
@@ -1045,8 +1068,9 @@ function openCropModal() {
     }
     
     orientationNote.innerHTML = `
-      <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display.
-      <br>Your crop selection will be preserved exactly as you choose it.
+      <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display (${deviceResolution}).
+      <br>The crop area is locked to the correct aspect ratio for your display.
+      <br>You can move and resize the crop area to select which part of the image to send.
     `;
   }, { once: true });
 }
