@@ -194,11 +194,14 @@
             </div>
             <div class="d-flex align-items-center">
               <button type="button" class="btn btn-outline-secondary me-2" onclick="openBrowserlessGallery()">Select Screenshot</button>
-              <button type="button" class="btn btn-outline-info me-2" id="refreshScreenshotBtn" style="display: none;" onclick="refreshSelectedScreenshot()">
-                <i class="fas fa-sync-alt"></i> Refresh Screenshot
-              </button>
               <input type="hidden" id="selectedScreenshot" name="selectedScreenshot">
               <span id="selectedScreenshotName" class="text-truncate"></span>
+            </div>
+            <div class="form-check mt-2" id="refreshScreenshotContainer" style="display: none;">
+              <input class="form-check-input" type="checkbox" id="refreshScreenshot" name="refreshScreenshot">
+              <label class="form-check-label" for="refreshScreenshot">
+                Refresh screenshot before sending
+              </label>
             </div>
           </div>
         </form>
@@ -593,6 +596,18 @@
               // Set the selected image
               document.getElementById('selectedImage').value = eventData.filename;
               
+              // Check if this is a screenshot and set the refresh checkbox accordingly
+              const isScreenshot = eventData.extendedProps && eventData.extendedProps.isScreenshot;
+              const refreshScreenshot = eventData.extendedProps && eventData.extendedProps.refreshScreenshot;
+              
+              if (isScreenshot) {
+                document.getElementById('refreshScreenshotContainer').style.display = 'block';
+                document.getElementById('refreshScreenshot').checked = refreshScreenshot || false;
+              } else {
+                document.getElementById('refreshScreenshotContainer').style.display = 'none';
+                document.getElementById('refreshScreenshot').checked = false;
+              }
+              
               // Display the image thumbnail instead of just the filename
               const nameSpan = document.getElementById('selectedImageName');
               nameSpan.innerHTML = '';
@@ -730,6 +745,10 @@
         nameSpan.innerHTML = '';
         nameSpan.appendChild(img);
       }
+      // Hide the refresh screenshot checkbox when selecting a regular image
+      document.getElementById('refreshScreenshotContainer').style.display = 'none';
+      document.getElementById('refreshScreenshot').checked = false;
+      
       closeImageGallery();
     }
     
@@ -815,8 +834,8 @@
         nameSpan.appendChild(img);
       }
       
-      // Show the refresh button
-      document.getElementById('refreshScreenshotBtn').style.display = 'inline-block';
+      // Show the refresh checkbox
+      document.getElementById('refreshScreenshotContainer').style.display = 'block';
       
       closeBrowserlessGallery();
     }
@@ -1027,11 +1046,15 @@
       // Determine if we're adding a new event or updating an existing one
       var isUpdate = eventId !== '';
       var url = isUpdate ? "/schedule/update" : "/schedule/add";
+      // Check if the refresh screenshot checkbox is checked
+      var refreshScreenshot = document.getElementById('refreshScreenshot').checked;
+      
       var requestData = {
         datetime: datetime,
         device: device,
         recurrence: recurrence,
         filename: filename,
+        refresh_screenshot: refreshScreenshot,
         timezone_offset: new Date().getTimezoneOffset()  // Add timezone offset
       };
       

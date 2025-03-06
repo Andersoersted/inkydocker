@@ -82,8 +82,14 @@ def upload_file():
             "online": d.online,
             "last_sent": d.last_sent
         })
+    
+    # Get all screenshots filenames for checking if an image is a screenshot
+    from models import Screenshot
+    screenshots = Screenshot.query.all()
+    screenshots_filenames = [s.filename for s in screenshots]
+    
     last_sent = get_last_sent()
-    return render_template('index.html', images=images, devices=devices, last_sent=last_sent)
+    return render_template('index.html', images=images, devices=devices, last_sent=last_sent, screenshots_filenames=screenshots_filenames)
 
 @image_bp.route('/images/<filename>')
 def uploaded_file(filename):

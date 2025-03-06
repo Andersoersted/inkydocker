@@ -83,6 +83,7 @@ class ScheduleEvent(db.Model):
     datetime_str = db.Column(db.String(32))
     sent = db.Column(db.Boolean, default=False)
     recurrence = db.Column(db.String(20), default="none")  # Recurrence type
+    refresh_screenshot = db.Column(db.Boolean, default=False)  # Whether to refresh screenshot before sending
 
     def __repr__(self):
         return f"<ScheduleEvent {self.filename} on {self.device}>"

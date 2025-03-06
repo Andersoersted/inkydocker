@@ -447,7 +447,7 @@ def send_scheduled_image(event_id):
     """
     Send a scheduled image to a device.
     """
-    from models import ScheduleEvent, Device, db
+    from models import ScheduleEvent, Device, db, Screenshot
     from utils.crop_helpers import load_crop_info_from_db
     from utils.image_helpers import add_send_log_entry
     from flask import current_app
@@ -462,12 +462,54 @@ def send_scheduled_image(event_id):
             current_app.logger.error("Device not found for event %s", event_id)
             return
 
+        # Check if this is a screenshot that needs to be refreshed
+        if event.refresh_screenshot:
+            # Check if the filename exists in the screenshots table
+            screenshot = Screenshot.query.filter_by(filename=event.filename).first()
+            if screenshot:
+                current_app.logger.info(f"Refreshing screenshot {screenshot.name} before sending")
+                try:
+                    # Get browserless config
+                    from models import BrowserlessConfig
+                    config = BrowserlessConfig.query.filter_by(active=True).first()
+                    if not config:
+                        current_app.logger.error("No active browserless configuration found")
+                    else:
+                        # Take a new screenshot
+                        import asyncio
+                        from routes.browserless_routes import take_screenshot_with_puppeteer
+                        
+                        # Create screenshots folder if it doesn't exist
+                        screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
+                        if not os.path.exists(screenshots_folder):
+                            os.makedirs(screenshots_folder)
+                        
+                        # Path for the screenshot file
+                        filepath = os.path.join(screenshots_folder, screenshot.filename)
+                        
+                        # Take the screenshot
+                        asyncio.run(take_screenshot_with_puppeteer(
+                            url=screenshot.url,
+                            config=config,
+                            filepath=filepath
+                        ))
+                        
+                        current_app.logger.info(f"Screenshot refreshed successfully: {filepath}")
+                except Exception as e:
+                    current_app.logger.error(f"Error refreshing screenshot: {e}")
+
         image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
         data_folder = current_app.config.get("DATA_FOLDER", "./data")
-        filepath = os.path.join(image_folder, event.filename)
+        screenshots_folder = os.path.join(data_folder, 'screenshots')
+        
+        # Check if the file is a screenshot or a regular image
+        filepath = os.path.join(screenshots_folder, event.filename)
         if not os.path.exists(filepath):
-            current_app.logger.error("Image file not found: %s", filepath)
-            return
+            # Try in the regular images folder
+            filepath = os.path.join(image_folder, event.filename)
+            if not os.path.exists(filepath):
+                current_app.logger.error("Image file not found: %s", filepath)
+                return
 
         addr = device_obj.address
         if not (addr.startswith("http://") or addr.startswith("https://")):

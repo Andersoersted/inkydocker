@@ -34,6 +34,9 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /build
 
+# Upgrade pip to latest version
+RUN pip install --upgrade pip
+
 # Copy requirements and tasks.py for modification
 COPY requirements.txt .
 COPY tasks.py .

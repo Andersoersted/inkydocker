@@ -76,6 +76,16 @@ def get_events():
         device_name = device_info["friendly_name"]
         
         if ev.recurrence.lower() == "none":
+            # Check if the file is a screenshot
+            is_screenshot = False
+            thumbnail_url = f"/thumbnail/{ev.filename}"
+            
+            # Check if this is a screenshot
+            screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
+            if screenshot:
+                is_screenshot = True
+                thumbnail_url = f"/screenshots/{ev.filename}?cropped=true"
+            
             event_list.append({
                 "id": ev.id,
                 "title": f"{ev.filename}",
@@ -89,7 +99,9 @@ def get_events():
                 "borderColor": device_color,
                 "textColor": "#ffffff",
                 "extendedProps": {
-                    "thumbnail": f"/thumbnail/{ev.filename}"
+                    "thumbnail": thumbnail_url,
+                    "isScreenshot": is_screenshot,
+                    "refreshScreenshot": ev.refresh_screenshot
                 }
             })
         else:
@@ -120,6 +132,16 @@ def get_events():
                     break
             # Generate occurrences until the horizon
             while occurrence <= horizon:
+                # Check if the file is a screenshot
+                is_screenshot = False
+                thumbnail_url = f"/thumbnail/{ev.filename}"
+                
+                # Check if this is a screenshot
+                screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
+                if screenshot:
+                    is_screenshot = True
+                    thumbnail_url = f"/screenshots/{ev.filename}?cropped=true"
+                
                 event_list.append({
                     "id": ev.id,  # same series id
                     "title": f"{ev.filename} (Recurring)",  # Mark as recurring in title
@@ -134,8 +156,10 @@ def get_events():
                     "textColor": "#ffffff",
                     "classNames": ["recurring-event"],  # Add a class for styling
                     "extendedProps": {
-                        "thumbnail": f"/thumbnail/{ev.filename}",
-                        "isRecurring": True  # Flag for frontend to identify recurring events
+                        "thumbnail": thumbnail_url,
+                        "isRecurring": True,  # Flag for frontend to identify recurring events
+                        "isScreenshot": is_screenshot,
+                        "refreshScreenshot": ev.refresh_screenshot
                     }
                 })
                 if rec == "daily":
@@ -155,9 +179,10 @@ def add_event():
     device = data.get("device")
     filename = data.get("filename")
     recurrence = data.get("recurrence", "none")
+    refresh_screenshot = data.get("refresh_screenshot", False)
     timezone_offset = data.get("timezone_offset", 0)  # Minutes offset from UTC
     
-    print(f"Adding event with datetime: {datetime_str}, timezone offset: {timezone_offset}")
+    print(f"Adding event with datetime: {datetime_str}, timezone offset: {timezone_offset}, refresh_screenshot: {refresh_screenshot}")
     if not (datetime_str and device and filename):
         return jsonify({"status": "error", "message": "Missing parameters"}), 400
     try:
@@ -208,7 +233,8 @@ def add_event():
         device=device,
         datetime_str=formatted_dt_str,
         sent=False,
-        recurrence=recurrence
+        recurrence=recurrence,
+        refresh_screenshot=refresh_screenshot
     )
     db.session.add(new_event)
     db.session.commit()
@@ -257,6 +283,7 @@ def update_event():
     device = data.get("device")
     filename = data.get("filename")
     recurrence = data.get("recurrence")
+    refresh_screenshot = data.get("refresh_screenshot")
     
     print(f"Updating event {event_id} to {new_datetime} with timezone offset {timezone_offset}")
     
@@ -321,6 +348,8 @@ def update_event():
             ev.filename = filename
         if recurrence:
             ev.recurrence = recurrence
+        if refresh_screenshot is not None:
+            ev.refresh_screenshot = refresh_screenshot
         
         # Make sure changes are committed to the database
         try:
