@@ -732,3 +732,266 @@ document.addEventListener('click', function(e) {
 let currentInfoFilename = null;
 
 document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('info-button')) {
+    e.stopPropagation();
+    const imageFilename = e.target.getAttribute('data-image');
+    openInfoModal(imageFilename);
+  }
+});
+
+/* Function to update current image display */
+function updateCurrentImageDisplay() {
+  fetch('/api/get_current_image')
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success" && data.image) {
+        const currentImage = document.getElementById('currentImage');
+        const currentImageTitle = document.getElementById('currentImageTitle');
+        const currentImagePlaceholder = document.getElementById('currentImagePlaceholder');
+        
+        if (currentImage && data.image.filename) {
+          if (data.image.is_screenshot) {
+            currentImage.src = `/screenshots/${encodeURIComponent(data.image.filename)}?cropped=true`;
+          } else {
+            currentImage.src = `/images/${encodeURIComponent(data.image.filename)}`;
+          }
+          currentImage.style.display = 'block';
+          if (currentImagePlaceholder) {
+            currentImagePlaceholder.style.display = 'none';
+          }
+        }
+        
+        if (currentImageTitle && data.device) {
+          currentImageTitle.textContent = `Current image on ${data.device.friendly_name}`;
+        }
+      }
+    })
+    .catch(error => {
+      console.error("Error updating current image:", error);
+    });
+}
+
+/* Function to open info modal */
+function openInfoModal(filename) {
+  currentInfoFilename = filename;
+  
+  // Reset the form
+  document.getElementById('tagContainer').innerHTML = '';
+  document.getElementById('infoStatus').textContent = '';
+  
+  // Show loading state
+  document.getElementById('infoFilename').textContent = 'Loading...';
+  document.getElementById('infoResolution').textContent = 'Loading...';
+  document.getElementById('infoFilesize').textContent = 'Loading...';
+  
+  // Show the modal
+  const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
+  infoModal.show();
+  
+  // Load image data
+  fetch(`/api/image_info/${encodeURIComponent(filename)}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        const info = data.info;
+        
+        // Update basic info
+        document.getElementById('infoFilename').textContent = info.filename;
+        document.getElementById('infoResolution').textContent = info.resolution || 'N/A';
+        document.getElementById('infoFilesize').textContent = info.filesize || 'N/A';
+        document.getElementById('infoFavorite').checked = info.favorite || false;
+        
+        // Update preview image
+        const previewImg = document.getElementById('infoImagePreview');
+        previewImg.dataset.src = `/images/${encodeURIComponent(filename)}`;
+        previewImg.src = `/images/${encodeURIComponent(filename)}`;
+        
+        // Update tags
+        const tagContainer = document.getElementById('tagContainer');
+        tagContainer.innerHTML = '';
+        
+        if (info.tags && info.tags.length > 0) {
+          info.tags.forEach(tag => {
+            const tagEl = document.createElement('span');
+            tagEl.className = 'badge bg-primary me-1 mb-1 p-2';
+            tagEl.textContent = tag;
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn-close btn-close-white ms-1';
+            removeBtn.setAttribute('aria-label', 'Remove');
+            removeBtn.style.fontSize = '0.5rem';
+            removeBtn.onclick = function() {
+              removeTag(tag);
+            };
+            
+            tagEl.appendChild(removeBtn);
+            tagContainer.appendChild(tagEl);
+          });
+          
+          document.getElementById('infoTags').value = info.tags.join(',');
+        }
+      } else {
+        console.error("Error loading image info:", data.message);
+      }
+    })
+    .catch(error => {
+      console.error("Error loading image info:", error);
+    });
+}
+
+/* Tag management functions */
+function addTag() {
+  const newTagInput = document.getElementById('newTagInput');
+  const tag = newTagInput.value.trim();
+  
+  if (!tag) return;
+  
+  // Get current tags
+  const infoTags = document.getElementById('infoTags');
+  const currentTags = infoTags.value ? infoTags.value.split(',') : [];
+  
+  // Check if tag already exists
+  if (currentTags.includes(tag)) {
+    newTagInput.value = '';
+    return;
+  }
+  
+  // Add new tag
+  currentTags.push(tag);
+  infoTags.value = currentTags.join(',');
+  
+  // Add tag element
+  const tagContainer = document.getElementById('tagContainer');
+  const tagEl = document.createElement('span');
+  tagEl.className = 'badge bg-primary me-1 mb-1 p-2';
+  tagEl.textContent = tag;
+  
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'btn-close btn-close-white ms-1';
+  removeBtn.setAttribute('aria-label', 'Remove');
+  removeBtn.style.fontSize = '0.5rem';
+  removeBtn.onclick = function() {
+    removeTag(tag);
+  };
+  
+  tagEl.appendChild(removeBtn);
+  tagContainer.appendChild(tagEl);
+  
+  // Clear input
+  newTagInput.value = '';
+}
+
+function removeTag(tag) {
+  // Get current tags
+  const infoTags = document.getElementById('infoTags');
+  let currentTags = infoTags.value ? infoTags.value.split(',') : [];
+  
+  // Remove tag
+  currentTags = currentTags.filter(t => t !== tag);
+  infoTags.value = currentTags.join(',');
+  
+  // Update UI
+  const tagContainer = document.getElementById('tagContainer');
+  const tagElements = tagContainer.querySelectorAll('.badge');
+  
+  tagElements.forEach(el => {
+    if (el.textContent.includes(tag)) {
+      el.remove();
+    }
+  });
+}
+
+function saveInfoEdits() {
+  const infoStatus = document.getElementById('infoStatus');
+  infoStatus.textContent = 'Saving...';
+  
+  const tags = document.getElementById('infoTags').value ?
+    document.getElementById('infoTags').value.split(',') : [];
+  const favorite = document.getElementById('infoFavorite').checked;
+  
+  fetch("/api/update_image_metadata", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename: currentInfoFilename,
+      tags: tags,
+      favorite: favorite
+    })
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        infoStatus.textContent = 'Saved successfully!';
+        
+        // Refresh gallery to show updated metadata
+        setTimeout(() => {
+          loadImages(currentPage);
+        }, 1000);
+      } else {
+        infoStatus.textContent = 'Error saving: ' + data.message;
+      }
+    })
+    .catch(error => {
+      infoStatus.textContent = 'Error saving metadata';
+      console.error("Error saving metadata:", error);
+    });
+}
+
+function runOpenClip() {
+  const infoStatus = document.getElementById('infoStatus');
+  infoStatus.textContent = 'Running AI tagging...';
+  
+  fetch(`/api/run_openclip/${encodeURIComponent(currentInfoFilename)}`, {
+    method: "POST"
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        infoStatus.textContent = 'AI tagging complete!';
+        
+        // Reload the info modal to show new tags
+        openInfoModal(currentInfoFilename);
+      } else {
+        infoStatus.textContent = 'Error running AI tagging: ' + data.message;
+      }
+    })
+    .catch(error => {
+      infoStatus.textContent = 'Error running AI tagging';
+      console.error("Error running AI tagging:", error);
+    });
+}
+
+function closeInfoModal() {
+  const infoModalEl = document.getElementById('infoModal');
+  const infoModal = bootstrap.Modal.getInstance(infoModalEl);
+  if (infoModal) {
+    infoModal.hide();
+  }
+}
+
+function openCropModal() {
+  // Set up crop image
+  const cropImage = document.getElementById('cropImage');
+  cropImage.dataset.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+  cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+  
+  // Show the modal
+  const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
+  cropModal.show();
+}
+
+function closeCropModal() {
+  const cropModalEl = document.getElementById('cropModal');
+  const cropModal = bootstrap.Modal.getInstance(cropModalEl);
+  if (cropModal) {
+    cropModal.hide();
+  }
+}
+
+function saveCropData() {
+  // This function would be implemented to save crop data
+  console.log("Saving crop data for:", currentInfoFilename);
+  closeCropModal();
+}
+</script>
+{% endblock %}
