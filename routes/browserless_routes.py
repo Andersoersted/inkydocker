@@ -109,10 +109,30 @@ def take_screenshot():
                 if os.path.exists(old_filepath):
                     os.remove(old_filepath)
             
+            # Save the old filename to copy crop info if needed
+            old_filename = existing_screenshot.filename
+            
             # Update existing record
             existing_screenshot.url = data['url']
             existing_screenshot.filename = filename
             existing_screenshot.last_updated = datetime.utcnow()
+            
+            # Copy crop info from old screenshot to new one if it exists
+            old_crop_info = ScreenshotCropInfo.query.filter_by(filename=old_filename).first()
+            if old_crop_info:
+                current_app.logger.info(f"Copying crop info from {old_filename} to {filename}")
+                # Check if crop info already exists for the new filename
+                new_crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+                if not new_crop_info:
+                    new_crop_info = ScreenshotCropInfo(filename=filename)
+                    db.session.add(new_crop_info)
+                
+                # Copy all crop data
+                new_crop_info.x = old_crop_info.x
+                new_crop_info.y = old_crop_info.y
+                new_crop_info.width = old_crop_info.width
+                new_crop_info.height = old_crop_info.height
+                new_crop_info.resolution = old_crop_info.resolution
         else:
             # Create new record
             screenshot = Screenshot(
