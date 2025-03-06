@@ -976,6 +976,13 @@ function openCropModal() {
   cropImage.dataset.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
   cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
   
+  // Reset the save button state
+  const saveBtn = document.querySelector('#cropModal .btn-primary');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Crop';
+  }
+  
   // Show the modal
   const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
   cropModal.show();
@@ -1015,6 +1022,13 @@ function closeCropModal() {
   if (cropper) {
     cropper.destroy();
     cropper = null;
+  }
+  
+  // Reset the save button state
+  const saveBtn = document.querySelector('#cropModal .btn-primary');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Crop';
   }
 }
 
@@ -1057,6 +1071,10 @@ function saveCropData() {
       // Show success message
       const infoStatus = document.getElementById('infoStatus');
       infoStatus.textContent = 'Crop saved successfully!';
+      
+      // Reset button state before closing modal
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
       
       // Close the crop modal
       closeCropModal();
