@@ -189,6 +189,7 @@ def get_image_embedding(image_path):
 def generate_tags_and_description(embedding, model_name):
     """Generate tags and description based on image embedding and model"""
     from flask import current_app
+    from models import UserConfig
     
     # If model_name is None, use default
     if model_name is None:
@@ -205,6 +206,12 @@ def generate_tags_and_description(embedding, model_name):
                 model_name = list(tag_embeddings.keys())[0]
             else:
                 return [], "No tags available"
+    
+    # Get user config for minimum tags setting
+    config = UserConfig.query.first()
+    min_tags = 3  # Default minimum
+    if config and hasattr(config, 'min_tags') and config.min_tags is not None:
+        min_tags = config.min_tags
     
     # Calculate similarities with tag embeddings
     scores = {}
@@ -223,8 +230,21 @@ def generate_tags_and_description(embedding, model_name):
     # Sort tags by similarity score
     sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     
-    # Get top 10 tags
-    top_tags = [tag for tag, _ in sorted_tags[:10]]
+    # Get tags with good similarity scores
+    # First get the minimum number of tags
+    top_tags = [tag for tag, _ in sorted_tags[:min_tags]]
+    
+    # Then add more tags if they have good similarity scores
+    # We'll use a threshold based on the similarity of the last tag in our minimum set
+    if len(sorted_tags) > min_tags:
+        min_threshold = sorted_tags[min_tags-1][1] * 0.8  # 80% of the last minimum tag's score
+        
+        # Add additional tags that meet the threshold
+        for tag, score in sorted_tags[min_tags:]:
+            if score >= min_threshold:
+                top_tags.append(tag)
+            else:
+                break  # Stop once we hit a tag below threshold
     
     # Create description
     description = "This image may contain " + ", ".join(top_tags) + "."
@@ -571,12 +591,21 @@ def send_scheduled_image(event_id):
                 
                 # Check if device is in portrait orientation
                 is_portrait = device_obj.orientation.lower() == 'portrait'
+                current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
                 
-                # If portrait, swap width and height for target ratio calculation
+                # Calculate aspect ratio based on device orientation
+                # This ratio is used for cropping to ensure the image fits the display correctly
                 if is_portrait:
-                    target_ratio = dev_height / dev_width
+                    # For portrait displays, use height/width (taller than wide)
+                    device_ratio = dev_height / dev_width
+                    current_app.logger.info(f"Portrait display: using height/width ratio = {device_ratio}")
                 else:
-                    target_ratio = dev_width / dev_height
+                    # For landscape displays, use width/height (wider than tall)
+                    device_ratio = dev_width / dev_height
+                    current_app.logger.info(f"Landscape display: using width/height ratio = {device_ratio}")
+                
+                # Log the original image dimensions and device info
+                current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
                     
                 # First check for ScreenshotCropInfo for screenshots
                 from models import ScreenshotCropInfo
@@ -608,37 +637,85 @@ def send_scheduled_image(event_id):
                         # If no crop data, create an auto-centered crop
                         current_app.logger.info("No crop data found, using auto-centered crop")
                         orig_ratio = orig_w / orig_h
-                        if orig_ratio > target_ratio:
-                            new_width = int(orig_h * target_ratio)
+                        
+                        # Log the ratios for debugging
+                        current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
+                        
+                        if orig_ratio > device_ratio:
+                            # Image is wider than device ratio, use full height
+                            new_width = int(orig_h * device_ratio)
                             left = (orig_w - new_width) // 2
                             crop_box = (left, 0, left + new_width, orig_h)
                         else:
-                            new_height = int(orig_w / target_ratio)
+                            # Image is taller than device ratio, use full width
+                            new_height = int(orig_w / device_ratio)
                             top = (orig_h - new_height) // 2
                             crop_box = (0, top, orig_w, top + new_height)
+                        
                         current_app.logger.info(f"Auto crop box: {crop_box}")
                         cropped = orig_img.crop(crop_box)
+                        current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
                 
-                # If portrait, rotate the image 90 degrees clockwise and swap dimensions
+                # Step 2: Resize and rotate the cropped image to match the target resolution and orientation
+                current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
+                
+                # IMPORTANT: The rotation is applied based on the device orientation in the database
+                # If the eInk display itself is also rotating the image, this might cause double rotation
+                
+                # If portrait, rotate the image 90 degrees clockwise
                 if is_portrait:
+                    current_app.logger.info(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
                     cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
+                    current_app.logger.info(f"After rotation size: {cropped.size}")
+                    
+                    # For portrait displays, we swap width and height in the final resize
+                    # This is because the physical display is rotated, but the native resolution
+                    # is still reported as if it were in landscape
+                    current_app.logger.info(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
+                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)
+                    current_app.logger.info(f"Final image size after portrait resize: {final_img.size}")
                 else:
+                    current_app.logger.info(f"Device is in LANDSCAPE mode, no rotation needed")
+                    # For landscape displays, we use the normal dimensions
                     final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
+                    current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
+                
+                current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
                 temp_dir = os.path.join(data_folder, "temp")
                 if not os.path.exists(temp_dir):
                     os.makedirs(temp_dir)
-                temp_filename = os.path.join(temp_dir, f"temp_{event.filename}")
+                # Create a unique temporary filename to avoid any caching issues
+                import uuid
+                unique_id = uuid.uuid4().hex[:8]
+                temp_filename = os.path.join(temp_dir, f"temp_{unique_id}_{event.filename}")
+                
+                # Save the final image with high quality
                 final_img.save(temp_filename, format="JPEG", quality=95)
+                current_app.logger.info(f"Original image path: {filepath}")
+                current_app.logger.info(f"Saved temporary file: {temp_filename}")
+                current_app.logger.info(f"Final image dimensions being sent: {final_img.size}")
             
-            cmd = f'curl "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
+            # Verify the temporary file exists and has the correct dimensions
+            try:
+                with Image.open(temp_filename) as verify_img:
+                    current_app.logger.info(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
+            except Exception as e:
+                current_app.logger.error(f"Error verifying temporary file: {e}")
+            
+            # Send the temporary file to the device using curl with verbose output
+            cmd = f'curl -v "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
             current_app.logger.info(f"Sending image with command: {cmd}")
             
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             
-            current_app.logger.info(f"Curl command result: returncode={result.returncode}, stdout={result.stdout}")
+            # Log the curl response in detail
+            current_app.logger.info(f"Curl stdout: {result.stdout}")
+            current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
+            current_app.logger.info(f"Curl return code: {result.returncode}")
             
+            # Delete the temporary file after sending
             os.remove(temp_filename)
+            current_app.logger.info(f"Temporary file deleted: {temp_filename}")
             
             if result.returncode == 0:
                 current_app.logger.info(f"Successfully sent image to device {device_obj.friendly_name}")

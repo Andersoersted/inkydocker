@@ -90,12 +90,25 @@ def update_clip_model():
         config = UserConfig(location="London")
         db.session.add(config)
     
+    updated = False
+    
     if "clip_model" in data:
         config.clip_model = data.get("clip_model")
+        updated = True
+    
+    if "min_tags" in data:
+        min_tags = data.get("min_tags")
+        if isinstance(min_tags, int) and min_tags > 0:
+            config.min_tags = min_tags
+            updated = True
+        else:
+            return jsonify({"status": "error", "message": "Invalid minimum tags value. Must be a positive integer."})
+    
+    if updated:
         db.session.commit()
-        return jsonify({"status": "success", "message": "CLIP model updated."})
+        return jsonify({"status": "success", "message": "Settings updated successfully."})
     else:
-        return jsonify({"status": "error", "message": "No CLIP model provided."})
+        return jsonify({"status": "error", "message": "No valid settings provided."})
 
 @settings_bp.route('/settings/rerun_all_tagging', methods=['POST'])
 def rerun_all_tagging():

@@ -270,6 +270,8 @@ def send_image(filename):
             is_portrait = device_obj.orientation.lower() == 'portrait'
             current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
             current_app.logger.info(f"Device resolution from database: {device_obj.resolution} (width x height)")
+            # IMPORTANT: The rotation is applied based on the device orientation in the database
+            # If the eInk display itself is also rotating the image, this might cause double rotation
             
             # If portrait, rotate the image 90 degrees clockwise
             if is_portrait:
@@ -288,6 +290,7 @@ def send_image(filename):
                 # For landscape displays, we use the normal dimensions
                 final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
                 current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
+                current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
             
             current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
             
@@ -295,13 +298,39 @@ def send_image(filename):
             temp_dir = os.path.join(data_folder, "temp")
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
-            temp_filename = os.path.join(temp_dir, f"temp_{filename}")
+            
+            # Create a unique temporary filename to avoid any caching issues
+            import uuid
+            unique_id = uuid.uuid4().hex[:8]
+            temp_filename = os.path.join(temp_dir, f"temp_{unique_id}_{filename}")
+            
+            # Save the final image with high quality
             final_img.save(temp_filename, format="JPEG", quality=95)
+            current_app.logger.info(f"Original image path: {filepath}")
             current_app.logger.info(f"Saved temporary file: {temp_filename}")
+            current_app.logger.info(f"Final image dimensions being sent: {final_img.size}")
 
-        cmd = f'curl "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
+        # Verify the temporary file exists and has the correct dimensions
+        try:
+            with Image.open(temp_filename) as verify_img:
+                current_app.logger.info(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
+        except Exception as e:
+            current_app.logger.error(f"Error verifying temporary file: {e}")
+        
+        # Send the temporary file to the device using curl with verbose output
+        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
+        current_app.logger.info(f"Sending image with command: {cmd}")
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        # Log the curl response in detail
+        current_app.logger.info(f"Curl stdout: {result.stdout}")
+        current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
+        current_app.logger.info(f"Curl return code: {result.returncode}")
+            
+        # Delete the temporary file after sending
         os.remove(temp_filename)
+        current_app.logger.info(f"Temporary file deleted: {temp_filename}")
+        
         if result.returncode != 0:
             return f"Error sending image: {result.stderr}", 500
 

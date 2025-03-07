@@ -97,6 +97,7 @@ class UserConfig(db.Model):
     ollama_api_key = db.Column(db.String(512))
     ollama_model = db.Column(db.String(64))  # Column for chosen Ollama model
     clip_model = db.Column(db.String(64), default="ViT-B-32")  # Column for chosen CLIP model (using consistent format with tasks.py)
+    min_tags = db.Column(db.Integer, default=3)  # Minimum number of tags to generate for images
 
     def __repr__(self):
         return f"<UserConfig {self.id} - Location: {self.location}>"

@@ -34,6 +34,14 @@
           <button type="button" class="field-save-btn" onclick="saveClipModel()">Save Model</button>
         </div>
         
+        <!-- Minimum Tags Setting -->
+        <div class="form-group" style="margin-top: 15px;">
+          <label for="min_tags">Minimum Number of Tags:</label>
+          <input type="number" id="min_tags" name="min_tags" min="1" max="20" value="{{ config.min_tags if config and config.min_tags else 3 }}" class="form-control">
+          <small class="form-text text-muted">Set the minimum number of tags to generate for each image. The system may add more tags if they have good relevance scores.</small>
+          <button type="button" class="field-save-btn" onclick="saveMinTags()">Save Setting</button>
+        </div>
+        
         <!-- Model Download Progress -->
         <div id="modelDownloadContainer" style="margin-top: 15px; display: none;">
           <p>Downloading model: <span id="modelDownloadName"></span></p>
@@ -50,6 +58,7 @@
         <!-- Rerun Tagging Button -->
         <div style="margin-top: 20px; text-align: center;">
           <button type="button" class="primary-btn" onclick="rerunAllTagging()">Rerun Tagging on All Images</button>
+          <p class="text-danger" style="margin-top: 10px; font-size: 0.9em;"><strong>Warning:</strong> Rerunning tagging will remove all existing tags and replace them with new ones.</p>
         </div>
       </form>
     </div>
@@ -574,9 +583,38 @@
     });
   }
 
+  function saveMinTags() {
+    var minTags = document.getElementById('min_tags').value;
+    if (!minTags || isNaN(minTags) || minTags < 1) {
+      showOverlayMessage("Please enter a valid number (minimum 1)");
+      return;
+    }
+    var payload = {
+      min_tags: parseInt(minTags)
+    };
+    showOverlayMessage("Updating minimum tags setting...", 1500);
+    fetch("{{ url_for('settings.update_clip_model') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        showOverlayMessage("Minimum tags setting updated successfully to " + minTags);
+      } else {
+        showOverlayMessage("Error updating minimum tags setting: " + data.message);
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showOverlayMessage("An error occurred while updating minimum tags setting.");
+    });
+  }
+
   function rerunAllTagging() {
     showConfirmOverlay(
-      "This will rerun tagging on all images using the selected CLIP model. This may take some time depending on the number of images. Continue?",
+      "<strong>Warning:</strong> This will rerun tagging on all images using the selected CLIP model and will <span style='color: red;'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",
       function() {
         fetch("{{ url_for('settings.rerun_all_tagging') }}", {
           method: 'POST'
