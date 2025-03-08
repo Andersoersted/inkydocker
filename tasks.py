@@ -18,12 +18,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # Initialize Celery with memory limits
 celery = Celery('tasks', broker='redis://localhost:6379/0', backend='redis://localhost:6379/0')
 
-# Configure Celery to prevent memory leaks and reduce log flooding
+# Configure Celery with optimized settings but no memory limits
 celery.conf.update(
-    worker_max_memory_per_child=500000,   # 500MB memory limit per worker
-    worker_max_tasks_per_child=1,         # Restart worker after each task
-    task_time_limit=600,                  # 10 minute time limit per task
-    task_soft_time_limit=300,             # 5 minute soft time limit (sends exception)
+    worker_max_tasks_per_child=10,        # Restart worker after 10 tasks (increased from 1)
+    task_time_limit=1800,                 # 30 minute time limit per task (increased from 10 minutes)
+    task_soft_time_limit=1500,            # 25 minute soft time limit (increased from 5 minutes)
     worker_concurrency=1,                 # Limit to 1 concurrent worker to prevent duplicate tasks
     broker_connection_retry_on_startup=True,  # Fix deprecation warning
     worker_hijack_root_logger=False,      # Don't hijack the root logger
@@ -125,14 +124,15 @@ def get_clip_model():
     if model_key in clip_models:
         return model_key, clip_models[model_key], clip_preprocessors[model_key]
     
-    # Clear any existing models to free memory
-    for model_name in list(clip_models.keys()):
-        if model_name != model_key:
-            del clip_models[model_name]
-            del clip_preprocessors[model_name]
-    
-    # Force garbage collection
-    gc.collect()
+    # Only clear models if we're running out of memory
+    if len(clip_models) > 5:  # Keep up to 5 models in memory
+        # Clear oldest models to free memory
+        models_to_keep = 3  # Always keep at least 3 models
+        models_to_remove = list(clip_models.keys())[:-models_to_keep]
+        for model_name in models_to_remove:
+            if model_name != model_key:
+                del clip_models[model_name]
+                del clip_preprocessors[model_name]
     
     # Load the model
     try:
@@ -142,14 +142,94 @@ def get_clip_model():
             data_folder = current_app.config.get("DATA_FOLDER", "./data")
             models_folder = os.path.join(data_folder, "models")
             
-            # Load the custom model
-            model, _, preprocess = open_clip.create_model_and_transforms(
-                custom_model_name,
-                pretrained='openai',
-                jit=False,
-                force_quick_gelu=True,
-                cache_dir=models_folder
-            )
+            # Check if we have a record of which pretrained tag was used for this model
+            data_folder = current_app.config.get("DATA_FOLDER", "./data")
+            models_folder = os.path.join(data_folder, "models")
+            model_info_path = os.path.join(models_folder, f"{custom_model_name.replace('/', '_')}_info.json")
+            
+            # Default pretrained tags to try
+            available_pretrained_tags = []
+            
+            # Try to load the model info to get the pretrained tag
+            if os.path.exists(model_info_path):
+                try:
+                    with open(model_info_path, 'r') as f:
+                        model_info = json.load(f)
+                        if 'pretrained_tag' in model_info and model_info['pretrained_tag']:
+                            # If we have a record of the pretrained tag, use it first
+                            available_pretrained_tags.append(model_info['pretrained_tag'])
+                            current_app.logger.info(f"Using recorded pretrained tag for {custom_model_name}: {model_info['pretrained_tag']}")
+                except Exception as e:
+                    current_app.logger.error(f"Error reading model info file: {str(e)}")
+            
+            # Get available pretrained tags for the model
+            try:
+                # Try to get available pretrained tags from open_clip
+                model_pretrained_tags = open_clip.list_pretrained_tags_by_model(custom_model_name)
+                current_app.logger.info(f"Available pretrained tags for {custom_model_name}: {model_pretrained_tags}")
+                
+                # Add any tags we don't already have
+                for tag in model_pretrained_tags:
+                    if tag not in available_pretrained_tags:
+                        available_pretrained_tags.append(tag)
+            except Exception as e:
+                current_app.logger.info(f"Could not get pretrained tags for {custom_model_name}: {str(e)}")
+            
+            # If still no tags, use default list
+            if not available_pretrained_tags:
+                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b']
+            
+            # Try different model name formats and pretrained tags
+            success = False
+            last_error = None
+            
+            # List of model name variations to try
+            model_variations = []
+            
+            # Original model name
+            model_variations.append(custom_model_name)
+            
+            # If model name contains a slash, try different variations
+            if '/' in custom_model_name:
+                # Extract the model architecture name (after the slash)
+                model_arch = custom_model_name.split('/')[-1]
+                model_variations.append(model_arch)
+                
+                # Try with organization as prefix
+                org = custom_model_name.split('/')[0]
+                model_variations.append(f"{org}-{model_arch}")
+                
+                # Try with underscores instead of dashes
+                model_variations.append(model_arch.replace('-', '_'))
+            
+            # Try each model variation with each pretrained tag
+            for model_var in model_variations:
+                current_app.logger.info(f"Trying model variation: {model_var}")
+                
+                for pretrained_tag in available_pretrained_tags:
+                    try:
+                        current_app.logger.info(f"Attempting to load {model_var} with pretrained tag: {pretrained_tag}")
+                        model, _, preprocess = open_clip.create_model_and_transforms(
+                            model_var,
+                            pretrained=pretrained_tag,
+                            jit=False,
+                            force_quick_gelu=True,
+                            cache_dir=models_folder
+                        )
+                        # If we get here, the model loaded successfully
+                        current_app.logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
+                        success = True
+                        break
+                    except Exception as e:
+                        last_error = e
+                        current_app.logger.info(f"Failed to load {model_var} with pretrained tag {pretrained_tag}: {str(e)}")
+                
+                if success:
+                    break
+            
+            # If all attempts failed, raise the last error
+            if not success:
+                raise Exception(f"Failed to load model {custom_model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
         else:
             current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
             model, _, preprocess = open_clip.create_model_and_transforms(
@@ -305,8 +385,7 @@ def process_image_tagging(self, filename):
     from flask import current_app
     import gc  # Garbage collection
     
-    # Force garbage collection at the start
-    gc.collect()
+    # No need for garbage collection at the start
     # Log which CLIP model is being used with clear indication
     config = UserConfig.query.first()
     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
@@ -324,14 +403,8 @@ def process_image_tagging(self, filename):
         if embedding is None:
             return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
         
-        # Force garbage collection after embedding
-        gc.collect()
-        
         # Generate tags and description
         tags, description = generate_tags_and_description(embedding, model_name)
-        
-        # Force garbage collection after tag generation
-        gc.collect()
         
         # Update database
         img = ImageDB.query.filter_by(filename=filename).first()
@@ -340,14 +413,7 @@ def process_image_tagging(self, filename):
             img.description = description
             db.session.commit()
             
-            # Force garbage collection to free memory
-            gc.collect()
-            
-            # Clear any cached models to free memory
-            if model_name in clip_models and model_name != 'ViT-B-32':
-                del clip_models[model_name]
-                del clip_preprocessors[model_name]
-                gc.collect()
+            # Keep all models in memory for better performance
             
             return {
                 "status": "success",
@@ -360,14 +426,7 @@ def process_image_tagging(self, filename):
             return {"status": "error", "message": "Image not found in database", "filename": filename}
     except Exception as e:
         current_app.logger.error(f"Error in process_image_tagging: {e}")
-        # Try to clean up memory
-        gc.collect()
-        
-        # Clear all cached models to free memory
-        for model_name in list(clip_models.keys()):
-            del clip_models[model_name]
-            del clip_preprocessors[model_name]
-        gc.collect()
+        # Don't clear models on error to avoid reloading them
         
         return {"status": "error", "message": str(e), "filename": filename}
 
@@ -473,6 +532,7 @@ def reembed_all_images(self):
         
         # First, clear all existing tags
         current_app.logger.info("Clearing all existing tags before retagging")
+        from models import db  # Import db here to avoid 'db not defined' error
         for img in images:
             img.tags = ""
             img.description = ""
@@ -486,11 +546,8 @@ def reembed_all_images(self):
             # Update progress
             BULK_PROGRESS[task_id] = min(100, (i + 1) / total * 100)
             
-            # Force garbage collection after each image
-            gc.collect()
-            
-            # Add a small delay between tasks to allow memory to be freed
-            time.sleep(0.5)
+            # Add a small delay between tasks
+            time.sleep(0.1)
             
         return {
             "status": "success",
@@ -499,8 +556,7 @@ def reembed_all_images(self):
         }
     except Exception as e:
         current_app.logger.error(f"Error in reembed_all_images: {e}")
-        # Try to clean up memory
-        gc.collect()
+        # No need to clean up memory
         return {"status": "error", "message": str(e)}
 
 def send_scheduled_image(event_id):

@@ -17,63 +17,150 @@ logger = logging.getLogger(__name__)
 # Dictionary to track model download progress
 model_download_progress = {}
 
-def download_model_thread(model_name, task_id):
+def download_model_thread(model_name, task_id, app):
     """
     Thread function to download a model and track progress.
     """
     try:
-        # Create data directory if it doesn't exist
-        data_folder = current_app.config.get("DATA_FOLDER", "./data")
-        models_folder = os.path.join(data_folder, "models")
-        if not os.path.exists(models_folder):
-            os.makedirs(models_folder)
-        
-        # Update progress to 5%
-        model_download_progress[task_id] = {
-            "progress": 5,
-            "status": "downloading",
-            "model_name": model_name
-        }
-        
-        # Load the model - this will download it if not already cached
-        logger.info(f"Starting download of model: {model_name}")
-        model, _, preprocess = open_clip.create_model_and_transforms(
-            model_name,
-            pretrained='openai',
-            cache_dir=models_folder
-        )
-        
-        # Update progress to 90%
-        model_download_progress[task_id] = {
-            "progress": 90,
-            "status": "finalizing",
-            "model_name": model_name
-        }
-        
-        # Save model info to a JSON file for tracking
-        model_info = {
-            "name": model_name,
-            "download_date": datetime.now().isoformat(),
-            "path": models_folder
-        }
-        
-        with open(os.path.join(models_folder, f"{model_name.replace('/', '_')}_info.json"), 'w') as f:
-            json.dump(model_info, f)
-        
-        # Update progress to 100%
-        model_download_progress[task_id] = {
-            "progress": 100,
-            "status": "completed",
-            "model_name": model_name
-        }
-        
-        logger.info(f"Successfully downloaded model: {model_name}")
-        
-        # Keep the completed status for a while before removing
-        time.sleep(30)
-        if task_id in model_download_progress:
-            del model_download_progress[task_id]
+        # Use the application context
+        with app.app_context():
+            # Create data directory if it doesn't exist
+            data_folder = current_app.config.get("DATA_FOLDER", "./data")
+            models_folder = os.path.join(data_folder, "models")
+            if not os.path.exists(models_folder):
+                os.makedirs(models_folder)
             
+            # Update progress to 5%
+            model_download_progress[task_id] = {
+                "progress": 5,
+                "status": "downloading",
+                "model_name": model_name
+            }
+            
+            # Load the model - this will download it if not already cached
+            logger.info(f"Starting download of model: {model_name}")
+            
+            # Get available pretrained tags for the model
+            available_pretrained_tags = []
+            try:
+                # Try to get available pretrained tags
+                import open_clip
+                available_pretrained_tags = open_clip.list_pretrained_tags_by_model(model_name)
+                logger.info(f"Available pretrained tags for {model_name}: {available_pretrained_tags}")
+            except Exception as e:
+                logger.info(f"Could not get pretrained tags for {model_name}: {str(e)}")
+                # If we can't get tags, use default tags to try
+                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32']
+            
+            # If no tags found, use default list
+            if not available_pretrained_tags:
+                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32']
+            
+            # Try different model name formats and pretrained tags
+            success = False
+            last_error = None
+            
+            # List of model name variations to try
+            model_variations = []
+            
+            # Original model name
+            model_variations.append(model_name)
+            
+            # If model name contains a slash, try different variations
+            if '/' in model_name:
+                # Extract the model architecture name (after the slash)
+                model_arch = model_name.split('/')[-1]
+                model_variations.append(model_arch)
+                
+                # Try with organization as prefix
+                org = model_name.split('/')[0]
+                model_variations.append(f"{org}-{model_arch}")
+                
+                # Try with underscores instead of dashes
+                model_variations.append(model_arch.replace('-', '_'))
+            
+            # Try each model variation with each pretrained tag
+            total_attempts = len(model_variations) * len(available_pretrained_tags)
+            current_attempt = 0
+            
+            for model_var in model_variations:
+                logger.info(f"Trying model variation: {model_var}")
+                
+                for pretrained_tag in available_pretrained_tags:
+                    current_attempt += 1
+                    
+                    # Update progress based on attempts (from 5% to 80%)
+                    progress_percent = 5 + (current_attempt / total_attempts) * 75
+                    model_download_progress[task_id] = {
+                        "progress": int(progress_percent),
+                        "status": "downloading",
+                        "model_name": model_name,
+                        "current_attempt": f"Trying {model_var} with {pretrained_tag}"
+                    }
+                    
+                    try:
+                        logger.info(f"Attempting to load {model_var} with pretrained tag: {pretrained_tag}")
+                        model, _, preprocess = open_clip.create_model_and_transforms(
+                            model_var,
+                            pretrained=pretrained_tag,
+                            cache_dir=models_folder
+                        )
+                        # If we get here, the model loaded successfully
+                        logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
+                        success = True
+                        
+                        # Save which pretrained tag was used
+                        model_info = {
+                            "name": model_name,
+                            "download_date": datetime.now().isoformat(),
+                            "path": models_folder,
+                            "pretrained_tag": pretrained_tag,
+                            "model_variation": model_var
+                        }
+                        break
+                    except Exception as e:
+                        last_error = e
+                        logger.info(f"Failed to load {model_var} with pretrained tag {pretrained_tag}: {str(e)}")
+                
+                if success:
+                    break
+            
+            # If all attempts failed, raise the last error
+            if not success:
+                raise Exception(f"Failed to load model {model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
+            
+            # Update progress to 90%
+            model_download_progress[task_id] = {
+                "progress": 90,
+                "status": "finalizing",
+                "model_name": model_name
+            }
+            
+            # If we didn't set model_info earlier (shouldn't happen), create a default one
+            if not 'model_info' in locals():
+                model_info = {
+                    "name": model_name,
+                    "download_date": datetime.now().isoformat(),
+                    "path": models_folder
+                }
+            
+            with open(os.path.join(models_folder, f"{model_name.replace('/', '_')}_info.json"), 'w') as f:
+                json.dump(model_info, f)
+            
+            # Update progress to 100%
+            model_download_progress[task_id] = {
+                "progress": 100,
+                "status": "completed",
+                "model_name": model_name
+            }
+            
+            logger.info(f"Successfully downloaded model: {model_name}")
+            
+            # Keep the completed status for a while before removing
+            time.sleep(30)
+            if task_id in model_download_progress:
+                del model_download_progress[task_id]
+                
     except Exception as e:
         logger.error(f"Error downloading model {model_name}: {str(e)}")
         model_download_progress[task_id] = {
@@ -256,7 +343,7 @@ def test_tagging():
     This allows users to verify the model is working correctly and see the generated tags.
     """
     try:
-        from tasks import get_image_embedding, COSINE_THRESHOLD
+        from tasks import get_image_embedding
         from models import UserConfig
         import os
         import tempfile
@@ -438,10 +525,14 @@ def download_model():
             "model_name": model_name
         }
         
+        # Get the current app
+        from flask import current_app
+        app = current_app._get_current_object()  # Get the actual app object, not the proxy
+        
         # Start download in a separate thread
         thread = threading.Thread(
             target=download_model_thread,
-            args=(model_name, task_id)
+            args=(model_name, task_id, app)
         )
         thread.daemon = True
         thread.start()
@@ -508,6 +599,87 @@ def list_custom_models():
         
     except Exception as e:
         logger.error(f"Error in list_custom_models: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+
+@settings_bp.route('/settings/list_available_models', methods=['GET'])
+def list_available_models():
+    """
+    Endpoint to list all available models from OpenCLIP.
+    """
+    try:
+        import open_clip
+        
+        # Get all available model names
+        available_models = open_clip.list_models()
+        
+        return jsonify({
+            "status": "success",
+            "models": available_models
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in list_available_models: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+
+@settings_bp.route('/settings/delete_model', methods=['POST'])
+def delete_model():
+    """
+    Endpoint to delete a downloaded model.
+    """
+    try:
+        data = request.get_json()
+        model_name = data.get("model_name")
+        
+        if not model_name:
+            return jsonify({
+                "status": "error",
+                "message": "Model name is required"
+            }), 400
+        
+        # Get the data folder
+        data_folder = current_app.config.get("DATA_FOLDER", "./data")
+        models_folder = os.path.join(data_folder, "models")
+        
+        # Check if the model info file exists
+        model_info_path = os.path.join(models_folder, f"{model_name.replace('/', '_')}_info.json")
+        if not os.path.exists(model_info_path):
+            return jsonify({
+                "status": "error",
+                "message": f"Model {model_name} not found"
+            }), 404
+        
+        # Delete the model info file
+        os.remove(model_info_path)
+        
+        # Check if this model is currently selected in the config
+        config = UserConfig.query.first()
+        if config and config.clip_model == model_name:
+            # Reset to default model
+            config.clip_model = "ViT-B-32"
+            db.session.commit()
+            logger.info(f"Reset clip_model to default after deleting {model_name}")
+        
+        # Also check if it's the custom model
+        if config and config.custom_model == model_name:
+            # Reset custom model
+            config.custom_model = None
+            config.custom_model_enabled = False
+            db.session.commit()
+            logger.info(f"Reset custom_model after deleting {model_name}")
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Model {model_name} deleted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in delete_model: {str(e)}")
         return jsonify({
             "status": "error",
             "message": f"Error: {str(e)}"

@@ -28,8 +28,10 @@
           <select id="clip_model" name="clip_model" class="form-select" data-current="{{ config.clip_model if config and config.clip_model }}">
             <option value="">-- Select a model --</option>
             <option value="ViT-B-32" {% if config and config.clip_model == 'ViT-B-32' %}selected{% endif %}>ViT-B-32 (Faster, less accurate)</option>
-            <option value="ViT-B-16" {% if config and config.clip_model == 'ViT-B-16' %}selected{% endif %}>ViT-B-16 (Balanced)</option>
-            <option value="ViT-L-14" {% if config and config.clip_model == 'ViT-L-14' %}selected{% endif %}>ViT-L-14 (Slower, more accurate)</option>
+            <!-- We'll populate downloaded models here via JavaScript -->
+            <optgroup label="Downloaded Models" id="downloaded_models_group">
+              <!-- This will be populated dynamically -->
+            </optgroup>
           </select>
           <button type="button" class="field-save-btn" onclick="saveClipModel()">Save Model</button>
           <button type="button" class="btn btn-outline-secondary mt-2" onclick="verifyClipModel()">Verify Current Model</button>
@@ -41,8 +43,9 @@
           <p class="text-muted">Download and use any OpenAI-compatible CLIP model by specifying its name.</p>
           
           <div class="input-group mb-3">
-            <input type="text" id="custom_model_name" class="form-control" placeholder="e.g., openai/clip-vit-base-patch32">
+            <input type="text" id="custom_model_name" class="form-control" placeholder="e.g., ViT-B-16 or RN50">
             <button class="btn btn-outline-primary" type="button" onclick="downloadCustomModel()">Download Model</button>
+            <button class="btn btn-outline-secondary" type="button" onclick="showAvailableModels()">Show Available Models</button>
           </div>
           
           <div class="form-check mb-3">
@@ -92,6 +95,7 @@
           <div class="progress-container" style="width: 100%; background: #ddd; border-radius: 5px;">
             <div id="modelDownloadProgress" class="progress-bar" style="width: 0%; height: 20px; background: #28a745; border-radius: 5px; color: #fff; text-align: center; line-height: 20px;">0%</div>
           </div>
+          <p id="modelDownloadStatus" class="text-muted" style="margin-top: 5px; font-size: 0.9em;"></p>
         </div>
         
         <div style="margin-top: 20px;">
@@ -267,11 +271,18 @@
   }
   .custom-modal-content {
     background-color: #fff;
-    margin: 10% auto;
+    margin: 5% auto;
     padding: 20px;
     border-radius: 5px;
-    max-width: 500px;
+    max-width: 800px;
     position: relative;
+  }
+  
+  /* Special styling for the CLIP settings modal */
+  #clipSettingsModal .custom-modal-content {
+    max-width: 900px;
+    max-height: 90vh;
+    overflow-y: auto;
   }
   .close {
     color: #aaa;
@@ -548,7 +559,45 @@
     );
   }
 
+  // Function to populate the CLIP model dropdown with downloaded models
+  function populateDownloadedModels() {
+    fetch("{{ url_for('settings.list_custom_models') }}")
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        if (data.status === "success") {
+          var modelsGroup = document.getElementById('downloaded_models_group');
+          // Clear existing options
+          modelsGroup.innerHTML = '';
+          
+          if (data.models.length === 0) {
+            var option = document.createElement('option');
+            option.disabled = true;
+            option.text = "No downloaded models";
+            modelsGroup.appendChild(option);
+          } else {
+            // Add each model to the dropdown
+            data.models.forEach(function(model) {
+              var option = document.createElement('option');
+              option.value = model.name;
+              option.text = model.name;
+              // Check if this model is currently selected
+              if ("{{ config.clip_model if config and config.clip_model }}" === model.name) {
+                option.selected = true;
+              }
+              modelsGroup.appendChild(option);
+            });
+          }
+        }
+      })
+      .catch(function(error) {
+        console.error("Error loading downloaded models:", error);
+      });
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
+    // Populate downloaded models on page load
+    populateDownloadedModels();
+    
     var addNewDisplayBtn = document.getElementById('addNewDisplayBtn');
     if (addNewDisplayBtn) {
       addNewDisplayBtn.addEventListener('click', function() {
@@ -860,6 +909,11 @@
           progressBar.style.width = percent + '%';
           progressBar.textContent = percent + '%';
           
+          // Show current attempt info if available
+          if (progress.current_attempt) {
+            document.getElementById('modelDownloadStatus').textContent = progress.current_attempt;
+          }
+          
           // If completed or error, stop polling
           if (status === "completed") {
             clearInterval(interval);
@@ -867,6 +921,8 @@
             // Update the custom model info
             document.getElementById('custom_model_info').innerHTML =
               '<p><strong>Current custom model:</strong> ' + progress.model_name + '</p>';
+            // Refresh the dropdown to include the new model
+            populateDownloadedModels();
             // Hide progress after a delay
             setTimeout(function() {
               document.getElementById('modelDownloadContainer').style.display = 'none';
@@ -928,6 +984,164 @@
     });
   }
   
+  // Function to filter models in the available models list
+  function filterModels() {
+    var input = document.getElementById('modelSearchInput');
+    var filter = input.value.toUpperCase();
+    var badges = document.querySelectorAll('.model-badge');
+    var groups = document.querySelectorAll('.model-group');
+    
+    badges.forEach(function(badge) {
+      var model = badge.getAttribute('data-model');
+      if (model.toUpperCase().indexOf(filter) > -1) {
+        badge.style.display = "";
+      } else {
+        badge.style.display = "none";
+      }
+    });
+    
+    // Show/hide groups based on whether they have any visible badges
+    groups.forEach(function(group) {
+      var visibleBadges = group.querySelectorAll('.model-badge[style="display: none;"]');
+      var totalBadges = group.querySelectorAll('.model-badge');
+      if (visibleBadges.length < totalBadges.length) {
+        group.style.display = "";
+      } else {
+        group.style.display = "none";
+      }
+    });
+  }
+  
+  function showAvailableModels() {
+    fetch("{{ url_for('settings.list_available_models') }}")
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        if (data.status === "success") {
+          var modelList = "<h4>Available Models</h4><p>These are the models that can be downloaded. Click on a model to select it.</p>";
+          
+          // Group models by type for better organization
+          var modelGroups = {};
+          data.models.forEach(function(model) {
+            var prefix = model.split('-')[0];
+            if (!modelGroups[prefix]) {
+              modelGroups[prefix] = [];
+            }
+            modelGroups[prefix].push(model);
+          });
+          
+          // Create a list with collapsible sections and search
+          modelList += `
+            <div class="mb-3">
+              <input type="text" id="modelSearchInput" class="form-control" placeholder="Search models..." onkeyup="filterModels()">
+            </div>
+            <div id="modelListContainer" style='max-height: 500px; overflow-y: auto;'>
+          `;
+          
+          // Sort prefixes alphabetically
+          var sortedPrefixes = Object.keys(modelGroups).sort();
+          
+          for (var i = 0; i < sortedPrefixes.length; i++) {
+            var prefix = sortedPrefixes[i];
+            var models = modelGroups[prefix].sort(); // Sort models alphabetically
+            
+            modelList += `
+              <div class="card mb-3 model-group" data-prefix="${prefix}">
+                <div class="card-header" id="heading${prefix}">
+                  <h5 class="mb-0">
+                    <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapse${prefix}" aria-expanded="true" aria-controls="collapse${prefix}">
+                      ${prefix} Models (${models.length})
+                    </button>
+                  </h5>
+                </div>
+                <div id="collapse${prefix}" class="collapse show" aria-labelledby="heading${prefix}">
+                  <div class="card-body">
+                    <div class="d-flex flex-wrap">
+            `;
+            
+            models.forEach(function(model) {
+              modelList += `<span class="badge bg-primary model-badge" style="cursor: pointer; margin: 5px; padding: 8px;" onclick="selectModel('${model}')" data-model="${model}">${model}</span>`;
+            });
+            
+            modelList += `
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+          
+          modelList += "</div>";
+          
+          modelList += `
+            <p class='text-muted mt-3'>
+              <strong>Note:</strong> Not all models may be compatible. If a model fails to download, try another one.<br>
+              Recommended models: ViT-B-32, ViT-B-16, RN50
+            </p>
+          `;
+          
+          showOverlayMessage(modelList);
+          
+          // Initialize collapse functionality
+          var collapseBtns = document.querySelectorAll('[data-toggle="collapse"]');
+          collapseBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var target = document.querySelector(btn.getAttribute('data-target'));
+              if (target.classList.contains('show')) {
+                target.classList.remove('show');
+              } else {
+                target.classList.add('show');
+              }
+            });
+          });
+          
+        } else {
+          showOverlayMessage("Error listing available models: " + data.message);
+        }
+      })
+      .catch(function(error) {
+        console.error("Error:", error);
+        showOverlayMessage("An error occurred while listing available models.");
+      });
+  }
+  
+  function selectModel(model) {
+    document.getElementById('custom_model_name').value = model;
+    // Close any open overlay
+    var overlays = document.getElementsByClassName('overlay-popup');
+    if (overlays.length > 0) {
+      overlays[0].remove();
+    }
+  }
+  
+  function deleteModel(modelName) {
+    showConfirmOverlay(
+      `Are you sure you want to delete the model "${modelName}"?`,
+      function() {
+        fetch("{{ url_for('settings.delete_model') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: modelName })
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          if (data.status === "success") {
+            showOverlayMessage("Model deleted successfully");
+            // Refresh the list of downloaded models
+            listCustomModels();
+            // Also refresh the dropdown
+            populateDownloadedModels();
+          } else {
+            showOverlayMessage("Error deleting model: " + data.message);
+          }
+        })
+        .catch(function(error) {
+          console.error("Error:", error);
+          showOverlayMessage("An error occurred while deleting the model.");
+        });
+      }
+    );
+  }
+
   function listCustomModels() {
     fetch("{{ url_for('settings.list_custom_models') }}")
       .then(function(response) { return response.json(); })
@@ -938,12 +1152,23 @@
             return;
           }
           
-          var modelList = "<h4>Downloaded Models</h4><ul>";
+          var modelList = "<h4>Downloaded Models</h4><div class='list-group'>";
           data.models.forEach(function(model) {
             var downloadDate = new Date(model.download_date).toLocaleString();
-            modelList += `<li><strong>${model.name}</strong> (Downloaded: ${downloadDate})</li>`;
+            var pretrained = model.pretrained_tag ? ` (Tag: ${model.pretrained_tag})` : '';
+            var variation = model.model_variation && model.model_variation !== model.name ? ` (Variation: ${model.model_variation})` : '';
+            
+            modelList += `
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <strong>${model.name}</strong>
+                  <small class="d-block text-muted">Downloaded: ${downloadDate}${pretrained}${variation}</small>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteModel('${model.name}')">Delete</button>
+              </div>
+            `;
           });
-          modelList += "</ul>";
+          modelList += "</div>";
           
           showOverlayMessage(modelList);
         } else {
