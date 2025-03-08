@@ -128,6 +128,150 @@ def rerun_all_tagging():
         logger.error(f"Error starting retagging: {str(e)}")
         return jsonify({"status": "error", "message": f"Error: {str(e)}"})
 
+@settings_bp.route('/settings/verify_clip_model', methods=['GET'])
+def verify_clip_model():
+    """
+    Endpoint to verify which CLIP model is currently being used.
+    This helps users confirm they're using the correct model for tagging.
+    """
+    try:
+        from models import UserConfig
+        
+        # Get the current CLIP model from user config
+        config = UserConfig.query.first()
+        
+        if not config:
+            return jsonify({
+                "status": "error",
+                "message": "No configuration found"
+            }), 404
+            
+        clip_model_name = config.clip_model if config.clip_model else "ViT-B-32"
+        
+        # Log the verification request
+        logger.info(f"CLIP model verification requested: current model is {clip_model_name}")
+        
+        return jsonify({
+            "status": "success",
+            "model_name": clip_model_name,
+            "message": f"Current CLIP model is {clip_model_name}"
+        })
+    except Exception as e:
+        logger.error(f"Error verifying CLIP model: {str(e)}")
+        return jsonify({"status": "error", "message": f"Error: {str(e)}"})
+
+@settings_bp.route('/settings/test_tagging', methods=['POST'])
+def test_tagging():
+    """
+    Endpoint to test image tagging with the current CLIP model.
+    This allows users to verify the model is working correctly and see the generated tags.
+    """
+    try:
+        from tasks import get_image_embedding, COSINE_THRESHOLD
+        from models import UserConfig
+        import os
+        import tempfile
+        import torch
+        
+        # Check if a file was uploaded
+        if 'file' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No file uploaded"
+            }), 400
+            
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({
+                "status": "error",
+                "message": "No file selected"
+            }), 400
+            
+        # Get the current CLIP model and settings
+        config = UserConfig.query.first()
+        if not config:
+            return jsonify({
+                "status": "error",
+                "message": "No configuration found"
+            }), 404
+            
+        clip_model_name = config.clip_model if config.clip_model else "ViT-B-32"
+        max_tags = config.min_tags if config.min_tags else 5
+        
+        # Save the uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
+            file.save(temp.name)
+            temp_path = temp.name
+        
+        try:
+            # Get the image embedding
+            embedding, model_used = get_image_embedding(temp_path)
+            if embedding is None:
+                os.unlink(temp_path)  # Clean up the temporary file
+                return jsonify({
+                    "status": "error",
+                    "message": "Failed to compute image embedding"
+                }), 500
+                
+            # Calculate similarities with tag embeddings
+            from tasks import tag_embeddings, CANDIDATE_TAGS
+            
+            scores = {}
+            for tag in CANDIDATE_TAGS:
+                if tag in tag_embeddings.get(model_used, {}):
+                    # Get the tag embedding for this model
+                    tag_emb = tag_embeddings[model_used][tag]
+                    # Calculate similarity
+                    similarity = torch.cosine_similarity(
+                        torch.tensor(embedding).unsqueeze(0),
+                        tag_emb.cpu(),
+                        dim=1
+                    ).item()
+                    scores[tag] = similarity
+            
+            # Sort tags by similarity score
+            sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            
+            # Filter tags by cosine similarity threshold and limit to max_tags
+            filtered_tags = []
+            for tag, score in sorted_tags:
+                # Only include tags with similarity above the threshold
+                if score >= COSINE_THRESHOLD:
+                    filtered_tags.append({"tag": tag, "score": score})
+                    # Stop once we reach the maximum number of tags
+                    if len(filtered_tags) >= max_tags:
+                        break
+            
+            # Include all tags with scores for display in the UI
+            all_tags_with_scores = [{"tag": tag, "score": score} for tag, score in sorted_tags[:20]]
+            
+            # Log the test results
+            logger.info(f"Test tagging completed with model {model_used}: generated {len(filtered_tags)} tags")
+            
+            # Clean up the temporary file
+            os.unlink(temp_path)
+            
+            return jsonify({
+                "status": "success",
+                "model_used": model_used,
+                "tags_with_scores": all_tags_with_scores,
+                "filtered_tags": filtered_tags,
+                "threshold": COSINE_THRESHOLD,
+                "max_tags": max_tags
+            })
+            
+        except Exception as e:
+            # Clean up the temporary file in case of error
+            os.unlink(temp_path)
+            raise e
+            
+    except Exception as e:
+        logger.error(f"Error in test_tagging: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+
 @settings_bp.route('/settings/ollama_models', methods=['GET'])
 def ollama_models():
     config = UserConfig.query.first()

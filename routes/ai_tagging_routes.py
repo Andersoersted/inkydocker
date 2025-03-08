@@ -152,3 +152,32 @@ def reembed_all_images_endpoint():
     if not task_id:
         return jsonify({"status": "error", "message": "No images found"}), 404
     return jsonify({"status": "success", "message": f"Reembedding images in background. Task ID: {task_id}"}), 200
+
+@ai_bp.route("/api/run_openclip/<filename>", methods=["POST"])
+def run_openclip_endpoint(filename):
+    """
+    Re-run tagging for a specific image using the currently selected CLIP model.
+    This endpoint is called from the info modal in the gallery.
+    """
+    if not filename:
+        return jsonify({"status": "error", "message": "Missing filename"}), 400
+    
+    try:
+        # Use the reembed_image function to re-tag the image
+        result = reembed_image(filename)
+        
+        # Check if the operation was successful
+        if result.get("status") == "success":
+            return jsonify({
+                "status": "success",
+                "message": "Image tagged successfully",
+                "tags": result.get("tags", [])
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result.get("message", "Unknown error")
+            }), 500
+    except Exception as e:
+        current_app.logger.error(f"Error in run_openclip_endpoint: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500

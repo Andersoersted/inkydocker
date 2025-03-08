@@ -72,6 +72,10 @@ CANDIDATE_TAGS = [
     "sci-fi", "historical", "futuristic", "retro", "classic"
 ]
 
+# Minimum cosine similarity threshold for tag inclusion
+# Tags with similarity scores below this threshold will be excluded
+COSINE_THRESHOLD = 0.3
+
 # Model and embeddings cache
 clip_models = {}
 clip_preprocessors = {}
@@ -96,8 +100,8 @@ def get_clip_model():
     elif config.clip_model:
         clip_model_name = config.clip_model
     
-    # Log the model being used
-    current_app.logger.info(f"Using user-selected CLIP model: {clip_model_name}")
+    # Log the model being used with clear indication
+    current_app.logger.info(f"🔍 CLIP MODEL SELECTION: Using {clip_model_name} for image tagging")
     
     # Check if model is already loaded
     if clip_model_name in clip_models:
@@ -197,11 +201,11 @@ def generate_tags_and_description(embedding, model_name):
             else:
                 return [], "No tags available"
     
-    # Get user config for minimum tags setting
+    # Get user config for tags setting
     config = UserConfig.query.first()
-    min_tags = 3  # Default minimum
+    max_tags = 5  # Default maximum number of tags
     if config and hasattr(config, 'min_tags') and config.min_tags is not None:
-        min_tags = config.min_tags
+        max_tags = config.min_tags
     
     # Calculate similarities with tag embeddings
     scores = {}
@@ -220,26 +224,29 @@ def generate_tags_and_description(embedding, model_name):
     # Sort tags by similarity score
     sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     
-    # Get tags with good similarity scores
-    # First get the minimum number of tags
-    top_tags = [tag for tag, _ in sorted_tags[:min_tags]]
+    # Filter tags by cosine similarity threshold and limit to max_tags
+    filtered_tags = []
+    for tag, score in sorted_tags:
+        # Only include tags with similarity above the threshold
+        if score >= COSINE_THRESHOLD:
+            filtered_tags.append(tag)
+            # Stop once we reach the maximum number of tags
+            if len(filtered_tags) >= max_tags:
+                break
     
-    # Then add more tags if they have good similarity scores
-    # We'll use a threshold based on the similarity of the last tag in our minimum set
-    if len(sorted_tags) > min_tags:
-        min_threshold = sorted_tags[min_tags-1][1] * 0.8  # 80% of the last minimum tag's score
-        
-        # Add additional tags that meet the threshold
-        for tag, score in sorted_tags[min_tags:]:
-            if score >= min_threshold:
-                top_tags.append(tag)
-            else:
-                break  # Stop once we hit a tag below threshold
+    # Log the threshold, number of tags, and their similarity scores
+    current_app.logger.info(f"📊 TAG GENERATION: Using model {model_name}")
+    current_app.logger.info(f"📊 TAG GENERATION: Generated {len(filtered_tags)} tags with similarity threshold {COSINE_THRESHOLD} (max: {max_tags})")
+    
+    # Log the selected tags with their similarity scores
+    tag_scores = [(tag, scores[tag]) for tag in filtered_tags]
+    tag_score_str = ", ".join([f"{tag} ({score:.3f})" for tag, score in tag_scores])
+    current_app.logger.info(f"📊 TAG GENERATION: Selected tags with scores: {tag_score_str}")
     
     # Create description
-    description = "This image may contain " + ", ".join(top_tags) + "."
+    description = "This image may contain " + ", ".join(filtered_tags) + "."
     
-    return top_tags, description
+    return filtered_tags, description
 
 @celery.task(bind=True, time_limit=600, soft_time_limit=500, max_retries=3)
 def process_image_tagging(self, filename):
@@ -253,13 +260,10 @@ def process_image_tagging(self, filename):
     
     # Force garbage collection at the start
     gc.collect()
-    
-    # Log which CLIP model is being used
+    # Log which CLIP model is being used with clear indication
     config = UserConfig.query.first()
     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-    current_app.logger.info(f"Tagging image {filename} with CLIP model: {clip_model_name}")
-    
-    # Log the model being used for tagging
+    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
     current_app.logger.info(f"Using user-selected CLIP model for tagging: {clip_model_name}")
     
     image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
@@ -327,10 +331,10 @@ def reembed_image(filename):
     from models import ImageDB, db, UserConfig
     from flask import current_app
     
-    # Log which CLIP model is being used
+    # Log which CLIP model is being used with clear indication
     config = UserConfig.query.first()
     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-    current_app.logger.info(f"Re-tagging image {filename} with CLIP model: {clip_model_name}")
+    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
     
     image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
     image_path = os.path.join(image_folder, filename)
