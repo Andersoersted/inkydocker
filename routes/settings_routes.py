@@ -100,11 +100,20 @@ def download_model_thread(model_name, task_id, app):
                     
                     try:
                         logger.info(f"Attempting to load {model_var} with pretrained tag: {pretrained_tag}")
-                        model, _, preprocess = open_clip.create_model_and_transforms(
-                            model_var,
-                            pretrained=pretrained_tag,
-                            cache_dir=models_folder
-                        )
+                        # Set a recursion limit for model downloading
+                        import sys
+                        old_recursion_limit = sys.getrecursionlimit()
+                        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                        
+                        try:
+                            model, _, preprocess = open_clip.create_model_and_transforms(
+                                model_var,
+                                pretrained=pretrained_tag,
+                                cache_dir=models_folder
+                            )
+                        finally:
+                            # Restore original recursion limit
+                            sys.setrecursionlimit(old_recursion_limit)
                         # If we get here, the model loaded successfully
                         logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
                         success = True

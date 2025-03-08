@@ -371,13 +371,22 @@ def get_clip_model():
                             signal.alarm(60)  # 60 second timeout for large models
                         
                         try:
-                            model, _, preprocess = open_clip.create_model_and_transforms(
-                                model_var,
-                                pretrained=pretrained_tag,
-                                jit=False,
-                                force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
-                                cache_dir=models_folder
-                            )
+                            # Set a recursion limit for model downloading
+                            import sys
+                            old_recursion_limit = sys.getrecursionlimit()
+                            sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                            
+                            try:
+                                model, _, preprocess = open_clip.create_model_and_transforms(
+                                    model_var,
+                                    pretrained=pretrained_tag,
+                                    jit=False,
+                                    force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
+                                    cache_dir=models_folder
+                                )
+                            finally:
+                                # Restore original recursion limit
+                                sys.setrecursionlimit(old_recursion_limit)
                             
                             # Cancel timeout if successful
                             if model_var in large_models:
@@ -442,12 +451,21 @@ def get_clip_model():
                         signal.alarm(60)  # 60 second timeout for large models
                     
                     try:
-                        model, _, preprocess = open_clip.create_model_and_transforms(
-                            clip_model_name,
-                            pretrained=pretrained_tag,
-                            jit=False,
-                            force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
-                        )
+                        # Set a recursion limit for model downloading
+                        import sys
+                        old_recursion_limit = sys.getrecursionlimit()
+                        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                        
+                        try:
+                            model, _, preprocess = open_clip.create_model_and_transforms(
+                                clip_model_name,
+                                pretrained=pretrained_tag,
+                                jit=False,
+                                force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
+                            )
+                        finally:
+                            # Restore original recursion limit
+                            sys.setrecursionlimit(old_recursion_limit)
                         
                         # Cancel timeout if successful
                         if clip_model_name in large_models:
@@ -522,12 +540,20 @@ def get_clip_model():
         if 'ViT-B-32' in clip_models:
             return 'ViT-B-32', clip_models['ViT-B-32'], clip_preprocessors['ViT-B-32']
         # Otherwise load default model
-        model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False)
-        model.to(device)
-        model.eval()
-        clip_models['ViT-B-32'] = model
-        clip_preprocessors['ViT-B-32'] = preprocess
-        return 'ViT-B-32', model, preprocess
+        import sys
+        old_recursion_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+        
+        try:
+            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False)
+            model.to(device)
+            model.eval()
+            clip_models['ViT-B-32'] = model
+            clip_preprocessors['ViT-B-32'] = preprocess
+            return 'ViT-B-32', model, preprocess
+        finally:
+            # Restore original recursion limit
+            sys.setrecursionlimit(old_recursion_limit)
 
 def get_image_embedding(image_path):
     try:
