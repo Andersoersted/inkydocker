@@ -232,12 +232,46 @@ def get_clip_model():
                 raise Exception(f"Failed to load model {custom_model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
         else:
             current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
-            model, _, preprocess = open_clip.create_model_and_transforms(
-                clip_model_name,
-                pretrained='openai',
-                jit=False,
-                force_quick_gelu=True
-            )
+            
+            # Get available pretrained tags for the model
+            available_pretrained_tags = []
+            try:
+                # Try to get available pretrained tags
+                available_pretrained_tags = open_clip.list_pretrained_tags_by_model(clip_model_name)
+                current_app.logger.info(f"Available pretrained tags for {clip_model_name}: {available_pretrained_tags}")
+            except Exception as e:
+                current_app.logger.info(f"Could not get pretrained tags for {clip_model_name}: {str(e)}")
+                # If we can't get tags, use default tags to try
+                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b', 'merged2b_s6b_b61k']
+            
+            # If no tags found, use default list
+            if not available_pretrained_tags:
+                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b', 'merged2b_s6b_b61k']
+            
+            # Try each pretrained tag
+            success = False
+            last_error = None
+            
+            for pretrained_tag in available_pretrained_tags:
+                try:
+                    current_app.logger.info(f"Attempting to load {clip_model_name} with pretrained tag: {pretrained_tag}")
+                    model, _, preprocess = open_clip.create_model_and_transforms(
+                        clip_model_name,
+                        pretrained=pretrained_tag,
+                        jit=False,
+                        force_quick_gelu=True
+                    )
+                    # If we get here, the model loaded successfully
+                    current_app.logger.info(f"Successfully loaded {clip_model_name} with pretrained tag: {pretrained_tag}")
+                    success = True
+                    break
+                except Exception as e:
+                    last_error = e
+                    current_app.logger.info(f"Failed to load {clip_model_name} with pretrained tag {pretrained_tag}: {str(e)}")
+            
+            # If all attempts failed, raise the last error
+            if not success:
+                raise Exception(f"Failed to load model {clip_model_name} with any pretrained tag. Last error: {str(last_error)}")
         
         model.to(device)
         model.eval()

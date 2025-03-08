@@ -13,6 +13,7 @@ redis
 open_clip_torch
 tqdm>=4.66.1  # For progress tracking
 scikit-learn
+transformers>=4.38.0  # For HuggingFace models
 gunicorn
 gevent
 psutil>=5.9.0  # For memory monitoring
