@@ -213,7 +213,7 @@ def get_clip_model():
                             model_var,
                             pretrained=pretrained_tag,
                             jit=False,
-                            force_quick_gelu=True,
+                            force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
                             cache_dir=models_folder
                         )
                         # If we get here, the model loaded successfully
@@ -259,7 +259,7 @@ def get_clip_model():
                         clip_model_name,
                         pretrained=pretrained_tag,
                         jit=False,
-                        force_quick_gelu=True
+                        force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
                     )
                     # If we get here, the model loaded successfully
                     current_app.logger.info(f"Successfully loaded {clip_model_name} with pretrained tag: {pretrained_tag}")
@@ -304,7 +304,7 @@ def get_clip_model():
         if 'ViT-B-32' in clip_models:
             return 'ViT-B-32', clip_models['ViT-B-32'], clip_preprocessors['ViT-B-32']
         # Otherwise load default model
-        model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True)
+        model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False)
         model.to(device)
         model.eval()
         clip_models['ViT-B-32'] = model

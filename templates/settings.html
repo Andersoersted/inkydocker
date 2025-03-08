@@ -254,32 +254,6 @@
     </div>
   </div>
         
-        <div style="margin-top: 20px;">
-          <p>All models are pre-installed in the system.</p>
-          <p>Larger models provide more accurate tagging but require more processing power and memory.</p>
-        </div>
-        
-        <!-- Test Tagging Section -->
-        <div style="margin-top: 20px; border-top: 1px solid #dee2e6; padding-top: 20px;">
-          <h5>Test Current Model</h5>
-          <p class="text-muted">Upload a test image to verify the model is working correctly and see the generated tags.</p>
-          <div class="mb-3">
-            <input class="form-control" type="file" id="testImageFile" accept="image/*">
-          </div>
-          <button type="button" class="btn btn-outline-primary" onclick="testTagging()">Test Tagging</button>
-          <div id="testTaggingResult" class="mt-3" style="display: none;">
-            <h6>Test Results:</h6>
-            <div id="testTaggingContent" class="p-3 bg-light rounded"></div>
-          </div>
-        </div>
-        
-        <!-- Rerun Tagging Button -->
-        <div style="margin-top: 20px; text-align: center; border-top: 1px solid #dee2e6; padding-top: 20px;">
-          <button type="button" class="primary-btn" onclick="rerunAllTagging()">Rerun Tagging on All Images</button>
-          <p class="text-danger" style="margin-top: 10px; font-size: 0.9em;"><strong>Warning:</strong> Rerunning tagging will remove all existing tags and replace them with new ones.</p>
-        </div>
-      </form>
-    </div>
   </div>
 
   <!-- Add New Display Button -->
