@@ -15,6 +15,15 @@ The scheduler is responsible for:
 import os
 import sys
 import logging
+import multiprocessing
+
+# Set multiprocessing start method to 'spawn' to fix CUDA issues
+try:
+    multiprocessing.set_start_method('spawn', force=True)
+except RuntimeError:
+    # Method already set, ignore
+    pass
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
 from config import Config

@@ -18,7 +18,7 @@ RUN mkdir -p /app/data/model_cache
 # Pass the GPU flag to the builder stage
 ARG USE_GPU
 
-# Install build dependencies
+# Install build dependencies - this layer rarely changes
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -37,8 +37,35 @@ WORKDIR /build
 # Upgrade pip to latest version
 RUN pip install --upgrade pip
 
-# Copy requirements and tasks.py for modification
-COPY requirements.txt .
+# Split requirements into base and model-specific for better caching
+# Create base requirements file
+RUN echo "Flask\n\
+Flask-SQLAlchemy==3.1.1\n\
+cryptography\n\
+requests>=2.31.0\n\
+pyppeteer>=1.0.2\n\
+Flask-Migrate\n\
+httpx\n\
+APScheduler>=3.9.0\n\
+celery\n\
+redis\n\
+tqdm>=4.66.1\n\
+gunicorn\n\
+gevent\n\
+psutil>=5.9.0\n\
+pytz>=2024.1\n\
+Pillow==11.1.0\n\
+pillow-heif==0.21.0" > base_requirements.txt
+
+# Create model-specific requirements file
+RUN echo "scikit-learn\n\
+transformers>=4.38.0\n\
+open_clip_torch" > model_requirements.txt
+
+# Install base requirements first (these change less frequently)
+RUN pip install --upgrade pip && pip install --no-cache-dir -r base_requirements.txt
+
+# Copy tasks.py for modification
 COPY tasks.py .
 
 # If CPU-only mode is selected, modify tasks.py to force CPU usage
@@ -47,20 +74,21 @@ RUN if [ "$USE_GPU" = "false" ]; then \
     sed -i 's/device = "cuda" if torch.cuda.is_available() else "cpu"/device = "cpu"  # Force CPU usage/g' tasks.py; \
     fi
 
-# Install Python dependencies (with CPU-only PyTorch if USE_GPU=false)
+# Install PyTorch and model-specific dependencies separately for better caching
 RUN if [ "$USE_GPU" = "false" ]; then \
     # Install CPU-only PyTorch first
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    # Then install the rest of the requirements
-    pip install --no-cache-dir -r requirements.txt; \
+    # Then install the model-specific requirements
+    pip install --no-cache-dir -r model_requirements.txt; \
   else \
     # Install with default PyTorch (with CUDA)
-    pip install --no-cache-dir -r requirements.txt; \
+    pip install --no-cache-dir torch torchvision torchaudio && \
+    pip install --no-cache-dir -r model_requirements.txt; \
   fi
 
-# Pre-download only the smallest CLIP model to ensure it's available in the image
-# Other models can be downloaded on-demand by the user
-RUN python -c "import open_clip; \
+# Pre-download CLIP models in a separate layer for better caching
+RUN mkdir -p /build/model_cache && \
+    python -c "import open_clip; \
     print('Downloading ViT-B-32 model...'); \
     open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
     print('Model downloaded successfully.')"
@@ -75,7 +103,7 @@ ARG USE_GPU
 ENV TZ=Europe/Copenhagen
 ENV XDG_CACHE_HOME=/app/data/model_cache
 
-# Install only runtime dependencies
+# Install only runtime dependencies - this layer rarely changes
 RUN apt-get update && apt-get install -y \
     curl \
     sqlite3 \
@@ -99,15 +127,19 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Only the smallest CLIP model (ViT-B-32) is pre-downloaded in the builder stage
-# and copied with the site-packages. Other models can be downloaded on-demand by the user
-# through the settings page, which provides a more flexible approach while keeping the
-# Docker image size smaller.
+# Copy the model cache from the builder stage
+COPY --from=builder /app/data/model_cache /app/data/model_cache
 
 # Copy the modified tasks.py from builder stage
 COPY --from=builder /build/tasks.py /app/tasks.py
 
-# Copy application files (except tasks.py which was already copied)
+# Copy configuration files first (these change less frequently)
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Copy application files last (these change most frequently)
+# This ensures that changes to application code don't invalidate the dependency cache
 COPY . .
 
 # Make scheduler.py executable
@@ -118,13 +150,6 @@ ENV CELERY_WORKERS=2
 
 # Expose port 5001
 EXPOSE 5001
-
-# Copy entrypoint script and make it executable
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# Copy Supervisor configuration file
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Tell Flask which file is our app
 ENV FLASK_APP=app.py

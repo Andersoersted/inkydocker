@@ -1,11 +1,17 @@
 from flask import Flask, send_from_directory, request
 import os
+import multiprocessing
 from config import Config
 from models import db
 from flask_migrate import Migrate
 import pillow_heif
 from tasks import celery
 from datetime import timedelta
+
+# Set multiprocessing start method to 'spawn' to fix CUDA issues
+# This must be done before any multiprocessing is used
+if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn', force=True)
 
 # Register HEIF opener for Pillow
 pillow_heif.register_heif_opener()

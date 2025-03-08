@@ -3,6 +3,7 @@ import datetime
 import subprocess
 import time
 import uuid
+import multiprocessing
 
 from flask import current_app
 from PIL import Image
@@ -10,6 +11,41 @@ from PIL import Image
 import torch
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Set multiprocessing start method to 'spawn' to fix CUDA issues
+# This needs to be done before any multiprocessing operations
+try:
+    multiprocessing.set_start_method('spawn', force=True)
+except RuntimeError:
+    # Method already set, ignore
+    pass
+
+# Set up signal handlers for graceful error handling
+import signal
+import traceback
+import sys
+
+def handle_segfault(signum, frame):
+    """Handle segmentation fault (SIGSEGV) more gracefully"""
+    error_msg = f"CRITICAL ERROR: Segmentation fault (SIGSEGV) detected in process {os.getpid()}"
+    stack_trace = ''.join(traceback.format_stack(frame))
+    
+    # Log the error
+    print(f"{error_msg}\nStack trace:\n{stack_trace}", file=sys.stderr)
+    
+    # Try to log to file as well
+    try:
+        with open('/tmp/segfault_log.txt', 'a') as f:
+            f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: {error_msg}\n")
+            f.write(f"Stack trace:\n{stack_trace}\n")
+    except:
+        pass
+    
+    # Exit more gracefully than a hard crash
+    os._exit(1)
+
+# Register the signal handler
+signal.signal(signal.SIGSEGV, handle_segfault)
 
 # Import and initialize Celery and APScheduler
 from celery import Celery
@@ -54,8 +90,16 @@ celery.Task = FlaskTask
 # The scheduler is now initialized in a dedicated process (scheduler.py)
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# Device setup
+# Device setup with environment variable override for large models
+import os
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Check if we should force CPU for large models based on system memory
+FORCE_CPU_FOR_LARGE_MODELS = os.environ.get('FORCE_CPU_FOR_LARGE_MODELS', '0') == '1'
+SYSTEM_MEMORY_GB = float(os.environ.get('SYSTEM_MEMORY_GB', '0'))
+
+if FORCE_CPU_FOR_LARGE_MODELS:
+    print(f"System configured to force CPU for large models due to limited memory ({SYSTEM_MEMORY_GB}GB)")
 
 # Define candidate tags
 CANDIDATE_TAGS = [
@@ -93,6 +137,7 @@ def get_clip_model():
     from models import UserConfig
     from flask import current_app
     import gc  # Garbage collection
+    import psutil  # For memory monitoring
     
     # Get the selected CLIP model from user config
     config = UserConfig.query.first()
@@ -124,18 +169,54 @@ def get_clip_model():
     if model_key in clip_models:
         return model_key, clip_models[model_key], clip_preprocessors[model_key]
     
-    # Only clear models if we're running out of memory
-    if len(clip_models) > 5:  # Keep up to 5 models in memory
-        # Clear oldest models to free memory
-        models_to_keep = 3  # Always keep at least 3 models
-        models_to_remove = list(clip_models.keys())[:-models_to_keep]
+    # Check available memory before loading a new model
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024 * 1024 * 1024)
+    current_app.logger.info(f"Available memory before loading model: {available_gb:.2f} GB")
+    
+    # Define large models that might cause memory issues
+    large_models = ['ViT-SO400M-16-SigLIP2-512', 'ViT-L-14', 'ViT-H-14', 'ViT-g-14']
+    
+    # Models that are known to cause segmentation faults with CUDA
+    problematic_models = ['ViT-SO400M-16-SigLIP2-512']
+    
+    # Force CPU for large models if memory is limited or if configured to do so
+    force_cpu_for_model = False
+    
+    # Always force CPU for problematic models that cause segmentation faults
+    if model_key in problematic_models and device == "cuda":
+        current_app.logger.warning(f"Model {model_key} is known to cause segmentation faults with CUDA. Forcing CPU usage for this model.")
+        force_cpu_for_model = True
+    # Force CPU for large models based on memory or configuration
+    elif model_key in large_models and (FORCE_CPU_FOR_LARGE_MODELS or available_gb < 8.0) and device == "cuda":
+        current_app.logger.warning(f"Model {model_key} is large and available memory is limited ({available_gb:.2f} GB) or FORCE_CPU_FOR_LARGE_MODELS is enabled. Forcing CPU usage for this model.")
+        force_cpu_for_model = True
+    
+    # Clear models to free memory before loading a new one
+    if len(clip_models) > 3 or (model_key in large_models and len(clip_models) > 1):
+        current_app.logger.info(f"Clearing model cache to free memory before loading {model_key}")
+        # Keep fewer models in memory when dealing with large models
+        models_to_keep = 1 if model_key in large_models else 2
+        models_to_remove = list(clip_models.keys())[:-models_to_keep] if len(clip_models) > models_to_keep else list(clip_models.keys())
         for model_name in models_to_remove:
             if model_name != model_key:
+                current_app.logger.info(f"Removing model {model_name} from cache")
                 del clip_models[model_name]
                 del clip_preprocessors[model_name]
+                if model_name in tag_embeddings:
+                    del tag_embeddings[model_name]
+        
+        # Force garbage collection
+        gc.collect()
+        if device == "cuda":
+            torch.cuda.empty_cache()
     
     # Load the model
     try:
+        # Determine which device to use for this model
+        model_device = "cpu" if force_cpu_for_model else device
+        current_app.logger.info(f"Loading model {model_key} on device: {model_device}")
+        
         if use_custom_model:
             current_app.logger.info(f"Loading custom model: {custom_model_name}")
             # Set the cache directory for custom models
@@ -153,6 +234,7 @@ def get_clip_model():
             # Try to load the model info to get the pretrained tag
             if os.path.exists(model_info_path):
                 try:
+                    import json
                     with open(model_info_path, 'r') as f:
                         model_info = json.load(f)
                         if 'pretrained_tag' in model_info and model_info['pretrained_tag']:
@@ -209,17 +291,42 @@ def get_clip_model():
                 for pretrained_tag in available_pretrained_tags:
                     try:
                         current_app.logger.info(f"Attempting to load {model_var} with pretrained tag: {pretrained_tag}")
-                        model, _, preprocess = open_clip.create_model_and_transforms(
-                            model_var,
-                            pretrained=pretrained_tag,
-                            jit=False,
-                            force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
-                            cache_dir=models_folder
-                        )
-                        # If we get here, the model loaded successfully
-                        current_app.logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
-                        success = True
-                        break
+                        
+                        # Set a timeout for model loading to prevent hanging
+                        import signal
+                        
+                        def timeout_handler(signum, frame):
+                            raise TimeoutError(f"Loading model {model_var} timed out after 60 seconds")
+                        
+                        # Set timeout for large models
+                        if model_var in large_models:
+                            signal.signal(signal.SIGALRM, timeout_handler)
+                            signal.alarm(60)  # 60 second timeout for large models
+                        
+                        try:
+                            model, _, preprocess = open_clip.create_model_and_transforms(
+                                model_var,
+                                pretrained=pretrained_tag,
+                                jit=False,
+                                force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
+                                cache_dir=models_folder
+                            )
+                            
+                            # Cancel timeout if successful
+                            if model_var in large_models:
+                                signal.alarm(0)
+                                
+                            # If we get here, the model loaded successfully
+                            current_app.logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
+                            success = True
+                            break
+                        except TimeoutError as te:
+                            current_app.logger.error(f"Timeout loading model {model_var}: {str(te)}")
+                            # Cancel timeout
+                            if model_var in large_models:
+                                signal.alarm(0)
+                            raise
+                            
                     except Exception as e:
                         last_error = e
                         current_app.logger.info(f"Failed to load {model_var} with pretrained tag {pretrained_tag}: {str(e)}")
@@ -255,16 +362,41 @@ def get_clip_model():
             for pretrained_tag in available_pretrained_tags:
                 try:
                     current_app.logger.info(f"Attempting to load {clip_model_name} with pretrained tag: {pretrained_tag}")
-                    model, _, preprocess = open_clip.create_model_and_transforms(
-                        clip_model_name,
-                        pretrained=pretrained_tag,
-                        jit=False,
-                        force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
-                    )
-                    # If we get here, the model loaded successfully
-                    current_app.logger.info(f"Successfully loaded {clip_model_name} with pretrained tag: {pretrained_tag}")
-                    success = True
-                    break
+                    
+                    # Set a timeout for model loading to prevent hanging
+                    import signal
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"Loading model {clip_model_name} timed out after 60 seconds")
+                    
+                    # Set timeout for large models
+                    if clip_model_name in large_models:
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(60)  # 60 second timeout for large models
+                    
+                    try:
+                        model, _, preprocess = open_clip.create_model_and_transforms(
+                            clip_model_name,
+                            pretrained=pretrained_tag,
+                            jit=False,
+                            force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
+                        )
+                        
+                        # Cancel timeout if successful
+                        if clip_model_name in large_models:
+                            signal.alarm(0)
+                            
+                        # If we get here, the model loaded successfully
+                        current_app.logger.info(f"Successfully loaded {clip_model_name} with pretrained tag: {pretrained_tag}")
+                        success = True
+                        break
+                    except TimeoutError as te:
+                        current_app.logger.error(f"Timeout loading model {clip_model_name}: {str(te)}")
+                        # Cancel timeout
+                        if clip_model_name in large_models:
+                            signal.alarm(0)
+                        raise
+                        
                 except Exception as e:
                     last_error = e
                     current_app.logger.info(f"Failed to load {clip_model_name} with pretrained tag {pretrained_tag}: {str(e)}")
@@ -273,7 +405,8 @@ def get_clip_model():
             if not success:
                 raise Exception(f"Failed to load model {clip_model_name} with any pretrained tag. Last error: {str(last_error)}")
         
-        model.to(device)
+        # Move model to the appropriate device (CPU or CUDA)
+        model.to(model_device)
         model.eval()
         
         # Cache the model and preprocessor

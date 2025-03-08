@@ -50,7 +50,8 @@ def get_events():
     import pytz
     copenhagen_tz = pytz.timezone('Europe/Copenhagen')
     now = datetime.datetime.now(copenhagen_tz)
-    horizon = now + datetime.timedelta(days=90)
+    future_horizon = now + datetime.timedelta(days=90)
+    past_horizon = now - datetime.timedelta(days=90)  # Show past events up to 90 days back
     print(f"Loading {len(events)} events from database")
     
     # Create a device lookup dictionary for colors and friendly names
@@ -125,21 +126,33 @@ def get_events():
                 print(f"Error parsing datetime for event {ev.id}: {str(e)}")
                 continue
                 
-            # Advance to the first occurrence that is >= now
+            # For recurring events, generate occurrences both in the past and future
             rec = ev.recurrence.lower()
+            
+            # First, find the earliest occurrence we want to show (past_horizon)
             occurrence = start_dt
-            # FIXED: Now both occurrence and now are timezone-aware, so comparison works correctly
-            while occurrence < now:
+            earliest_occurrence = occurrence
+            
+            # Go backwards to find past occurrences until we reach past_horizon
+            while earliest_occurrence > past_horizon:
                 if rec == "daily":
-                    occurrence += datetime.timedelta(days=1)
+                    temp = earliest_occurrence - datetime.timedelta(days=1)
                 elif rec == "weekly":
-                    occurrence += datetime.timedelta(weeks=1)
+                    temp = earliest_occurrence - datetime.timedelta(weeks=1)
                 elif rec == "monthly":
-                    occurrence += datetime.timedelta(days=30)
+                    temp = earliest_occurrence - datetime.timedelta(days=30)
                 else:
                     break
-            # Generate occurrences until the horizon
-            while occurrence <= horizon:
+                
+                # If we're still after past_horizon, update earliest_occurrence
+                if temp >= past_horizon:
+                    earliest_occurrence = temp
+                else:
+                    break
+            
+            # Now generate all occurrences from earliest_occurrence to future_horizon
+            occurrence = earliest_occurrence
+            while occurrence <= future_horizon:
                 # Check if the file is a screenshot
                 is_screenshot = False
                 thumbnail_url = f"/thumbnail/{ev.filename}"
