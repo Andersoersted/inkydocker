@@ -9,12 +9,7 @@
     <p class="lead">Manage your eInk displays and AI settings.</p>
   </header>
 
-  <!-- CLIP Model Settings Button -->
-  <div class="card mb-4 shadow-sm">
-    <div class="card-body text-center">
-      <button id="clipSettingsBtn" class="primary-btn" style="width: 100%; padding: 12px;">CLIP Model Settings</button>
-    </div>
-  </div>
+  <!-- CLIP Model Settings Modal is still accessible from the menu -->
 
   <!-- CLIP Model Settings Modal -->
   <div id="clipSettingsModal" class="custom-modal">
@@ -740,19 +735,59 @@
   }
 
   document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Bootstrap tabs
-    const triggerTabList = document.querySelectorAll('#clipSettingsTabs button');
-    triggerTabList.forEach(triggerEl => {
-      const tabTrigger = new bootstrap.Tab(triggerEl);
-      
-      triggerEl.addEventListener('click', event => {
-        event.preventDefault();
-        tabTrigger.show();
+      // Add CLIP Model Settings to the navbar
+      const settingsNavItem = document.querySelector('.navbar-nav .nav-item:last-child');
+      if (settingsNavItem) {
+        // Create dropdown menu
+        settingsNavItem.classList.add('dropdown');
+        const settingsLink = settingsNavItem.querySelector('.nav-link');
+        settingsLink.classList.add('dropdown-toggle');
+        settingsLink.setAttribute('data-bs-toggle', 'dropdown');
+        settingsLink.setAttribute('aria-expanded', 'false');
+        
+        // Create dropdown menu
+        const dropdownMenu = document.createElement('ul');
+        dropdownMenu.className = 'dropdown-menu dropdown-menu-end';
+        
+        // Add Settings link
+        const settingsItem = document.createElement('li');
+        const settingsItemLink = document.createElement('a');
+        settingsItemLink.className = 'dropdown-item';
+        settingsItemLink.href = "{{ url_for('settings.settings') }}";
+        settingsItemLink.textContent = 'Device Settings';
+        settingsItem.appendChild(settingsItemLink);
+        dropdownMenu.appendChild(settingsItem);
+        
+        // Add CLIP Model Settings link
+        const clipItem = document.createElement('li');
+        const clipItemLink = document.createElement('a');
+        clipItemLink.className = 'dropdown-item';
+        clipItemLink.href = '#';
+        clipItemLink.textContent = 'CLIP Model Settings';
+        clipItemLink.addEventListener('click', function(e) {
+          e.preventDefault();
+          document.getElementById('clipSettingsModal').style.display = 'block';
+        });
+        clipItem.appendChild(clipItemLink);
+        dropdownMenu.appendChild(clipItem);
+        
+        // Add dropdown menu to navbar
+        settingsNavItem.appendChild(dropdownMenu);
+      }
+  
+      // Initialize Bootstrap tabs
+      const triggerTabList = document.querySelectorAll('#clipSettingsTabs button');
+      triggerTabList.forEach(triggerEl => {
+        const tabTrigger = new bootstrap.Tab(triggerEl);
+        
+        triggerEl.addEventListener('click', event => {
+          event.preventDefault();
+          tabTrigger.show();
+        });
       });
-    });
-    
-    // Populate downloaded models on page load
-    populateDownloadedModels();
+      
+      // Populate downloaded models on page load
+      populateDownloadedModels();
     
     var addNewDisplayBtn = document.getElementById('addNewDisplayBtn');
     if (addNewDisplayBtn) {

@@ -96,23 +96,42 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Check if we should force CPU for large models based on system memory
 FORCE_CPU_FOR_LARGE_MODELS = os.environ.get('FORCE_CPU_FOR_LARGE_MODELS', '0') == '1'
-SYSTEM_MEMORY_GB = float(os.environ.get('SYSTEM_MEMORY_GB', '0'))
+# Handle empty string case for SYSTEM_MEMORY_GB
+system_memory_str = os.environ.get('SYSTEM_MEMORY_GB', '0')
+SYSTEM_MEMORY_GB = float(system_memory_str) if system_memory_str else 0.0
 
 if FORCE_CPU_FOR_LARGE_MODELS:
     print(f"System configured to force CPU for large models due to limited memory ({SYSTEM_MEMORY_GB}GB)")
 
-# Define candidate tags
+# Define candidate tags with more focus on objects and content
 CANDIDATE_TAGS = [
-    "nature", "urban", "people", "animals", "food",
-    "technology", "landscape", "portrait", "abstract",
-    "night", "day", "indoor", "outdoor", "colorful",
-    "monochrome", "black and white", "sepia", "bright", "dark",
-    "warm", "cool", "red", "green", "blue", "yellow", "orange",
-    "purple", "pink", "brown", "gray", "white", "black", "minimal",
-    "detailed", "texture", "pattern", "geometric", "organic", "digital",
-    "analog", "illustration", "painting", "photograph", "sketch",
-    "drawing", "3D", "flat", "realistic", "surreal", "fantasy",
-    "sci-fi", "historical", "futuristic", "retro", "classic"
+    # People and portraits
+    "person", "people", "man", "woman", "child", "children", "baby", "group of people", "crowd", "portrait", "selfie", "face",
+    
+    # Objects
+    "car", "vehicle", "bicycle", "motorcycle", "airplane", "boat", "building", "house", "furniture", "chair", "table", "bed",
+    "computer", "phone", "television", "book", "clock", "bottle", "cup", "plate", "food", "fruit", "vegetable", "meal",
+    
+    # Animals
+    "animal", "dog", "cat", "bird", "fish", "horse", "cow", "sheep", "wildlife", "pet",
+    
+    # Nature
+    "tree", "flower", "plant", "mountain", "river", "lake", "ocean", "beach", "forest", "sky", "cloud", "sun", "moon", "stars",
+    
+    # Environments
+    "city", "urban", "rural", "indoor", "outdoor", "street", "park", "garden", "office", "home", "kitchen", "bedroom", "bathroom",
+    
+    # Activities
+    "walking", "running", "swimming", "eating", "drinking", "reading", "writing", "working", "playing", "dancing", "singing",
+    
+    # Time
+    "day", "night", "sunrise", "sunset", "morning", "evening",
+    
+    # Styles (fewer than before)
+    "colorful", "monochrome", "black and white", "bright", "dark",
+    
+    # Qualities
+    "natural", "artificial", "modern", "vintage", "detailed", "minimal", "realistic", "abstract"
 ]
 
 # Similarity threshold levels mapped to cosine values
@@ -126,6 +145,46 @@ SIMILARITY_THRESHOLDS = {
 
 # Default threshold (will be overridden by user settings)
 DEFAULT_THRESHOLD = "medium"
+
+# Function to generate better prompts for object detection
+def get_better_prompt_for_tag(tag):
+    """
+    Generate a more specific prompt for a tag to improve object detection.
+    Different types of tags need different prompt structures for best results.
+    """
+    # People and portrait prompts
+    if tag in ["person", "people", "man", "woman", "child", "children", "baby", "group of people",
+               "crowd", "portrait", "selfie", "face"]:
+        return f"a photograph of {tag} in the image"
+    
+    # Object prompts
+    elif tag in ["car", "vehicle", "bicycle", "motorcycle", "airplane", "boat", "building", "house",
+                "furniture", "chair", "table", "bed", "computer", "phone", "television", "book",
+                "clock", "bottle", "cup", "plate", "food", "fruit", "vegetable", "meal"]:
+        return f"a clear photo of a {tag}"
+    
+    # Animal prompts
+    elif tag in ["animal", "dog", "cat", "bird", "fish", "horse", "cow", "sheep", "wildlife", "pet"]:
+        return f"a photo of a {tag} clearly visible"
+    
+    # Nature prompts
+    elif tag in ["tree", "flower", "plant", "mountain", "river", "lake", "ocean", "beach", "forest",
+                "sky", "cloud", "sun", "moon", "stars"]:
+        return f"a landscape showing {tag}"
+    
+    # Environment prompts
+    elif tag in ["city", "urban", "rural", "indoor", "outdoor", "street", "park", "garden", "office",
+                "home", "kitchen", "bedroom", "bathroom"]:
+        return f"a scene of a {tag} environment"
+    
+    # Activity prompts
+    elif tag in ["walking", "running", "swimming", "eating", "drinking", "reading", "writing",
+                "working", "playing", "dancing", "singing"]:
+        return f"a photo of someone {tag}"
+    
+    # Default prompt format
+    else:
+        return f"a photo of {tag}"
 
 # Model and embeddings cache
 clip_models = {}
@@ -216,6 +275,14 @@ def get_clip_model():
         # Determine which device to use for this model
         model_device = "cpu" if force_cpu_for_model else device
         current_app.logger.info(f"Loading model {model_key} on device: {model_device}")
+        
+        # Set the default device for PyTorch operations in this context
+        # This helps ensure all new tensors are created on the right device
+        if model_device == "cpu":
+            # If we're forcing CPU, make sure CUDA isn't used by default
+            old_device = torch.cuda.current_device() if torch.cuda.is_available() else -1
+            torch.cuda.set_device(-1)  # Set to CPU
+            current_app.logger.info(f"Temporarily setting default CUDA device to CPU for model loading")
         
         if use_custom_model:
             current_app.logger.info(f"Loading custom model: {custom_model_name}")
@@ -409,6 +476,22 @@ def get_clip_model():
         model.to(model_device)
         model.eval()
         
+        # Verify the model is on the expected device
+        actual_device = next(model.parameters()).device
+        if str(actual_device) != str(model_device):
+            current_app.logger.warning(f"Model device mismatch! Requested: {model_device}, Actual: {actual_device}")
+            # Force the model to the correct device again
+            model = model.to(model_device)
+            # Verify again
+            actual_device = next(model.parameters()).device
+            current_app.logger.info(f"After correction, model is on device: {actual_device}")
+        
+        # Restore the default CUDA device if we changed it
+        if model_device == "cpu" and torch.cuda.is_available() and 'old_device' in locals():
+            if old_device >= 0:
+                torch.cuda.set_device(old_device)
+                current_app.logger.info(f"Restored default CUDA device to {old_device}")
+        
         # Cache the model and preprocessor
         clip_models[model_key] = model
         clip_preprocessors[model_key] = preprocess
@@ -423,7 +506,9 @@ def get_clip_model():
                 for i in range(0, len(CANDIDATE_TAGS), batch_size):
                     batch_tags = CANDIDATE_TAGS[i:i+batch_size]
                     for tag in batch_tags:
-                        text_tokens = tokenizer([f"a photo of {tag}"])
+                        # Use more specific prompts for better object detection
+                        prompt = get_better_prompt_for_tag(tag)
+                        text_tokens = tokenizer([prompt])
                         text_features = model.encode_text(text_tokens)
                         text_features /= text_features.norm(dim=-1, keepdim=True)
                         tag_embeddings[model_key][tag] = text_features.cpu()  # Store on CPU to save GPU memory
@@ -449,9 +534,13 @@ def get_image_embedding(image_path):
         # Get the current CLIP model
         model_name, model, preprocess = get_clip_model()
         
-        # Process the image
+        # Determine which device the model is on
+        model_device = next(model.parameters()).device
+        current_app.logger.info(f"Model {model_name} is on device: {model_device}")
+        
+        # Process the image and ensure it's on the same device as the model
         image = Image.open(image_path).convert("RGB")
-        image_input = preprocess(image).unsqueeze(0).to(device)
+        image_input = preprocess(image).unsqueeze(0).to(model_device)
         
         # Get image features
         with torch.no_grad():
@@ -507,10 +596,13 @@ def generate_tags_and_description(embedding, model_name):
         if tag in tag_embeddings.get(model_name, {}):
             # Get the tag embedding for this model
             tag_emb = tag_embeddings[model_name][tag]
+            # Ensure both tensors are on the same device (CPU)
+            embedding_tensor = torch.tensor(embedding, device='cpu').unsqueeze(0)
+            tag_emb_cpu = tag_emb.cpu()
             # Calculate similarity
             similarity = torch.cosine_similarity(
-                torch.tensor(embedding).unsqueeze(0),
-                tag_emb.cpu(),
+                embedding_tensor,
+                tag_emb_cpu,
                 dim=1
             ).item()
             scores[tag] = similarity
