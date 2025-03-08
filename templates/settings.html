@@ -9,7 +9,16 @@
     <p class="lead">Manage your eInk displays and AI settings.</p>
   </header>
 
-  <!-- CLIP Model Settings Modal is still accessible from the menu -->
+  <!-- CLIP Model Settings Button -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body text-center">
+      <h5 class="card-title">AI Image Tagging Settings</h5>
+      <p class="card-text">Configure CLIP models and tagging settings for image analysis</p>
+      <button id="openClipSettingsBtn" class="btn btn-primary" onclick="document.getElementById('clipSettingsModal').style.display = 'block';">
+        <i class="bi bi-gear-fill"></i> Open CLIP Model Settings
+      </button>
+    </div>
+  </div>
 
   <!-- CLIP Model Settings Modal -->
   <div id="clipSettingsModal" class="custom-modal">
@@ -507,6 +516,9 @@
   window.closeAdvancedActionsModal = function() {
     document.getElementById('advancedActionsModal').style.display = 'none';
   };
+  window.closeClipSettingsModal = function() {
+    document.getElementById('clipSettingsModal').style.display = 'none';
+  };
   
   // Overlay message functions
   function showOverlayMessage(message, duration) {
@@ -735,7 +747,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function() {
-      // Add CLIP Model Settings to the navbar
+      // Keep the dropdown menu functionality for backward compatibility
       const settingsNavItem = document.querySelector('.navbar-nav .nav-item:last-child');
       if (settingsNavItem) {
         // Create dropdown menu
@@ -775,16 +787,28 @@
         settingsNavItem.appendChild(dropdownMenu);
       }
   
-      // Initialize Bootstrap tabs
-      const triggerTabList = document.querySelectorAll('#clipSettingsTabs button');
-      triggerTabList.forEach(triggerEl => {
-        const tabTrigger = new bootstrap.Tab(triggerEl);
-        
-        triggerEl.addEventListener('click', event => {
-          event.preventDefault();
-          tabTrigger.show();
+      // Make sure the direct button also works
+      const openClipSettingsBtn = document.getElementById('openClipSettingsBtn');
+      if (openClipSettingsBtn) {
+        openClipSettingsBtn.addEventListener('click', function() {
+          document.getElementById('clipSettingsModal').style.display = 'block';
         });
-      });
+      }
+      
+      // Initialize Bootstrap tabs
+      try {
+        const triggerTabList = document.querySelectorAll('#clipSettingsTabs button');
+        triggerTabList.forEach(triggerEl => {
+          const tabTrigger = new bootstrap.Tab(triggerEl);
+          
+          triggerEl.addEventListener('click', event => {
+            event.preventDefault();
+            tabTrigger.show();
+          });
+        });
+      } catch (e) {
+        console.error("Error initializing tabs:", e);
+      }
       
       // Populate downloaded models on page load
       populateDownloadedModels();
@@ -842,12 +866,12 @@
     }
     if (closeClipSettingsModal) {
       closeClipSettingsModal.addEventListener('click', function() {
-        clipSettingsModal.style.display = 'none';
+        window.closeClipSettingsModal();
       });
     }
     window.addEventListener('click', function(e) {
       if (e.target == clipSettingsModal) {
-        clipSettingsModal.style.display = 'none';
+        window.closeClipSettingsModal();
       }
     });
   });
