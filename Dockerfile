@@ -58,10 +58,16 @@ RUN if [ "$USE_GPU" = "false" ]; then \
     pip install --no-cache-dir -r requirements.txt; \
   fi
 
-# Pre-download only the smallest CLIP model (ViT-B-32)
-# This significantly reduces the image size while maintaining functionality
+# Pre-download all three CLIP models to ensure they're available in the image
+# This ensures users can switch between models without runtime downloads
 RUN python -c "import open_clip; \
-    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True)"
+    print('Downloading ViT-B-32 model...'); \
+    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
+    print('Downloading ViT-B-16 model...'); \
+    open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', jit=False, force_quick_gelu=True); \
+    print('Downloading ViT-L-14 model...'); \
+    open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai', jit=False, force_quick_gelu=True); \
+    print('All models downloaded successfully.')"
 
 # ===== FINAL STAGE =====
 FROM python:${PYTHON_VERSION}-slim
@@ -97,8 +103,9 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# The CLIP model is already downloaded in the builder stage and copied with the site-packages
-# No need to download it again, which can cause network timeouts
+# All CLIP models (ViT-B-32, ViT-B-16, ViT-L-14) are already downloaded in the builder stage
+# and copied with the site-packages. No need to download them again at runtime, which ensures
+# users can switch between models without delays or network timeouts.
 
 # Copy the modified tasks.py from builder stage
 COPY --from=builder /build/tasks.py /app/tasks.py

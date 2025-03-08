@@ -329,19 +329,15 @@ async def detect_cookie_banner_with_clip(page):
         # Take a screenshot of the current page
         screenshot_bytes = await page.screenshot({'type': 'jpeg', 'quality': 80})
         
-        # Get the user's chosen CLIP model from the database
-        from models import UserConfig
-        config = UserConfig.query.first()
-        model_name = config.clip_model if config and config.clip_model else 'ViT-B-32'
-        current_app.logger.info(f"Using user-selected CLIP model: {model_name}")
+        # Import the get_clip_model function from tasks
+        from tasks import get_clip_model
+        
+        # Get the user's chosen CLIP model using the existing function
+        model_name, model, preprocess = get_clip_model()
+        current_app.logger.info(f"Using user-selected CLIP model for cookie detection: {model_name}")
         
         # Set device based on availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # Load the model and preprocess function
-        model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai', jit=False, force_quick_gelu=True)
-        model.to(device)
-        model.eval()
         
         # Load and preprocess the screenshot
         image = Image.open(io.BytesIO(screenshot_bytes))
@@ -363,7 +359,7 @@ async def detect_cookie_banner_with_clip(page):
             "aceptar cookies"  # Spanish
         ]
         
-        # Tokenize the prompts
+        # Tokenize the prompts using the same model_name from get_clip_model
         tokenizer = open_clip.get_tokenizer(model_name)
         text_tokens = tokenizer(prompts)
         

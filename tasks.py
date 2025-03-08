@@ -96,18 +96,8 @@ def get_clip_model():
     elif config.clip_model:
         clip_model_name = config.clip_model
     
-    # If trying to use ViT-L-14 but we're low on memory, fall back to ViT-B-32
-    if clip_model_name == 'ViT-L-14':
-        try:
-            # Check available memory (this is a simple heuristic)
-            import psutil
-            available_memory = psutil.virtual_memory().available / (1024 * 1024)  # MB
-            if available_memory < 1000:  # Less than 1GB available
-                current_app.logger.warning(f"Low memory ({available_memory}MB available). Falling back to ViT-B-32 model.")
-                clip_model_name = 'ViT-B-32'
-        except ImportError:
-            # If psutil is not available, just continue
-            pass
+    # Log the model being used
+    current_app.logger.info(f"Using user-selected CLIP model: {clip_model_name}")
     
     # Check if model is already loaded
     if clip_model_name in clip_models:
@@ -269,16 +259,8 @@ def process_image_tagging(self, filename):
     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
     current_app.logger.info(f"Tagging image {filename} with CLIP model: {clip_model_name}")
     
-    # If using the large model and we're low on memory, fall back to the smaller model
-    if clip_model_name == 'ViT-L-14':
-        try:
-            import psutil
-            available_memory = psutil.virtual_memory().available / (1024 * 1024)  # MB
-            if available_memory < 1000:  # Less than 1GB available
-                current_app.logger.warning(f"Low memory ({available_memory}MB available). Falling back to ViT-B-32 model.")
-                clip_model_name = 'ViT-B-32'
-        except ImportError:
-            pass
+    # Log the model being used for tagging
+    current_app.logger.info(f"Using user-selected CLIP model for tagging: {clip_model_name}")
     
     image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
     image_path = os.path.join(image_folder, filename)
