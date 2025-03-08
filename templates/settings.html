@@ -35,12 +35,55 @@
           <button type="button" class="btn btn-outline-secondary mt-2" onclick="verifyClipModel()">Verify Current Model</button>
         </div>
         
+        <!-- Custom Model Section -->
+        <div class="form-group" style="margin-top: 20px; border-top: 1px solid #dee2e6; padding-top: 20px;">
+          <h5>Custom Model</h5>
+          <p class="text-muted">Download and use any OpenAI-compatible CLIP model by specifying its name.</p>
+          
+          <div class="input-group mb-3">
+            <input type="text" id="custom_model_name" class="form-control" placeholder="e.g., openai/clip-vit-base-patch32">
+            <button class="btn btn-outline-primary" type="button" onclick="downloadCustomModel()">Download Model</button>
+          </div>
+          
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="enable_custom_model" {% if config and config.custom_model_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="enable_custom_model">
+              Use custom model instead of standard CLIP model
+            </label>
+          </div>
+          
+          <div id="custom_model_info" class="mb-3">
+            {% if config and config.custom_model %}
+            <p><strong>Current custom model:</strong> {{ config.custom_model }}</p>
+            {% else %}
+            <p><strong>No custom model selected.</strong> Download a model first.</p>
+            {% endif %}
+          </div>
+          
+          <button type="button" class="btn btn-outline-primary" onclick="saveCustomModelSettings()">Save Custom Model Settings</button>
+          <button type="button" class="btn btn-outline-secondary" onclick="listCustomModels()">List Downloaded Models</button>
+        </div>
+        
         <!-- Tags Setting -->
         <div class="form-group" style="margin-top: 15px;">
           <label for="min_tags">Maximum Tags per Image:</label>
           <input type="number" id="min_tags" name="min_tags" min="1" max="20" value="{{ config.min_tags if config and config.min_tags else 5 }}" class="form-control">
-          <small class="form-text text-muted">Set the maximum number of tags to generate for each image. Only tags with high relevance (similarity score ≥ 0.3) will be included, up to this maximum.</small>
+          <small class="form-text text-muted">Set the maximum number of tags to generate for each image.</small>
           <button type="button" class="field-save-btn" onclick="saveMinTags()">Save Setting</button>
+        </div>
+        
+        <!-- Similarity Threshold Setting -->
+        <div class="form-group" style="margin-top: 15px;">
+          <label for="similarity_threshold">Tag Relevance Level:</label>
+          <select id="similarity_threshold" name="similarity_threshold" class="form-select">
+            <option value="very_high" {% if config and config.similarity_threshold == 'very_high' %}selected{% endif %}>Very High - Only exact matches (highest precision)</option>
+            <option value="high" {% if config and config.similarity_threshold == 'high' %}selected{% endif %}>High - Strong matches (high precision)</option>
+            <option value="medium" {% if not config or not config.similarity_threshold or config.similarity_threshold == 'medium' %}selected{% endif %}>Medium - Balanced matches (default)</option>
+            <option value="low" {% if config and config.similarity_threshold == 'low' %}selected{% endif %}>Low - More inclusive matches (higher recall)</option>
+            <option value="very_low" {% if config and config.similarity_threshold == 'very_low' %}selected{% endif %}>Very Low - Most inclusive matches (highest recall)</option>
+          </select>
+          <small class="form-text text-muted">Set how closely a tag must match an image to be included. Higher settings mean fewer but more accurate tags.</small>
+          <button type="button" class="field-save-btn" onclick="saveSimilarityThreshold()">Save Setting</button>
         </div>
         
         <!-- Model Download Progress -->
@@ -649,6 +692,40 @@
       showOverlayMessage("An error occurred while updating maximum tags setting.");
     });
   }
+  
+  function saveSimilarityThreshold() {
+    var threshold = document.getElementById('similarity_threshold').value;
+    if (!threshold) {
+      showOverlayMessage("Please select a relevance level");
+      return;
+    }
+    
+    var thresholdText = document.getElementById('similarity_threshold').options[document.getElementById('similarity_threshold').selectedIndex].text;
+    thresholdText = thresholdText.split(' - ')[0]; // Get just the level name
+    
+    var payload = {
+      similarity_threshold: threshold
+    };
+    
+    showOverlayMessage("Updating tag relevance level...", 1500);
+    fetch("{{ url_for('settings.update_clip_model') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        showOverlayMessage("Tag relevance level updated successfully to " + thresholdText);
+      } else {
+        showOverlayMessage("Error updating tag relevance level: " + data.message);
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showOverlayMessage("An error occurred while updating tag relevance level.");
+    });
+  }
 
   function testTagging() {
     const fileInput = document.getElementById('testImageFile');
@@ -707,7 +784,12 @@
             </ul>
           </div>
           <div class="alert alert-info">
-            <small>Only tags with similarity score ≥ ${data.threshold} are included in the final result, up to the maximum of ${data.max_tags} tags.</small>
+            <small>
+              <strong>Tag Relevance Level:</strong> ${data.threshold_description}<br>
+              <strong>Similarity Threshold:</strong> ${data.threshold.toFixed(2)}<br>
+              <strong>Maximum Tags:</strong> ${data.max_tags}<br>
+              <span class="text-muted">Only tags with similarity score ≥ ${data.threshold} are included in the final result.</span>
+            </small>
           </div>
         `;
         
@@ -722,6 +804,158 @@
     });
   }
 
+  function downloadCustomModel() {
+    var modelName = document.getElementById('custom_model_name').value.trim();
+    if (!modelName) {
+      showOverlayMessage("Please enter a model name");
+      return;
+    }
+    
+    // Show the download progress container
+    var progressContainer = document.getElementById('modelDownloadContainer');
+    var progressBar = document.getElementById('modelDownloadProgress');
+    var modelNameSpan = document.getElementById('modelDownloadName');
+    
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
+    modelNameSpan.textContent = modelName;
+    
+    // Start the download
+    fetch("{{ url_for('settings.download_model') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_name: modelName })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        // Start polling for progress
+        var taskId = data.task_id;
+        var progressInterval = setInterval(function() {
+          checkDownloadProgress(taskId, progressBar, progressInterval);
+        }, 1000);
+      } else {
+        progressContainer.style.display = 'none';
+        showOverlayMessage("Error starting download: " + data.message);
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      progressContainer.style.display = 'none';
+      showOverlayMessage("An error occurred while starting the download.");
+    });
+  }
+  
+  function checkDownloadProgress(taskId, progressBar, interval) {
+    fetch("{{ url_for('settings.download_progress', task_id='') }}" + taskId)
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        if (data.status === "success") {
+          var progress = data.progress;
+          var percent = progress.progress;
+          var status = progress.status;
+          
+          // Update the progress bar
+          progressBar.style.width = percent + '%';
+          progressBar.textContent = percent + '%';
+          
+          // If completed or error, stop polling
+          if (status === "completed") {
+            clearInterval(interval);
+            showOverlayMessage("Model downloaded successfully!");
+            // Update the custom model info
+            document.getElementById('custom_model_info').innerHTML =
+              '<p><strong>Current custom model:</strong> ' + progress.model_name + '</p>';
+            // Hide progress after a delay
+            setTimeout(function() {
+              document.getElementById('modelDownloadContainer').style.display = 'none';
+            }, 3000);
+          } else if (status === "error") {
+            clearInterval(interval);
+            document.getElementById('modelDownloadContainer').style.display = 'none';
+            showOverlayMessage("Error downloading model: " + (progress.error || "Unknown error"));
+          }
+        } else {
+          // If task not found, it might have completed and been removed
+          clearInterval(interval);
+          document.getElementById('modelDownloadContainer').style.display = 'none';
+        }
+      })
+      .catch(function(error) {
+        console.error("Error checking progress:", error);
+        // Don't clear the interval on network errors, keep trying
+      });
+  }
+  
+  function saveCustomModelSettings() {
+    var enableCustomModel = document.getElementById('enable_custom_model').checked;
+    var customModelName = null;
+    
+    if (enableCustomModel) {
+      // Get the current custom model from the info div
+      var customModelInfo = document.getElementById('custom_model_info').textContent;
+      var match = customModelInfo.match(/Current custom model:\s*(.+)/);
+      if (match) {
+        customModelName = match[1].trim();
+      } else {
+        showOverlayMessage("No custom model available. Please download a model first.");
+        return;
+      }
+    }
+    
+    var payload = {
+      model_name: customModelName,
+      enabled: enableCustomModel
+    };
+    
+    fetch("{{ url_for('settings.enable_custom_model') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        showOverlayMessage("Custom model settings updated successfully");
+      } else {
+        showOverlayMessage("Error updating custom model settings: " + data.message);
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showOverlayMessage("An error occurred while updating custom model settings.");
+    });
+  }
+  
+  function listCustomModels() {
+    fetch("{{ url_for('settings.list_custom_models') }}")
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        if (data.status === "success") {
+          if (data.models.length === 0) {
+            showOverlayMessage("No custom models have been downloaded yet.");
+            return;
+          }
+          
+          var modelList = "<h4>Downloaded Models</h4><ul>";
+          data.models.forEach(function(model) {
+            var downloadDate = new Date(model.download_date).toLocaleString();
+            modelList += `<li><strong>${model.name}</strong> (Downloaded: ${downloadDate})</li>`;
+          });
+          modelList += "</ul>";
+          
+          showOverlayMessage(modelList);
+        } else {
+          showOverlayMessage("Error listing custom models: " + data.message);
+        }
+      })
+      .catch(function(error) {
+        console.error("Error:", error);
+        showOverlayMessage("An error occurred while listing custom models.");
+      });
+  }
+  
   function rerunAllTagging() {
     showConfirmOverlay(
       "<strong>Warning:</strong> This will rerun tagging on all images using the selected CLIP model and will <span style='color: red;'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",

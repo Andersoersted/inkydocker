@@ -72,9 +72,17 @@ CANDIDATE_TAGS = [
     "sci-fi", "historical", "futuristic", "retro", "classic"
 ]
 
-# Minimum cosine similarity threshold for tag inclusion
-# Tags with similarity scores below this threshold will be excluded
-COSINE_THRESHOLD = 0.3
+# Similarity threshold levels mapped to cosine values
+SIMILARITY_THRESHOLDS = {
+    "very_high": 0.5,    # Only very strong matches (highest precision)
+    "high": 0.4,         # Strong matches (high precision)
+    "medium": 0.3,       # Balanced matches (default)
+    "low": 0.2,          # More inclusive matches (higher recall)
+    "very_low": 0.1      # Most inclusive matches (highest recall)
+}
+
+# Default threshold (will be overridden by user settings)
+DEFAULT_THRESHOLD = "medium"
 
 # Model and embeddings cache
 clip_models = {}
@@ -90,6 +98,8 @@ def get_clip_model():
     # Get the selected CLIP model from user config
     config = UserConfig.query.first()
     clip_model_name = 'ViT-B-32'  # Default model (smallest and fastest)
+    use_custom_model = False
+    custom_model_name = None
     
     # Create config if it doesn't exist
     if not config:
@@ -100,16 +110,24 @@ def get_clip_model():
     elif config.clip_model:
         clip_model_name = config.clip_model
     
-    # Log the model being used with clear indication
-    current_app.logger.info(f"🔍 CLIP MODEL SELECTION: Using {clip_model_name} for image tagging")
+    # Check if custom model is enabled
+    if config and config.custom_model_enabled and config.custom_model:
+        use_custom_model = True
+        custom_model_name = config.custom_model
+        current_app.logger.info(f"🔍 CUSTOM MODEL SELECTION: Using custom model {custom_model_name} for image tagging")
+    else:
+        current_app.logger.info(f"🔍 CLIP MODEL SELECTION: Using {clip_model_name} for image tagging")
+    
+    # If using custom model, use that instead of the standard model
+    model_key = custom_model_name if use_custom_model else clip_model_name
     
     # Check if model is already loaded
-    if clip_model_name in clip_models:
-        return clip_model_name, clip_models[clip_model_name], clip_preprocessors[clip_model_name]
+    if model_key in clip_models:
+        return model_key, clip_models[model_key], clip_preprocessors[model_key]
     
     # Clear any existing models to free memory
     for model_name in list(clip_models.keys()):
-        if model_name != clip_model_name:
+        if model_name != model_key:
             del clip_models[model_name]
             del clip_preprocessors[model_name]
     
@@ -118,19 +136,40 @@ def get_clip_model():
     
     # Load the model
     try:
-        current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
-        model, _, preprocess = open_clip.create_model_and_transforms(clip_model_name, pretrained='openai', jit=False, force_quick_gelu=True)
+        if use_custom_model:
+            current_app.logger.info(f"Loading custom model: {custom_model_name}")
+            # Set the cache directory for custom models
+            data_folder = current_app.config.get("DATA_FOLDER", "./data")
+            models_folder = os.path.join(data_folder, "models")
+            
+            # Load the custom model
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                custom_model_name,
+                pretrained='openai',
+                jit=False,
+                force_quick_gelu=True,
+                cache_dir=models_folder
+            )
+        else:
+            current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                clip_model_name,
+                pretrained='openai',
+                jit=False,
+                force_quick_gelu=True
+            )
+        
         model.to(device)
         model.eval()
         
         # Cache the model and preprocessor
-        clip_models[clip_model_name] = model
-        clip_preprocessors[clip_model_name] = preprocess
+        clip_models[model_key] = model
+        clip_preprocessors[model_key] = preprocess
         
         # Precompute tag embeddings for this model
-        tokenizer = open_clip.get_tokenizer(clip_model_name)
-        if clip_model_name not in tag_embeddings:
-            tag_embeddings[clip_model_name] = {}
+        tokenizer = open_clip.get_tokenizer(model_key)
+        if model_key not in tag_embeddings:
+            tag_embeddings[model_key] = {}
             with torch.no_grad():
                 # Process tags in smaller batches to save memory
                 batch_size = 10
@@ -140,13 +179,13 @@ def get_clip_model():
                         text_tokens = tokenizer([f"a photo of {tag}"])
                         text_features = model.encode_text(text_tokens)
                         text_features /= text_features.norm(dim=-1, keepdim=True)
-                        tag_embeddings[clip_model_name][tag] = text_features.cpu()  # Store on CPU to save GPU memory
+                        tag_embeddings[model_key][tag] = text_features.cpu()  # Store on CPU to save GPU memory
                     # Force garbage collection between batches
                     gc.collect()
         
-        return clip_model_name, model, preprocess
+        return model_key, model, preprocess
     except Exception as e:
-        current_app.logger.error(f"Error loading CLIP model {clip_model_name}: {e}")
+        current_app.logger.error(f"Error loading model {model_key}: {e}")
         # Fall back to default model if available
         if 'ViT-B-32' in clip_models:
             return 'ViT-B-32', clip_models['ViT-B-32'], clip_preprocessors['ViT-B-32']
@@ -201,11 +240,19 @@ def generate_tags_and_description(embedding, model_name):
             else:
                 return [], "No tags available"
     
-    # Get user config for tags setting
+    # Get user config for tags setting and similarity threshold
     config = UserConfig.query.first()
     max_tags = 5  # Default maximum number of tags
-    if config and hasattr(config, 'min_tags') and config.min_tags is not None:
-        max_tags = config.min_tags
+    threshold_level = DEFAULT_THRESHOLD  # Default threshold level
+    
+    if config:
+        if hasattr(config, 'min_tags') and config.min_tags is not None:
+            max_tags = config.min_tags
+        if hasattr(config, 'similarity_threshold') and config.similarity_threshold is not None:
+            threshold_level = config.similarity_threshold
+    
+    # Get the actual cosine threshold value from the level
+    cosine_threshold = SIMILARITY_THRESHOLDS.get(threshold_level, SIMILARITY_THRESHOLDS[DEFAULT_THRESHOLD])
     
     # Calculate similarities with tag embeddings
     scores = {}
@@ -228,7 +275,7 @@ def generate_tags_and_description(embedding, model_name):
     filtered_tags = []
     for tag, score in sorted_tags:
         # Only include tags with similarity above the threshold
-        if score >= COSINE_THRESHOLD:
+        if score >= cosine_threshold:
             filtered_tags.append(tag)
             # Stop once we reach the maximum number of tags
             if len(filtered_tags) >= max_tags:
@@ -236,7 +283,7 @@ def generate_tags_and_description(embedding, model_name):
     
     # Log the threshold, number of tags, and their similarity scores
     current_app.logger.info(f"📊 TAG GENERATION: Using model {model_name}")
-    current_app.logger.info(f"📊 TAG GENERATION: Generated {len(filtered_tags)} tags with similarity threshold {COSINE_THRESHOLD} (max: {max_tags})")
+    current_app.logger.info(f"📊 TAG GENERATION: Generated {len(filtered_tags)} tags with similarity threshold {threshold_level} ({cosine_threshold}) (max: {max_tags})")
     
     # Log the selected tags with their similarity scores
     tag_scores = [(tag, scores[tag]) for tag in filtered_tags]
@@ -423,6 +470,13 @@ def reembed_all_images(self):
         # Create a task ID for tracking progress
         task_id = str(uuid.uuid4())
         BULK_PROGRESS[task_id] = 0
+        
+        # First, clear all existing tags
+        current_app.logger.info("Clearing all existing tags before retagging")
+        for img in images:
+            img.tags = ""
+            img.description = ""
+        db.session.commit()
         
         # Process images one at a time to manage memory better
         for i, img in enumerate(images):
