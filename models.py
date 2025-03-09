@@ -92,11 +92,18 @@ class UserConfig(db.Model):
     __tablename__ = 'user_config'
     id = db.Column(db.Integer, primary_key=True)
     location = db.Column(db.String(256))
+    
+    # CLIP model settings (kept for screenshot processing)
     clip_model = db.Column(db.String(64), default="ViT-B-32")  # Column for chosen CLIP model (using consistent format with tasks.py)
     min_tags = db.Column(db.Integer, default=5)  # Maximum number of tags to generate for images (with similarity threshold)
     custom_model = db.Column(db.String(256), nullable=True)  # Custom model name (e.g., "openai/clip-vit-base-patch32")
     custom_model_enabled = db.Column(db.Boolean, default=False)  # Whether to use the custom model
     similarity_threshold = db.Column(db.String(20), default="medium")  # Similarity threshold level (very_high, high, medium, low, very_low)
+    
+    # RAM model settings (for image tagging)
+    ram_enabled = db.Column(db.Boolean, default=True)  # Whether to use RAM for image tagging (default to True)
+    ram_model = db.Column(db.String(64), default="ram_medium")  # Selected RAM model (ram_small, ram_medium, ram_large)
+    ram_min_confidence = db.Column(db.Float, default=0.3)  # Minimum confidence threshold for RAM tags
 
     def __repr__(self):
         return f"<UserConfig {self.id} - Location: {self.location}>"

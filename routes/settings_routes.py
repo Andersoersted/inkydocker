@@ -103,7 +103,7 @@ def download_model_thread(model_name, task_id, app):
                         # Set a recursion limit for model downloading
                         import sys
                         old_recursion_limit = sys.getrecursionlimit()
-                        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
                         
                         try:
                             model, _, preprocess = open_clip.create_model_and_transforms(
@@ -134,9 +134,13 @@ def download_model_thread(model_name, task_id, app):
                 if success:
                     break
             
-            # If all attempts failed, raise the last error
+            # If all attempts failed, provide a more helpful error message
             if not success:
-                raise Exception(f"Failed to load model {model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
+                # Check if the last error was a recursion error
+                if isinstance(last_error, RecursionError) or "maximum recursion depth exceeded" in str(last_error):
+                    raise Exception(f"Failed to download model {model_name} due to recursion limits. Please try a different model like ViT-B-32 or RN50 which are smaller and more compatible.")
+                else:
+                    raise Exception(f"Failed to load model {model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
             
             # Update progress to 90%
             model_download_progress[task_id] = {
@@ -732,3 +736,180 @@ def enable_custom_model():
             "status": "error",
             "message": f"Error: {str(e)}"
         }), 500
+
+@settings_bp.route('/settings/update_ram_settings', methods=['POST'])
+def update_ram_settings():
+    """
+    Endpoint to update RAM model settings.
+    """
+    try:
+        data = request.get_json()
+        config = UserConfig.query.first()
+        if not config:
+            config = UserConfig(ram_enabled=True, ram_model="ram_medium", ram_min_confidence=0.3)
+            db.session.add(config)
+        
+        updated = False
+        
+        # Update RAM enabled flag if provided
+        if "ram_enabled" in data:
+            config.ram_enabled = data.get("ram_enabled")
+            updated = True
+        
+        # Update RAM model if provided
+        if "ram_model" in data:
+            ram_model = data.get("ram_model")
+            # Validate RAM model
+            from utils.ram_tagger import RAM_MODELS
+            if ram_model in RAM_MODELS:
+                config.ram_model = ram_model
+                updated = True
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Invalid RAM model: {ram_model}"
+                }), 400
+        
+        # Update RAM min confidence if provided
+        if "ram_min_confidence" in data:
+            ram_min_confidence = data.get("ram_min_confidence")
+            if isinstance(ram_min_confidence, (int, float)) and 0.0 <= ram_min_confidence <= 1.0:
+                config.ram_min_confidence = ram_min_confidence
+                updated = True
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid minimum confidence value. Must be a number between 0 and 1."
+                }), 400
+        
+        if updated:
+            db.session.commit()
+            return jsonify({
+                "status": "success",
+                "message": "RAM settings updated successfully."
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "No valid settings provided."
+            }), 400
+        
+    except Exception as e:
+        logger.error(f"Error in update_ram_settings: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+
+@settings_bp.route('/settings/download_ram_model', methods=['POST'])
+def download_ram_model():
+    """
+    Endpoint to download a RAM model from Hugging Face.
+    """
+    try:
+        data = request.get_json()
+        model_name = data.get("model_name")
+        
+        if not model_name:
+            return jsonify({
+                "status": "error",
+                "message": "Model name is required"
+            }), 400
+        
+        # Validate RAM model
+        from utils.ram_tagger import RAM_MODELS
+        if model_name not in RAM_MODELS:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid RAM model: {model_name}"
+            }), 400
+        
+        # Generate a task ID for tracking progress
+        task_id = f"download_{int(time.time())}"
+        
+        # Initialize progress tracking
+        model_download_progress[task_id] = {
+            "progress": 0,
+            "status": "starting",
+            "model_name": model_name
+        }
+        
+        # Get the current app
+        app = current_app._get_current_object()
+        
+        # Start download in a separate thread
+        thread = threading.Thread(
+            target=download_ram_model_thread,
+            args=(model_name, task_id, app)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Started downloading RAM model {model_name}",
+            "task_id": task_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in download_ram_model: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+
+def download_ram_model_thread(model_name, task_id, app):
+    """
+    Thread function to download a RAM model and track progress.
+    """
+    try:
+        # Use the application context
+        with app.app_context():
+            # Update progress
+            model_download_progress[task_id] = {
+                "progress": 10,
+                "status": "downloading",
+                "model_name": model_name,
+                "current_attempt": f"Downloading {model_name} from Hugging Face"
+            }
+            
+            # Import RAM tagger
+            from utils.ram_tagger import get_ram_model
+            
+            # Load the model (this will download it if not already cached)
+            get_ram_model(model_name)
+            
+            # Update progress to complete
+            model_download_progress[task_id] = {
+                "progress": 100,
+                "status": "completed",
+                "model_name": model_name
+            }
+            
+            # Update the user config to use this model
+            config = UserConfig.query.first()
+            if not config:
+                config = UserConfig()
+                db.session.add(config)
+            
+            config.ram_model = model_name
+            config.ram_enabled = True
+            db.session.commit()
+            
+            # Keep the completed status for a while before removing
+            time.sleep(30)
+            if task_id in model_download_progress:
+                del model_download_progress[task_id]
+                
+    except Exception as e:
+        logger.error(f"Error downloading RAM model {model_name}: {str(e)}")
+        model_download_progress[task_id] = {
+            "progress": 0,
+            "status": "error",
+            "model_name": model_name,
+            "error": str(e)
+        }
+        # Keep the error status for a while before removing
+        time.sleep(60)
+        if task_id in model_download_progress:
+            del model_download_progress[task_id]

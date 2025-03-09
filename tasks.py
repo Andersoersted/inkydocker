@@ -374,7 +374,7 @@ def get_clip_model():
                             # Set a recursion limit for model downloading
                             import sys
                             old_recursion_limit = sys.getrecursionlimit()
-                            sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                            sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
                             
                             try:
                                 model, _, preprocess = open_clip.create_model_and_transforms(
@@ -410,9 +410,13 @@ def get_clip_model():
                 if success:
                     break
             
-            # If all attempts failed, raise the last error
+            # If all attempts failed, provide a more helpful error message
             if not success:
-                raise Exception(f"Failed to load model {custom_model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
+                # Check if the last error was a recursion error
+                if isinstance(last_error, RecursionError) or "maximum recursion depth exceeded" in str(last_error):
+                    raise Exception(f"Failed to download model {custom_model_name} due to recursion limits. Please try a different model like ViT-B-32 or RN50 which are smaller and more compatible.")
+                else:
+                    raise Exception(f"Failed to load model {custom_model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
         else:
             current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
             
@@ -454,7 +458,7 @@ def get_clip_model():
                         # Set a recursion limit for model downloading
                         import sys
                         old_recursion_limit = sys.getrecursionlimit()
-                        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+                        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
                         
                         try:
                             model, _, preprocess = open_clip.create_model_and_transforms(
@@ -486,9 +490,13 @@ def get_clip_model():
                     last_error = e
                     current_app.logger.info(f"Failed to load {clip_model_name} with pretrained tag {pretrained_tag}: {str(e)}")
             
-            # If all attempts failed, raise the last error
+            # If all attempts failed, provide a more helpful error message
             if not success:
-                raise Exception(f"Failed to load model {clip_model_name} with any pretrained tag. Last error: {str(last_error)}")
+                # Check if the last error was a recursion error
+                if isinstance(last_error, RecursionError) or "maximum recursion depth exceeded" in str(last_error):
+                    raise Exception(f"Failed to download model {clip_model_name} due to recursion limits. Please try a different model like ViT-B-32 or RN50 which are smaller and more compatible.")
+                else:
+                    raise Exception(f"Failed to load model {clip_model_name} with any pretrained tag. Last error: {str(last_error)}")
         
         # Move model to the appropriate device (CPU or CUDA)
         model.to(model_device)
@@ -542,7 +550,7 @@ def get_clip_model():
         # Otherwise load default model
         import sys
         old_recursion_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(3000)  # Increase recursion limit temporarily
+        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
         
         try:
             model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False)
@@ -670,26 +678,68 @@ def process_image_tagging(self, filename):
     from flask import current_app
     import gc  # Garbage collection
     
-    # No need for garbage collection at the start
-    # Log which CLIP model is being used with clear indication
+    # Get user configuration
     config = UserConfig.query.first()
-    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
-    current_app.logger.info(f"Using user-selected CLIP model for tagging: {clip_model_name}")
+    if not config:
+        from models import db
+        config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+        db.session.add(config)
+        db.session.commit()
     
+    # Determine image path
     image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
     image_path = os.path.join(image_folder, filename)
     if not os.path.exists(image_path):
         return {"status": "error", "message": "Image file not found", "filename": filename}
     
     try:
-        # Get image embedding using the selected model
-        embedding, model_name = get_image_embedding(image_path)
-        if embedding is None:
-            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use RAM)
+        is_screenshot = filename.startswith("screenshot_")
         
-        # Generate tags and description
-        tags, description = generate_tags_and_description(embedding, model_name)
+        if is_screenshot:
+            # For screenshots, use the existing CLIP model
+            clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+            current_app.logger.info(f"🏷️ TAGGING: Processing screenshot {filename} with CLIP model: {clip_model_name}")
+            
+            # Get image embedding using the selected CLIP model
+            embedding, model_name = get_image_embedding(image_path)
+            if embedding is None:
+                return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+            
+            # Generate tags and description using CLIP
+            tags, description = generate_tags_and_description(embedding, model_name)
+            model_used = f"CLIP: {model_name}"
+        else:
+            # For regular images, use RAM if enabled
+            if config.ram_enabled:
+                # Import RAM tagger
+                from utils.ram_tagger import generate_tags_with_ram
+                
+                # Get RAM model name from config
+                ram_model = config.ram_model if config and config.ram_model else "ram_medium"
+                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                
+                # Generate tags and description using RAM
+                tags, description = generate_tags_with_ram(
+                    image_path,
+                    model_name=ram_model,
+                    max_tags=config.min_tags,
+                    min_confidence=config.ram_min_confidence
+                )
+                model_used = f"RAM: {ram_model}"
+            else:
+                # If RAM is disabled, fall back to CLIP
+                clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM disabled)")
+                
+                # Get image embedding using the selected CLIP model
+                embedding, model_name = get_image_embedding(image_path)
+                if embedding is None:
+                    return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                
+                # Generate tags and description using CLIP
+                tags, description = generate_tags_and_description(embedding, model_name)
+                model_used = f"CLIP: {model_name}"
         
         # Update database
         img = ImageDB.query.filter_by(filename=filename).first()
@@ -698,14 +748,12 @@ def process_image_tagging(self, filename):
             img.description = description
             db.session.commit()
             
-            # Keep all models in memory for better performance
-            
             return {
                 "status": "success",
                 "filename": filename,
                 "tags": tags,
                 "description": description,
-                "model_used": model_name
+                "model_used": model_used
             }
         else:
             return {"status": "error", "message": "Image not found in database", "filename": filename}
@@ -722,24 +770,68 @@ def reembed_image(filename):
     from models import ImageDB, db, UserConfig
     from flask import current_app
     
-    # Log which CLIP model is being used with clear indication
+    # Get user configuration
     config = UserConfig.query.first()
-    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
+    if not config:
+        from models import db
+        config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+        db.session.add(config)
+        db.session.commit()
     
+    # Determine image path
     image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
     image_path = os.path.join(image_folder, filename)
     if not os.path.exists(image_path):
         return {"status": "error", "message": "Image file not found", "filename": filename}
     
     try:
-        # Get image embedding using the selected model
-        embedding, model_name = get_image_embedding(image_path)
-        if embedding is None:
-            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use RAM)
+        is_screenshot = filename.startswith("screenshot_")
         
-        # Generate tags and description
-        tags, description = generate_tags_and_description(embedding, model_name)
+        if is_screenshot:
+            # For screenshots, use the existing CLIP model
+            clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+            current_app.logger.info(f"🔄 RE-TAGGING: Processing screenshot {filename} with CLIP model: {clip_model_name}")
+            
+            # Get image embedding using the selected CLIP model
+            embedding, model_name = get_image_embedding(image_path)
+            if embedding is None:
+                return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+            
+            # Generate tags and description using CLIP
+            tags, description = generate_tags_and_description(embedding, model_name)
+            model_used = f"CLIP: {model_name}"
+        else:
+            # For regular images, use RAM if enabled
+            if config.ram_enabled:
+                # Import RAM tagger
+                from utils.ram_tagger import generate_tags_with_ram
+                
+                # Get RAM model name from config
+                ram_model = config.ram_model if config and config.ram_model else "ram_medium"
+                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                
+                # Generate tags and description using RAM
+                tags, description = generate_tags_with_ram(
+                    image_path,
+                    model_name=ram_model,
+                    max_tags=config.min_tags,
+                    min_confidence=config.ram_min_confidence
+                )
+                model_used = f"RAM: {ram_model}"
+            else:
+                # If RAM is disabled, fall back to CLIP
+                clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM disabled)")
+                
+                # Get image embedding using the selected CLIP model
+                embedding, model_name = get_image_embedding(image_path)
+                if embedding is None:
+                    return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                
+                # Generate tags and description using CLIP
+                tags, description = generate_tags_and_description(embedding, model_name)
+                model_used = f"CLIP: {model_name}"
         
         # Update database
         img = ImageDB.query.filter_by(filename=filename).first()
@@ -752,7 +844,7 @@ def reembed_image(filename):
                 "filename": filename,
                 "tags": tags,
                 "description": description,
-                "model_used": model_name
+                "model_used": model_used
             }
         else:
             return {"status": "error", "message": "Image not found in database", "filename": filename}
@@ -789,20 +881,32 @@ def bulk_tag_images(self):
 @celery.task(bind=True, time_limit=1800, soft_time_limit=1500)
 def reembed_all_images(self):
     """
-    Rerun tagging on all images using the currently selected CLIP model.
-    This is useful when changing the CLIP model.
+    Rerun tagging on all images using the currently selected models.
+    This is useful when changing the tagging models or settings.
     """
     from models import ImageDB, UserConfig
     from flask import current_app
     import gc  # Garbage collection
     
     try:
-        # Get the current CLIP model
+        # Get user configuration
         config = UserConfig.query.first()
+        if not config:
+            from models import db
+            config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+            db.session.add(config)
+            db.session.commit()
+        
+        # Determine which models will be used
         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+        ram_model = config.ram_model if config and config.ram_model else "ram_medium"
+        ram_enabled = config.ram_enabled if config else True
         
         # Log the operation
-        current_app.logger.info(f"Rerunning tagging on all images with CLIP model: {clip_model_name}")
+        if ram_enabled:
+            current_app.logger.info(f"Rerunning tagging on all images with RAM model: {ram_model} (screenshots will use CLIP: {clip_model_name})")
+        else:
+            current_app.logger.info(f"Rerunning tagging on all images with CLIP model: {clip_model_name}")
         
         # Get all images
         images = ImageDB.query.all()
@@ -836,7 +940,7 @@ def reembed_all_images(self):
             
         return {
             "status": "success",
-            "message": f"Started retagging {total} images with model {clip_model_name}",
+            "message": f"Started retagging {total} images with appropriate models",
             "task_id": task_id
         }
     except Exception as e:
