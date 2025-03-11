@@ -1,43 +1,4 @@
-# Apply PyTorch monkey patches before any other imports
-import sys
 import os
-
-# Increase recursion limit globally
-sys.setrecursionlimit(15000)
-
-# Fix for PyTorch distributed module compatibility issues
-import torch
-if hasattr(torch.distributed, 'reduce_op'):
-    # Create a proper ReduceOp class with RedOpType attribute
-    original_reduce_op = torch.distributed.reduce_op
-    
-    class FixedReduceOp:
-        def __init__(self):
-            self.SUM = original_reduce_op.SUM
-            self.PRODUCT = original_reduce_op.PRODUCT
-            self.MIN = original_reduce_op.MIN
-            self.MAX = original_reduce_op.MAX
-            self.BAND = original_reduce_op.BAND
-            self.BOR = original_reduce_op.BOR
-            self.BXOR = original_reduce_op.BXOR
-            
-            # Add RedOpType as a class attribute that references self
-            class RedOpType:
-                SUM = self.SUM
-                PRODUCT = self.PRODUCT
-                MIN = self.MIN
-                MAX = self.MAX
-                BAND = self.BAND
-                BOR = self.BOR
-                BXOR = self.BXOR
-            
-            self.RedOpType = RedOpType
-    
-    # Replace the original reduce_op with our fixed version
-    torch.distributed.ReduceOp = FixedReduceOp()
-    torch.distributed.reduce_op = torch.distributed.ReduceOp
-
-# Now import the rest of the modules
 import datetime
 import subprocess
 import time
@@ -46,6 +7,13 @@ import multiprocessing
 
 from flask import current_app
 from PIL import Image
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+import torch
 
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
@@ -230,7 +198,7 @@ clip_preprocessors = {}
 tag_embeddings = {}
 
 def get_clip_model():
-    """Get the CLIP model based on user configuration"""
+    """Get the CLIP model based on user configuration using a simplified approach"""
     from models import UserConfig
     from flask import current_app
     import gc  # Garbage collection
@@ -274,28 +242,16 @@ def get_clip_model():
     # Define large models that might cause memory issues
     large_models = ['ViT-SO400M-16-SigLIP2-512', 'ViT-L-14', 'ViT-H-14', 'ViT-g-14']
     
-    # Models that are known to cause segmentation faults with CUDA
-    problematic_models = ['ViT-SO400M-16-SigLIP2-512']
-    
-    # Force CPU for large models if memory is limited or if configured to do so
+    # Force CPU for large models if memory is limited
     force_cpu_for_model = False
-    
-    # Always force CPU for problematic models that cause segmentation faults
-    if model_key in problematic_models and device == "cuda":
-        current_app.logger.warning(f"Model {model_key} is known to cause segmentation faults with CUDA. Forcing CPU usage for this model.")
-        force_cpu_for_model = True
-    # Force CPU for large models based on memory or configuration
-    elif model_key in large_models and (FORCE_CPU_FOR_LARGE_MODELS or available_gb < 8.0) and device == "cuda":
-        current_app.logger.warning(f"Model {model_key} is large and available memory is limited ({available_gb:.2f} GB) or FORCE_CPU_FOR_LARGE_MODELS is enabled. Forcing CPU usage for this model.")
+    if model_key in large_models and (FORCE_CPU_FOR_LARGE_MODELS or available_gb < 8.0) and device == "cuda":
+        current_app.logger.warning(f"Model {model_key} is large and available memory is limited ({available_gb:.2f} GB). Forcing CPU usage.")
         force_cpu_for_model = True
     
     # Clear models to free memory before loading a new one
-    if len(clip_models) > 3 or (model_key in large_models and len(clip_models) > 1):
+    if len(clip_models) > 2:
         current_app.logger.info(f"Clearing model cache to free memory before loading {model_key}")
-        # Keep fewer models in memory when dealing with large models
-        models_to_keep = 1 if model_key in large_models else 2
-        models_to_remove = list(clip_models.keys())[:-models_to_keep] if len(clip_models) > models_to_keep else list(clip_models.keys())
-        for model_name in models_to_remove:
+        for model_name in list(clip_models.keys()):
             if model_name != model_key:
                 current_app.logger.info(f"Removing model {model_name} from cache")
                 del clip_models[model_name]
@@ -314,250 +270,38 @@ def get_clip_model():
         model_device = "cpu" if force_cpu_for_model else device
         current_app.logger.info(f"Loading model {model_key} on device: {model_device}")
         
-        # Set the default device for PyTorch operations in this context
-        # This helps ensure all new tensors are created on the right device
-        if model_device == "cpu":
-            # If we're forcing CPU, make sure CUDA isn't used by default
-            old_device = torch.cuda.current_device() if torch.cuda.is_available() else -1
-            torch.cuda.set_device(-1)  # Set to CPU
-            current_app.logger.info(f"Temporarily setting default CUDA device to CPU for model loading")
+        # Set recursion limit for model loading
+        import sys
+        old_recursion_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
         
-        if use_custom_model:
-            current_app.logger.info(f"Loading custom model: {custom_model_name}")
-            # Set the cache directory for custom models
+        try:
+            # Determine cache directory
             data_folder = current_app.config.get("DATA_FOLDER", "./data")
             models_folder = os.path.join(data_folder, "models")
+            cache_dir = models_folder if os.path.exists(models_folder) else "/app/data/model_cache"
             
-            # Check if we have a record of which pretrained tag was used for this model
-            data_folder = current_app.config.get("DATA_FOLDER", "./data")
-            models_folder = os.path.join(data_folder, "models")
-            model_info_path = os.path.join(models_folder, f"{custom_model_name.replace('/', '_')}_info.json")
+            # Determine pretrained tag to use
+            pretrained_tag = 'openai'  # Default pretrained tag
             
-            # Default pretrained tags to try
-            available_pretrained_tags = []
+            # Simplified model loading with a single attempt
+            current_app.logger.info(f"Loading model {model_key} with pretrained tag: {pretrained_tag}")
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                model_key,
+                pretrained=pretrained_tag,
+                jit=False,
+                force_quick_gelu=False,
+                cache_dir=cache_dir
+            )
             
-            # Try to load the model info to get the pretrained tag
-            if os.path.exists(model_info_path):
-                try:
-                    import json
-                    with open(model_info_path, 'r') as f:
-                        model_info = json.load(f)
-                        if 'pretrained_tag' in model_info and model_info['pretrained_tag']:
-                            # If we have a record of the pretrained tag, use it first
-                            available_pretrained_tags.append(model_info['pretrained_tag'])
-                            current_app.logger.info(f"Using recorded pretrained tag for {custom_model_name}: {model_info['pretrained_tag']}")
-                except Exception as e:
-                    current_app.logger.error(f"Error reading model info file: {str(e)}")
-            
-            # Get available pretrained tags for the model
-            try:
-                # Try to get available pretrained tags from open_clip
-                model_pretrained_tags = open_clip.list_pretrained_tags_by_model(custom_model_name)
-                current_app.logger.info(f"Available pretrained tags for {custom_model_name}: {model_pretrained_tags}")
-                
-                # Add any tags we don't already have
-                for tag in model_pretrained_tags:
-                    if tag not in available_pretrained_tags:
-                        available_pretrained_tags.append(tag)
-            except Exception as e:
-                current_app.logger.info(f"Could not get pretrained tags for {custom_model_name}: {str(e)}")
-            
-            # If still no tags, use default list
-            if not available_pretrained_tags:
-                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b']
-            
-            # Try different model name formats and pretrained tags
-            success = False
-            last_error = None
-            
-            # List of model name variations to try
-            model_variations = []
-            
-            # Original model name
-            model_variations.append(custom_model_name)
-            
-            # If model name contains a slash, try different variations
-            if '/' in custom_model_name:
-                # Extract the model architecture name (after the slash)
-                model_arch = custom_model_name.split('/')[-1]
-                model_variations.append(model_arch)
-                
-                # Try with organization as prefix
-                org = custom_model_name.split('/')[0]
-                model_variations.append(f"{org}-{model_arch}")
-                
-                # Try with underscores instead of dashes
-                model_variations.append(model_arch.replace('-', '_'))
-            
-            # Try each model variation with each pretrained tag
-            for model_var in model_variations:
-                current_app.logger.info(f"Trying model variation: {model_var}")
-                
-                for pretrained_tag in available_pretrained_tags:
-                    try:
-                        current_app.logger.info(f"Attempting to load {model_var} with pretrained tag: {pretrained_tag}")
-                        
-                        # Set a timeout for model loading to prevent hanging
-                        import signal
-                        
-                        def timeout_handler(signum, frame):
-                            raise TimeoutError(f"Loading model {model_var} timed out after 60 seconds")
-                        
-                        # Set timeout for large models
-                        if model_var in large_models:
-                            signal.signal(signal.SIGALRM, timeout_handler)
-                            signal.alarm(60)  # 60 second timeout for large models
-                        
-                        try:
-                            # Set a recursion limit for model downloading
-                            import sys
-                            old_recursion_limit = sys.getrecursionlimit()
-                            sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
-                            
-                            try:
-                                model, _, preprocess = open_clip.create_model_and_transforms(
-                                    model_var,
-                                    pretrained=pretrained_tag,
-                                    jit=False,
-                                    force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
-                                    cache_dir=models_folder if os.path.exists(models_folder) else "/app/data/model_cache"
-                                )
-                            finally:
-                                # Restore original recursion limit
-                                sys.setrecursionlimit(old_recursion_limit)
-                            
-                            # Cancel timeout if successful
-                            if model_var in large_models:
-                                signal.alarm(0)
-                                
-                            # If we get here, the model loaded successfully
-                            current_app.logger.info(f"Successfully loaded {model_var} with pretrained tag: {pretrained_tag}")
-                            success = True
-                            break
-                        except TimeoutError as te:
-                            current_app.logger.error(f"Timeout loading model {model_var}: {str(te)}")
-                            # Cancel timeout
-                            if model_var in large_models:
-                                signal.alarm(0)
-                            raise
-                            
-                    except Exception as e:
-                        last_error = e
-                        current_app.logger.info(f"Failed to load {model_var} with pretrained tag {pretrained_tag}: {str(e)}")
-                
-                if success:
-                    break
-            
-            # If all attempts failed, provide a more helpful error message
-            if not success:
-                # Check if the last error was a recursion error
-                if isinstance(last_error, RecursionError) or "maximum recursion depth exceeded" in str(last_error):
-                    raise Exception(f"Failed to download model {custom_model_name} due to recursion limits. Please try a different model like ViT-B-32 or RN50 which are smaller and more compatible.")
-                else:
-                    raise Exception(f"Failed to load model {custom_model_name} with any variation or pretrained tag. Last error: {str(last_error)}")
-        else:
-            current_app.logger.info(f"Loading CLIP model: {clip_model_name}")
-            
-            # Get available pretrained tags for the model
-            available_pretrained_tags = []
-            try:
-                # Try to get available pretrained tags
-                available_pretrained_tags = open_clip.list_pretrained_tags_by_model(clip_model_name)
-                current_app.logger.info(f"Available pretrained tags for {clip_model_name}: {available_pretrained_tags}")
-            except Exception as e:
-                current_app.logger.info(f"Could not get pretrained tags for {clip_model_name}: {str(e)}")
-                # If we can't get tags, use default tags to try
-                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b', 'merged2b_s6b_b61k']
-            
-            # If no tags found, use default list
-            if not available_pretrained_tags:
-                available_pretrained_tags = ['openai', 'laion2b_s34b_b79k', 'datacomp1b', 'laion400m_e32', 'laion2b', 'merged2b_s6b_b61k']
-            
-            # Try each pretrained tag
-            success = False
-            last_error = None
-            
-            for pretrained_tag in available_pretrained_tags:
-                try:
-                    current_app.logger.info(f"Attempting to load {clip_model_name} with pretrained tag: {pretrained_tag}")
-                    
-                    # Set a timeout for model loading to prevent hanging
-                    import signal
-                    
-                    def timeout_handler(signum, frame):
-                        raise TimeoutError(f"Loading model {clip_model_name} timed out after 60 seconds")
-                    
-                    # Set timeout for large models
-                    if clip_model_name in large_models:
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(60)  # 60 second timeout for large models
-                    
-                    try:
-                        # Set a recursion limit for model downloading
-                        import sys
-                        old_recursion_limit = sys.getrecursionlimit()
-                        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
-                        
-                        try:
-                            # Use the pre-downloaded model from the Docker build
-                            cache_dir = "/app/data/model_cache"
-                            model, _, preprocess = open_clip.create_model_and_transforms(
-                                clip_model_name,
-                                pretrained=pretrained_tag,
-                                jit=False,
-                                force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
-                                cache_dir=cache_dir
-                            )
-                        finally:
-                            # Restore original recursion limit
-                            sys.setrecursionlimit(old_recursion_limit)
-                        
-                        # Cancel timeout if successful
-                        if clip_model_name in large_models:
-                            signal.alarm(0)
-                            
-                        # If we get here, the model loaded successfully
-                        current_app.logger.info(f"Successfully loaded {clip_model_name} with pretrained tag: {pretrained_tag}")
-                        success = True
-                        break
-                    except TimeoutError as te:
-                        current_app.logger.error(f"Timeout loading model {clip_model_name}: {str(te)}")
-                        # Cancel timeout
-                        if clip_model_name in large_models:
-                            signal.alarm(0)
-                        raise
-                        
-                except Exception as e:
-                    last_error = e
-                    current_app.logger.info(f"Failed to load {clip_model_name} with pretrained tag {pretrained_tag}: {str(e)}")
-            
-            # If all attempts failed, provide a more helpful error message
-            if not success:
-                # Check if the last error was a recursion error
-                if isinstance(last_error, RecursionError) or "maximum recursion depth exceeded" in str(last_error):
-                    raise Exception(f"Failed to download model {clip_model_name} due to recursion limits. Please try a different model like ViT-B-32 or RN50 which are smaller and more compatible.")
-                else:
-                    raise Exception(f"Failed to load model {clip_model_name} with any pretrained tag. Last error: {str(last_error)}")
+            current_app.logger.info(f"Successfully loaded {model_key} with pretrained tag: {pretrained_tag}")
+        finally:
+            # Restore original recursion limit
+            sys.setrecursionlimit(old_recursion_limit)
         
         # Move model to the appropriate device (CPU or CUDA)
         model.to(model_device)
         model.eval()
-        
-        # Verify the model is on the expected device
-        actual_device = next(model.parameters()).device
-        if str(actual_device) != str(model_device):
-            current_app.logger.warning(f"Model device mismatch! Requested: {model_device}, Actual: {actual_device}")
-            # Force the model to the correct device again
-            model = model.to(model_device)
-            # Verify again
-            actual_device = next(model.parameters()).device
-            current_app.logger.info(f"After correction, model is on device: {actual_device}")
-        
-        # Restore the default CUDA device if we changed it
-        if model_device == "cpu" and torch.cuda.is_available() and 'old_device' in locals():
-            if old_device >= 0:
-                torch.cuda.set_device(old_device)
-                current_app.logger.info(f"Restored default CUDA device to {old_device}")
         
         # Cache the model and preprocessor
         clip_models[model_key] = model
@@ -588,23 +332,26 @@ def get_clip_model():
         # Fall back to default model if available
         if 'ViT-B-32' in clip_models:
             return 'ViT-B-32', clip_models['ViT-B-32'], clip_preprocessors['ViT-B-32']
-        # Otherwise load default model
-        import sys
-        old_recursion_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
         
+        # Otherwise load default model with simplified approach
         try:
             # Use the pre-downloaded model from the Docker build
             cache_dir = "/app/data/model_cache"
-            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False, cache_dir=cache_dir)
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                'ViT-B-32',
+                pretrained='openai',
+                jit=False,
+                force_quick_gelu=False,
+                cache_dir=cache_dir
+            )
             model.to(device)
             model.eval()
             clip_models['ViT-B-32'] = model
             clip_preprocessors['ViT-B-32'] = preprocess
             return 'ViT-B-32', model, preprocess
-        finally:
-            # Restore original recursion limit
-            sys.setrecursionlimit(old_recursion_limit)
+        except Exception as fallback_error:
+            current_app.logger.error(f"Error loading fallback model: {fallback_error}")
+            raise Exception("Failed to load any CLIP model")
 
 def get_image_embedding(image_path):
     try:

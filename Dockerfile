@@ -2,7 +2,7 @@
 
 # Build arguments
 ARG USE_GPU=false
-ARG PYTHON_VERSION=3.13.2
+ARG PYTHON_VERSION=3.8
 
 # ===== BUILDER STAGE =====
 FROM python:${PYTHON_VERSION}-slim AS builder
@@ -54,14 +54,15 @@ gunicorn\n\
 gevent\n\
 psutil>=5.9.0\n\
 pytz>=2024.1\n\
-Pillow==11.1.0\n\
-pillow-heif==0.21.0" > base_requirements.txt
+Pillow==10.1.0\n\
+pillow-heif==0.13.0" > base_requirements.txt
 
 # Create model-specific requirements file
 RUN echo "scikit-learn\n\
-transformers>=4.38.0\n\
-huggingface_hub>=0.20.3\n\
-open_clip_torch" > model_requirements.txt
+transformers==4.30.2\n\
+huggingface_hub==0.16.4\n\
+timm==0.9.2\n\
+open_clip_torch==2.20.0" > model_requirements.txt
 
 # Install base requirements first (these change less frequently)
 RUN pip install --upgrade pip && pip install --no-cache-dir -r base_requirements.txt
@@ -77,13 +78,13 @@ RUN if [ "$USE_GPU" = "false" ]; then \
 
 # Install PyTorch and model-specific dependencies separately for better caching
 RUN if [ "$USE_GPU" = "false" ]; then \
-    # Install CPU-only PyTorch first
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    # Install CPU-only PyTorch first (specific version for compatibility)
+    pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu && \
     # Then install the model-specific requirements
     pip install --no-cache-dir -r model_requirements.txt; \
   else \
     # Install with default PyTorch (with CUDA)
-    pip install --no-cache-dir torch torchvision torchaudio && \
+    pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 && \
     pip install --no-cache-dir -r model_requirements.txt; \
   fi
 
@@ -93,8 +94,8 @@ RUN mkdir -p /build/model_cache && \
     print('Downloading ViT-B-32 model...'); \
     open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
     print('CLIP model downloaded successfully.')"
-# Install RAM++ model and dependencies
-RUN pip install git+https://github.com/xinyu1205/recognize-anything.git huggingface_hub>=0.20.3 requests
+# Install RAM++ model and dependencies using the recommended approach
+RUN pip install git+https://github.com/xinyu1205/recognize-anything.git
 
 # Create directory for RAM++ model files
 RUN mkdir -p /app/data/ram_models
@@ -142,7 +143,7 @@ RUN mkdir -p /data /app/data/model_cache /app/data/ram_models
 WORKDIR /app
 
 # Copy Python packages from builder stage
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/lib/python3.8/site-packages /usr/local/lib/python3.8/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy the model caches from the builder stage

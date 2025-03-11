@@ -12,47 +12,15 @@ The scheduler is responsible for:
 2. Periodically checking device online status
 """
 
-# Apply PyTorch monkey patches before any other imports
-import sys
 import os
-
-# Increase recursion limit globally
-sys.setrecursionlimit(15000)
-
-# Fix for PyTorch distributed module compatibility issues
-import torch
-if hasattr(torch.distributed, 'reduce_op'):
-    # Create a proper ReduceOp class with RedOpType attribute
-    original_reduce_op = torch.distributed.reduce_op
-    
-    class FixedReduceOp:
-        def __init__(self):
-            self.SUM = original_reduce_op.SUM
-            self.PRODUCT = original_reduce_op.PRODUCT
-            self.MIN = original_reduce_op.MIN
-            self.MAX = original_reduce_op.MAX
-            self.BAND = original_reduce_op.BAND
-            self.BOR = original_reduce_op.BOR
-            self.BXOR = original_reduce_op.BXOR
-            
-            # Add RedOpType as a class attribute that references self
-            class RedOpType:
-                SUM = self.SUM
-                PRODUCT = self.PRODUCT
-                MIN = self.MIN
-                MAX = self.MAX
-                BAND = self.BAND
-                BOR = self.BOR
-                BXOR = self.BXOR
-            
-            self.RedOpType = RedOpType
-    
-    # Replace the original reduce_op with our fixed version
-    torch.distributed.ReduceOp = FixedReduceOp()
-    torch.distributed.reduce_op = torch.distributed.ReduceOp
-
+import sys
 import logging
 import multiprocessing
+import warnings
+
+# Suppress PyTorch deprecation warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*torch.distributed.reduce_op.*")
 
 # Set multiprocessing start method to 'spawn' to fix CUDA issues
 try:

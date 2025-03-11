@@ -1,6 +1,6 @@
 Flask
-Pillow==11.1.0
-pillow-heif==0.21.0
+Pillow==10.1.0
+pillow-heif==0.13.0
 Flask-SQLAlchemy==3.1.1
 cryptography
 requests>=2.31.0  # Required for browserless API calls
@@ -10,12 +10,12 @@ httpx
 APScheduler>=3.9.0
 celery
 redis
-open_clip_torch
+open_clip_torch==2.20.0
 tqdm>=4.66.1  # For progress tracking
 scikit-learn
-transformers>=4.38.0  # For HuggingFace models
-huggingface_hub>=0.20.3  # For downloading RAM models
-timm>=0.9.12  # Required for RAM models
+transformers==4.30.2  # For HuggingFace models
+huggingface_hub==0.16.4  # For downloading RAM models
+timm==0.9.2  # Required for RAM models
 git+https://github.com/xinyu1205/recognize-anything.git  # For RAM models
 gunicorn
 gevent

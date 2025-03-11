@@ -13,6 +13,9 @@ echo "Total memory: ${MEM_TOTAL_GB}GB"
 # Set environment variable for memory-aware operations
 export SYSTEM_MEMORY_GB=$MEM_TOTAL_GB
 
+# Suppress PyTorch warnings
+export PYTHONWARNINGS="ignore::FutureWarning,ignore::DeprecationWarning"
+
 # Configure memory limits based on available memory
 if [ $(echo "$MEM_TOTAL_GB < 4" | bc) -eq 1 ]; then
   echo "WARNING: Low memory system detected (${MEM_TOTAL_GB}GB). Some large models may not work properly."

@@ -7,6 +7,11 @@ except ImportError:
     # Gevent not installed, ignore
     pass
 
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*torch.distributed.reduce_op.*")
+
 from flask import Flask, send_from_directory, request
 import os
 import multiprocessing
