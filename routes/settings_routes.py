@@ -1,15 +1,53 @@
+# Apply PyTorch monkey patches before any other imports
+import sys
+import os
+
+# Increase recursion limit globally
+sys.setrecursionlimit(15000)
+
+# Fix for PyTorch distributed module compatibility issues
+import torch
+if hasattr(torch.distributed, 'reduce_op'):
+    # Create a proper ReduceOp class with RedOpType attribute
+    original_reduce_op = torch.distributed.reduce_op
+    
+    class FixedReduceOp:
+        def __init__(self):
+            self.SUM = original_reduce_op.SUM
+            self.PRODUCT = original_reduce_op.PRODUCT
+            self.MIN = original_reduce_op.MIN
+            self.MAX = original_reduce_op.MAX
+            self.BAND = original_reduce_op.BAND
+            self.BOR = original_reduce_op.BOR
+            self.BXOR = original_reduce_op.BXOR
+            
+            # Add RedOpType as a class attribute that references self
+            class RedOpType:
+                SUM = self.SUM
+                PRODUCT = self.PRODUCT
+                MIN = self.MIN
+                MAX = self.MAX
+                BAND = self.BAND
+                BOR = self.BOR
+                BXOR = self.BXOR
+            
+            self.RedOpType = RedOpType
+    
+    # Replace the original reduce_op with our fixed version
+    torch.distributed.ReduceOp = FixedReduceOp()
+    torch.distributed.reduce_op = torch.distributed.ReduceOp
+
 from flask import Blueprint, request, render_template, flash, redirect, url_for, jsonify, current_app
 from models import db, Device, UserConfig
 import logging
 import httpx
-import os
-import torch
 import open_clip
 from datetime import datetime
 from tqdm import tqdm
 import threading
 import time
 import json
+from huggingface_hub import hf_hub_download
 
 settings_bp = Blueprint('settings', __name__)
 logger = logging.getLogger(__name__)
@@ -103,13 +141,13 @@ def download_model_thread(model_name, task_id, app):
                         # Set a recursion limit for model downloading
                         import sys
                         old_recursion_limit = sys.getrecursionlimit()
-                        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
+                        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
                         
                         try:
                             model, _, preprocess = open_clip.create_model_and_transforms(
                                 model_var,
                                 pretrained=pretrained_tag,
-                                cache_dir=models_folder
+                                cache_dir=models_folder if os.path.exists(models_folder) else "/app/data/model_cache"
                             )
                         finally:
                             # Restore original recursion limit
@@ -740,35 +778,20 @@ def enable_custom_model():
 @settings_bp.route('/settings/update_ram_settings', methods=['POST'])
 def update_ram_settings():
     """
-    Endpoint to update RAM model settings.
+    Endpoint to update tagging settings.
     """
     try:
         data = request.get_json()
         config = UserConfig.query.first()
         if not config:
-            config = UserConfig(ram_enabled=True, ram_model="ram_medium", ram_min_confidence=0.3)
+            config = UserConfig(ram_enabled=True, ram_model="ram_large", ram_min_confidence=0.3)
             db.session.add(config)
         
         updated = False
         
-        # Update RAM enabled flag if provided
-        if "ram_enabled" in data:
-            config.ram_enabled = data.get("ram_enabled")
-            updated = True
-        
-        # Update RAM model if provided
-        if "ram_model" in data:
-            ram_model = data.get("ram_model")
-            # Validate RAM model
-            from utils.ram_tagger import RAM_MODELS
-            if ram_model in RAM_MODELS:
-                config.ram_model = ram_model
-                updated = True
-            else:
-                return jsonify({
-                    "status": "error",
-                    "message": f"Invalid RAM model: {ram_model}"
-                }), 400
+        # Always enable RAM tagging and use the large model
+        config.ram_enabled = True
+        config.ram_model = "ram_large"
         
         # Update RAM min confidence if provided
         if "ram_min_confidence" in data:
@@ -781,12 +804,16 @@ def update_ram_settings():
                     "status": "error",
                     "message": "Invalid minimum confidence value. Must be a number between 0 and 1."
                 }), 400
+        else:
+            # If ram_min_confidence is not provided, consider the update successful
+            # because we've already set the ram_enabled and ram_model values
+            updated = True
         
         if updated:
             db.session.commit()
             return jsonify({
                 "status": "success",
-                "message": "RAM settings updated successfully."
+                "message": "Tagging settings updated successfully."
             })
         else:
             return jsonify({
@@ -873,11 +900,52 @@ def download_ram_model_thread(model_name, task_id, app):
                 "current_attempt": f"Downloading {model_name} from Hugging Face"
             }
             
-            # Import RAM tagger
-            from utils.ram_tagger import get_ram_model
+            # Import RAM tagger and RAM_MODELS dictionary
+            from utils.ram_tagger import RAM_MODELS
             
-            # Load the model (this will download it if not already cached)
-            get_ram_model(model_name)
+            # Get model info
+            if model_name not in RAM_MODELS:
+                raise ValueError(f"Unknown RAM model: {model_name}")
+            
+            model_info = RAM_MODELS[model_name]
+            
+            # Use a fixed high recursion limit for all models
+            recursion_limit = 15000
+            logger.info(f"Using recursion limit of {recursion_limit} for all RAM models")
+            
+            # Set up cache directory
+            data_folder = current_app.config.get("DATA_FOLDER", "./data")
+            models_folder = os.path.join(data_folder, "ram_models")
+            os.makedirs(models_folder, exist_ok=True)
+            
+            # Download model with appropriate recursion limit
+            import sys
+            old_recursion_limit = sys.getrecursionlimit()
+            try:
+                # Increase recursion limit temporarily to handle deep call stacks
+                sys.setrecursionlimit(recursion_limit)
+                logger.info(f"Temporarily increased recursion limit to {recursion_limit} for loading RAM model")
+                
+                # Download the model file using huggingface_hub
+                from huggingface_hub import hf_hub_download
+                
+                # Download model file
+                model_path = os.path.join(models_folder, model_info["filename"])
+                if not os.path.exists(model_path):
+                    logger.info(f"Downloading RAM model {model_name} from Hugging Face")
+                    hf_hub_download(
+                        repo_id=model_info["repo_id"],
+                        filename=model_info["filename"],
+                        cache_dir=models_folder,
+                        force_download=False
+                    )
+                    logger.info(f"Successfully downloaded RAM model {model_name}")
+                else:
+                    logger.info(f"RAM model {model_name} already exists at {model_path}")
+            finally:
+                # Restore original recursion limit
+                sys.setrecursionlimit(old_recursion_limit)
+                logger.info(f"Restored recursion limit to {old_recursion_limit}")
             
             # Update progress to complete
             model_download_progress[task_id] = {

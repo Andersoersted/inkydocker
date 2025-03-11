@@ -9,22 +9,22 @@
     <p class="lead">Manage your eInk displays and AI settings.</p>
   </header>
 
-  <!-- RAM Model Settings Button -->
+  <!-- Tagging Settings Button -->
   <div class="card mb-4 shadow-sm">
     <div class="card-body text-center">
-      <h5 class="card-title">RAM Image Tagging Settings</h5>
-      <p class="card-text">Configure RAM models for image tagging and tagging settings</p>
+      <h5 class="card-title">Image Tagging Settings</h5>
+      <p class="card-text">Configure tagging settings and test image tagging</p>
       <button id="openClipSettingsBtn" class="btn btn-primary" onclick="document.getElementById('clipSettingsModal').style.display = 'block';">
-        <i class="bi bi-gear-fill"></i> Open RAM Settings
+        <i class="bi bi-gear-fill"></i> Open Tagging Settings
       </button>
     </div>
   </div>
 
-  <!-- RAM Settings Modal -->
+  <!-- Tagging Settings Modal -->
   <div id="clipSettingsModal" class="custom-modal">
     <div class="custom-modal-content">
       <div class="modal-header">
-        <h2 class="modal-title">RAM Tagging Settings</h2>
+        <h2 class="modal-title">Image Tagging Settings</h2>
         <button type="button" class="btn-close" id="closeClipSettingsModal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -32,10 +32,7 @@
           <!-- Main tabs for organization -->
           <ul class="nav nav-tabs mb-4" id="clipSettingsTabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="custom-model-tab" data-bs-toggle="tab" data-bs-target="#custom-model" type="button" role="tab" aria-controls="custom-model" aria-selected="true">RAM Models</button>
-            </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="tagging-settings-tab" data-bs-toggle="tab" data-bs-target="#tagging-settings" type="button" role="tab" aria-controls="tagging-settings" aria-selected="false">Tagging Settings</button>
+              <button class="nav-link active" id="tagging-settings-tab" data-bs-toggle="tab" data-bs-target="#tagging-settings" type="button" role="tab" aria-controls="tagging-settings" aria-selected="true">Tagging Settings</button>
             </li>
             <li class="nav-item" role="presentation">
               <button class="nav-link" id="test-model-tab" data-bs-toggle="tab" data-bs-target="#test-model" type="button" role="tab" aria-controls="test-model" aria-selected="false">Test Tagging</button>
@@ -43,95 +40,23 @@
           </ul>
           
           <div class="tab-content" id="clipSettingsTabContent">
-            <!-- RAM Models Tab -->
-            <div class="tab-pane fade show active" id="custom-model" role="tabpanel" aria-labelledby="custom-model-tab">
-              <div class="card">
-                <div class="card-body">
-                  <h5 class="card-title">RAM Models for Image Tagging</h5>
-                  <p class="card-text text-muted">Configure the Recognize Anything Model (RAM) used for tagging all regular images in your gallery.</p>
-                  
-                  <div class="mb-4">
-                    <label for="ram_model" class="form-label">Select RAM Model Size</label>
-                    <select id="ram_model" class="form-select form-select-lg">
-                      <option value="ram_smallest" {% if config and config.ram_model == 'ram_smallest' %}selected{% endif %}>
-                        Smallest RAM Model (very fast, basic tagging)
-                      </option>
-                      <option value="ram_small" {% if config and config.ram_model == 'ram_small' %}selected{% endif %}>
-                        Small RAM Model (fast, good for basic tagging)
-                      </option>
-                      <option value="ram_medium" {% if not config or not config.ram_model or config.ram_model == 'ram_medium' %}selected{% endif %}>
-                        Medium RAM Model (balanced performance, recommended)
-                      </option>
-                      <option value="ram_large" {% if config and config.ram_model == 'ram_large' %}selected{% endif %}>
-                        Large RAM Model (most accurate, higher memory usage)
-                      </option>
-                    </select>
-                    <div class="form-text">Larger models provide more accurate tags but require more processing time and memory.</div>
-                  </div>
-                  
-                  <!-- Confidence slider moved to Tagging Settings tab -->
-                  <input type="hidden" id="ram_min_confidence"
-                         value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
-                  <input type="hidden" id="confidence_value"
-                         value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
-                  
-                  <div class="form-check form-switch mb-4">
-                    <input class="form-check-input" type="checkbox" role="switch" id="enable_ram"
-                           {% if not config or config.ram_enabled %}checked{% endif %}>
-                    <label class="form-check-label" for="enable_ram">
-                      Enable RAM image tagging
-                    </label>
-                    <div class="form-text">When disabled, no automatic tagging will be performed.</div>
-                  </div>
-                  
-                  <div class="alert alert-info mb-4">
-                    <div class="d-flex">
-                      <div class="flex-shrink-0">
-                        <i class="bi bi-info-circle-fill fs-4"></i>
-                      </div>
-                      <div class="flex-grow-1 ms-3">
-                        <h6 class="alert-heading">About RAM Models</h6>
-                        <p class="mb-1">
-                          RAM (Recognize Anything Model) is specifically designed for comprehensive image tagging with a large vocabulary.
-                          It provides more accurate and detailed tags than CLIP for most images.
-                        </p>
-                        <p class="mb-1">
-                          <strong>Model Options:</strong>
-                          <ul class="mb-1">
-                            <li><strong>Smallest Model</strong>: Very fast processing, minimal memory usage, basic tagging</li>
-                            <li><strong>Small Model</strong>: Fast processing, uses less memory, good for basic tagging</li>
-                            <li><strong>Medium Model</strong>: Better accuracy with reasonable performance (recommended)</li>
-                            <li><strong>Large Model</strong>: Most comprehensive tagging, uses more memory and processing power</li>
-                          </ul>
-                        </p>
-                        <p class="mb-0">
-                          <strong>Note:</strong> Screenshots are processed differently to detect UI elements automatically.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- Model Download Progress -->
-                  <div id="modelDownloadContainer" class="mb-4" style="display: none;">
-                    <h6 class="mb-2">Downloading: <span id="modelDownloadName" class="fw-bold"></span></h6>
-                    <div class="progress" style="height: 25px;">
-                      <div id="modelDownloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
-                           role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
-                           style="width: 0%;">0%</div>
-                    </div>
-                    <p id="modelDownloadStatus" class="text-muted mt-2 small"></p>
-                  </div>
-                  
-                  <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-                    <button type="button" class="btn btn-success" onclick="saveRAMSettings()">
-                      <i class="bi bi-check-circle"></i> Save RAM Settings
-                    </button>
-                    <button type="button" class="btn btn-primary" onclick="downloadRAMModel()">
-                      <i class="bi bi-download"></i> Download Selected RAM Model
-                    </button>
-                  </div>
-                </div>
+            <!-- Hidden inputs for RAM model settings -->
+            <input type="hidden" id="ram_model" value="ram_large">
+            <input type="hidden" id="ram_min_confidence"
+                   value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
+            <input type="hidden" id="confidence_value"
+                   value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
+            <input type="hidden" id="enable_ram" value="true">
+            
+            <!-- Model Download Progress -->
+            <div id="modelDownloadContainer" class="mb-4" style="display: none;">
+              <h6 class="mb-2">Downloading: <span id="modelDownloadName" class="fw-bold"></span></h6>
+              <div class="progress" style="height: 25px;">
+                <div id="modelDownloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                     style="width: 0%;">0%</div>
               </div>
+              <p id="modelDownloadStatus" class="text-muted mt-2 small"></p>
             </div>
             
             <!-- Tagging Settings Tab -->
@@ -197,8 +122,8 @@
             <div class="tab-pane fade" id="test-model" role="tabpanel" aria-labelledby="test-model-tab">
               <div class="card">
                 <div class="card-body">
-                  <h5 class="card-title">Test RAM Tagging</h5>
-                  <p class="card-text">Upload a test image to verify the RAM model is working correctly and see the generated tags.</p>
+                  <h5 class="card-title">Test Image Tagging</h5>
+                  <p class="card-text">Upload a test image to verify the tagging system is working correctly and see the generated tags.</p>
                   
                   <div class="mb-3">
                     <label for="testImageFile" class="form-label">Select an image to test:</label>
@@ -207,7 +132,7 @@
                   
                   <div class="d-grid">
                     <button type="button" class="btn btn-primary btn-lg" onclick="testTagging()">
-                      <i class="bi bi-tag"></i> Test RAM Tagging
+                      <i class="bi bi-tag"></i> Test Image Tagging
                     </button>
                   </div>
                   
@@ -736,12 +661,12 @@
         settingsItem.appendChild(settingsItemLink);
         dropdownMenu.appendChild(settingsItem);
         
-        // Add RAM Settings link
+        // Add Tagging Settings link
         const clipItem = document.createElement('li');
         const clipItemLink = document.createElement('a');
         clipItemLink.className = 'dropdown-item';
         clipItemLink.href = '#';
-        clipItemLink.textContent = 'RAM Settings';
+        clipItemLink.textContent = 'Tagging Settings';
         clipItemLink.addEventListener('click', function(e) {
           e.preventDefault();
           document.getElementById('clipSettingsModal').style.display = 'block';
@@ -972,7 +897,7 @@
     const resultDiv = document.getElementById('testTaggingResult');
     const contentDiv = document.getElementById('testTaggingContent');
     resultDiv.style.display = 'block';
-    contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Processing image with RAM model...</p></div>';
+    contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Processing image...</p></div>';
     
     fetch("{{ url_for('settings.test_tagging') }}", {
       method: 'POST',
@@ -1174,8 +1099,8 @@
   }
   
   function saveRAMSettings() {
-    var enableRAM = document.getElementById('enable_ram').checked;
-    var ramModel = document.getElementById('ram_model').value;
+    var enableRAM = true; // Always enabled
+    var ramModel = "ram_large"; // Always use the large model
     var ramMinConfidence;
     
     // Get confidence value from the global slider if available, otherwise from the hidden field

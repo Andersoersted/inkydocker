@@ -60,6 +60,7 @@ pillow-heif==0.21.0" > base_requirements.txt
 # Create model-specific requirements file
 RUN echo "scikit-learn\n\
 transformers>=4.38.0\n\
+huggingface_hub>=0.20.3\n\
 open_clip_torch" > model_requirements.txt
 
 # Install base requirements first (these change less frequently)
@@ -86,12 +87,29 @@ RUN if [ "$USE_GPU" = "false" ]; then \
     pip install --no-cache-dir -r model_requirements.txt; \
   fi
 
-# Pre-download CLIP models in a separate layer for better caching
+# Pre-download CLIP model in a separate layer for better caching
 RUN mkdir -p /build/model_cache && \
     python -c "import open_clip; \
     print('Downloading ViT-B-32 model...'); \
     open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
-    print('Model downloaded successfully.')"
+    print('CLIP model downloaded successfully.')"
+# Install RAM++ model and dependencies
+RUN pip install git+https://github.com/xinyu1205/recognize-anything.git huggingface_hub>=0.20.3 requests
+
+# Create directory for RAM++ model files
+RUN mkdir -p /app/data/ram_models
+
+# Copy the download script
+COPY download_ram_plus.py /build/download_ram_plus.py
+RUN chmod +x /build/download_ram_plus.py
+
+# Run the download script with CPU-only mode
+ENV CUDA_VISIBLE_DEVICES=""
+ENV FORCE_CPU=1
+RUN python /build/download_ram_plus.py || echo "Warning: Model download failed, but continuing build"
+
+# Verify that the RAM++ model files were downloaded correctly
+RUN ls -la /app/data/ram_models
 
 # ===== FINAL STAGE =====
 FROM python:${PYTHON_VERSION}-slim
@@ -118,7 +136,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create necessary directories for the database and model cache
-RUN mkdir -p /data /app/data/model_cache
+RUN mkdir -p /data /app/data/model_cache /app/data/ram_models
 
 # Set working directory
 WORKDIR /app
@@ -127,8 +145,9 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy the model cache from the builder stage
+# Copy the model caches from the builder stage
 COPY --from=builder /app/data/model_cache /app/data/model_cache
+COPY --from=builder /app/data/ram_models /app/data/ram_models
 
 # Copy the modified tasks.py from builder stage
 COPY --from=builder /build/tasks.py /app/tasks.py

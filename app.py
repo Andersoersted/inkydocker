@@ -1,3 +1,12 @@
+# Apply gevent monkey patching before any other imports
+# This fixes the warning about monkey-patching ssl after ssl has already been imported
+try:
+    from gevent import monkey
+    monkey.patch_all()
+except ImportError:
+    # Gevent not installed, ignore
+    pass
+
 from flask import Flask, send_from_directory, request
 import os
 import multiprocessing

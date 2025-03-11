@@ -1,4 +1,43 @@
+# Apply PyTorch monkey patches before any other imports
+import sys
 import os
+
+# Increase recursion limit globally
+sys.setrecursionlimit(15000)
+
+# Fix for PyTorch distributed module compatibility issues
+import torch
+if hasattr(torch.distributed, 'reduce_op'):
+    # Create a proper ReduceOp class with RedOpType attribute
+    original_reduce_op = torch.distributed.reduce_op
+    
+    class FixedReduceOp:
+        def __init__(self):
+            self.SUM = original_reduce_op.SUM
+            self.PRODUCT = original_reduce_op.PRODUCT
+            self.MIN = original_reduce_op.MIN
+            self.MAX = original_reduce_op.MAX
+            self.BAND = original_reduce_op.BAND
+            self.BOR = original_reduce_op.BOR
+            self.BXOR = original_reduce_op.BXOR
+            
+            # Add RedOpType as a class attribute that references self
+            class RedOpType:
+                SUM = self.SUM
+                PRODUCT = self.PRODUCT
+                MIN = self.MIN
+                MAX = self.MAX
+                BAND = self.BAND
+                BOR = self.BOR
+                BXOR = self.BXOR
+            
+            self.RedOpType = RedOpType
+    
+    # Replace the original reduce_op with our fixed version
+    torch.distributed.ReduceOp = FixedReduceOp()
+    torch.distributed.reduce_op = torch.distributed.ReduceOp
+
+# Now import the rest of the modules
 import datetime
 import subprocess
 import time
@@ -8,7 +47,6 @@ import multiprocessing
 from flask import current_app
 from PIL import Image
 
-import torch
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -374,7 +412,7 @@ def get_clip_model():
                             # Set a recursion limit for model downloading
                             import sys
                             old_recursion_limit = sys.getrecursionlimit()
-                            sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
+                            sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
                             
                             try:
                                 model, _, preprocess = open_clip.create_model_and_transforms(
@@ -382,7 +420,7 @@ def get_clip_model():
                                     pretrained=pretrained_tag,
                                     jit=False,
                                     force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
-                                    cache_dir=models_folder
+                                    cache_dir=models_folder if os.path.exists(models_folder) else "/app/data/model_cache"
                                 )
                             finally:
                                 # Restore original recursion limit
@@ -458,14 +496,17 @@ def get_clip_model():
                         # Set a recursion limit for model downloading
                         import sys
                         old_recursion_limit = sys.getrecursionlimit()
-                        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
+                        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
                         
                         try:
+                            # Use the pre-downloaded model from the Docker build
+                            cache_dir = "/app/data/model_cache"
                             model, _, preprocess = open_clip.create_model_and_transforms(
                                 clip_model_name,
                                 pretrained=pretrained_tag,
                                 jit=False,
-                                force_quick_gelu=False  # Don't force QuickGELU to avoid warnings
+                                force_quick_gelu=False,  # Don't force QuickGELU to avoid warnings
+                                cache_dir=cache_dir
                             )
                         finally:
                             # Restore original recursion limit
@@ -550,10 +591,12 @@ def get_clip_model():
         # Otherwise load default model
         import sys
         old_recursion_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(5000)  # Increase recursion limit temporarily
+        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
         
         try:
-            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False)
+            # Use the pre-downloaded model from the Docker build
+            cache_dir = "/app/data/model_cache"
+            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=False, cache_dir=cache_dir)
             model.to(device)
             model.eval()
             clip_models['ViT-B-32'] = model
@@ -682,7 +725,7 @@ def process_image_tagging(self, filename):
     config = UserConfig.query.first()
     if not config:
         from models import db
-        config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+        config = UserConfig(ram_enabled=True, ram_model="ram_large")
         db.session.add(config)
         db.session.commit()
     
@@ -712,21 +755,53 @@ def process_image_tagging(self, filename):
         else:
             # For regular images, use RAM if enabled
             if config.ram_enabled:
-                # Import RAM tagger
-                from utils.ram_tagger import generate_tags_with_ram
-                
-                # Get RAM model name from config
-                ram_model = config.ram_model if config and config.ram_model else "ram_medium"
-                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with RAM model: {ram_model}")
-                
-                # Generate tags and description using RAM
-                tags, description = generate_tags_with_ram(
-                    image_path,
-                    model_name=ram_model,
-                    max_tags=config.min_tags,
-                    min_confidence=config.ram_min_confidence
-                )
-                model_used = f"RAM: {ram_model}"
+                try:
+                    # Import RAM tagger
+                    from utils.ram_tagger import generate_tags_with_ram
+                    
+                    # Get RAM model name from config
+                    ram_model = config.ram_model if config and config.ram_model else "ram_large"
+                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                    
+                    # Generate tags and description using RAM
+                    tags, description = generate_tags_with_ram(
+                        image_path,
+                        model_name=ram_model,
+                        max_tags=config.min_tags,
+                        min_confidence=config.ram_min_confidence
+                    )
+                    
+                    # Check if tags were generated successfully
+                    if tags and len(tags) > 0:
+                        model_used = f"RAM: {ram_model}"
+                    else:
+                        # If RAM failed to generate tags, fall back to CLIP
+                        current_app.logger.warning(f"RAM failed to generate tags for {filename}, falling back to CLIP")
+                        clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                        current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM fallback)")
+                        
+                        # Get image embedding using the selected CLIP model
+                        embedding, model_name = get_image_embedding(image_path)
+                        if embedding is None:
+                            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                        
+                        # Generate tags and description using CLIP
+                        tags, description = generate_tags_and_description(embedding, model_name)
+                        model_used = f"CLIP: {model_name}"
+                except Exception as e:
+                    # If RAM fails with an exception, fall back to CLIP
+                    current_app.logger.error(f"Error using RAM for {filename}: {e}, falling back to CLIP")
+                    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM error fallback)")
+                    
+                    # Get image embedding using the selected CLIP model
+                    embedding, model_name = get_image_embedding(image_path)
+                    if embedding is None:
+                        return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                    
+                    # Generate tags and description using CLIP
+                    tags, description = generate_tags_and_description(embedding, model_name)
+                    model_used = f"CLIP: {model_name}"
             else:
                 # If RAM is disabled, fall back to CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
@@ -774,7 +849,7 @@ def reembed_image(filename):
     config = UserConfig.query.first()
     if not config:
         from models import db
-        config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+        config = UserConfig(ram_enabled=True, ram_model="ram_large")
         db.session.add(config)
         db.session.commit()
     
@@ -804,21 +879,53 @@ def reembed_image(filename):
         else:
             # For regular images, use RAM if enabled
             if config.ram_enabled:
-                # Import RAM tagger
-                from utils.ram_tagger import generate_tags_with_ram
-                
-                # Get RAM model name from config
-                ram_model = config.ram_model if config and config.ram_model else "ram_medium"
-                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with RAM model: {ram_model}")
-                
-                # Generate tags and description using RAM
-                tags, description = generate_tags_with_ram(
-                    image_path,
-                    model_name=ram_model,
-                    max_tags=config.min_tags,
-                    min_confidence=config.ram_min_confidence
-                )
-                model_used = f"RAM: {ram_model}"
+                try:
+                    # Import RAM tagger
+                    from utils.ram_tagger import generate_tags_with_ram
+                    
+                    # Get RAM model name from config
+                    ram_model = config.ram_model if config and config.ram_model else "ram_large"
+                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                    
+                    # Generate tags and description using RAM
+                    tags, description = generate_tags_with_ram(
+                        image_path,
+                        model_name=ram_model,
+                        max_tags=config.min_tags,
+                        min_confidence=config.ram_min_confidence
+                    )
+                    
+                    # Check if tags were generated successfully
+                    if tags and len(tags) > 0:
+                        model_used = f"RAM: {ram_model}"
+                    else:
+                        # If RAM failed to generate tags, fall back to CLIP
+                        current_app.logger.warning(f"RAM failed to generate tags for {filename}, falling back to CLIP")
+                        clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                        current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM fallback)")
+                        
+                        # Get image embedding using the selected CLIP model
+                        embedding, model_name = get_image_embedding(image_path)
+                        if embedding is None:
+                            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                        
+                        # Generate tags and description using CLIP
+                        tags, description = generate_tags_and_description(embedding, model_name)
+                        model_used = f"CLIP: {model_name}"
+                except Exception as e:
+                    # If RAM fails with an exception, fall back to CLIP
+                    current_app.logger.error(f"Error using RAM for {filename}: {e}, falling back to CLIP")
+                    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
+                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM error fallback)")
+                    
+                    # Get image embedding using the selected CLIP model
+                    embedding, model_name = get_image_embedding(image_path)
+                    if embedding is None:
+                        return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
+                    
+                    # Generate tags and description using CLIP
+                    tags, description = generate_tags_and_description(embedding, model_name)
+                    model_used = f"CLIP: {model_name}"
             else:
                 # If RAM is disabled, fall back to CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
@@ -893,13 +1000,13 @@ def reembed_all_images(self):
         config = UserConfig.query.first()
         if not config:
             from models import db
-            config = UserConfig(ram_enabled=True, ram_model="ram_medium")
+            config = UserConfig(ram_enabled=True, ram_model="ram_large")
             db.session.add(config)
             db.session.commit()
         
         # Determine which models will be used
         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-        ram_model = config.ram_model if config and config.ram_model else "ram_medium"
+        ram_model = config.ram_model if config and config.ram_model else "ram_large"
         ram_enabled = config.ram_enabled if config else True
         
         # Log the operation

@@ -16,6 +16,7 @@ scikit-learn
 transformers>=4.38.0  # For HuggingFace models
 huggingface_hub>=0.20.3  # For downloading RAM models
 timm>=0.9.12  # Required for RAM models
+git+https://github.com/xinyu1205/recognize-anything.git  # For RAM models
 gunicorn
 gevent
 psutil>=5.9.0  # For memory monitoring
