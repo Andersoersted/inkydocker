@@ -14,6 +14,9 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import torch
+from transformers import logging
+# Set transformers logging to ERROR only
+logging.set_verbosity_error()
 
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
@@ -461,7 +464,7 @@ def generate_tags_and_description(embedding, model_name):
 @celery.task(bind=True, time_limit=600, soft_time_limit=500, max_retries=3)
 def process_image_tagging(self, filename):
     """
-    Process an image: compute its embedding, generate tags and a description,
+    Process an image: generate tags and a description using zero-shot models,
     and update its record in the database.
     """
     from models import ImageDB, db, UserConfig
@@ -472,7 +475,7 @@ def process_image_tagging(self, filename):
     config = UserConfig.query.first()
     if not config:
         from models import db
-        config = UserConfig(ram_enabled=True, ram_model="ram_large")
+        config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
         db.session.add(config)
         db.session.commit()
     
@@ -483,7 +486,7 @@ def process_image_tagging(self, filename):
         return {"status": "error", "message": "Image file not found", "filename": filename}
     
     try:
-        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use RAM)
+        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use zero-shot)
         is_screenshot = filename.startswith("screenshot_")
         
         if is_screenshot:
@@ -500,32 +503,38 @@ def process_image_tagging(self, filename):
             tags, description = generate_tags_and_description(embedding, model_name)
             model_used = f"CLIP: {model_name}"
         else:
-            # For regular images, use RAM if enabled
-            if config.ram_enabled:
+            # For regular images, use zero-shot if enabled
+            if hasattr(config, 'zero_shot_enabled') and config.zero_shot_enabled:
                 try:
-                    # Import RAM tagger
-                    from utils.ram_tagger import generate_tags_with_ram
+                    # Import zero-shot tagger
+                    from utils.zero_shot_tagger import generate_tags_with_zero_shot
                     
-                    # Get RAM model name from config
-                    ram_model = config.ram_model if config and config.ram_model else "ram_large"
-                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                    # Get model size from config
+                    model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
+                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with zero-shot model: {model_size}")
                     
-                    # Generate tags and description using RAM
-                    tags, description = generate_tags_with_ram(
+                    # Get max tags from config
+                    max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
+                    
+                    # Get min confidence from config
+                    min_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
+                    
+                    # Generate tags and description using zero-shot
+                    tags, description = generate_tags_with_zero_shot(
                         image_path,
-                        model_name=ram_model,
-                        max_tags=config.min_tags,
-                        min_confidence=config.ram_min_confidence
+                        model_size=model_size,
+                        max_tags=max_tags,
+                        min_confidence=min_confidence
                     )
                     
                     # Check if tags were generated successfully
                     if tags and len(tags) > 0:
-                        model_used = f"RAM: {ram_model}"
+                        model_used = f"Zero-Shot: {model_size}"
                     else:
-                        # If RAM failed to generate tags, fall back to CLIP
-                        current_app.logger.warning(f"RAM failed to generate tags for {filename}, falling back to CLIP")
+                        # If zero-shot failed to generate tags, fall back to CLIP
+                        current_app.logger.warning(f"Zero-shot failed to generate tags for {filename}, falling back to CLIP")
                         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                        current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM fallback)")
+                        current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot fallback)")
                         
                         # Get image embedding using the selected CLIP model
                         embedding, model_name = get_image_embedding(image_path)
@@ -536,10 +545,10 @@ def process_image_tagging(self, filename):
                         tags, description = generate_tags_and_description(embedding, model_name)
                         model_used = f"CLIP: {model_name}"
                 except Exception as e:
-                    # If RAM fails with an exception, fall back to CLIP
-                    current_app.logger.error(f"Error using RAM for {filename}: {e}, falling back to CLIP")
+                    # If zero-shot fails with an exception, fall back to CLIP
+                    current_app.logger.error(f"Error using zero-shot for {filename}: {e}, falling back to CLIP")
                     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM error fallback)")
+                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot error fallback)")
                     
                     # Get image embedding using the selected CLIP model
                     embedding, model_name = get_image_embedding(image_path)
@@ -550,9 +559,9 @@ def process_image_tagging(self, filename):
                     tags, description = generate_tags_and_description(embedding, model_name)
                     model_used = f"CLIP: {model_name}"
             else:
-                # If RAM is disabled, fall back to CLIP
+                # If zero-shot is disabled, fall back to CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM disabled)")
+                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot disabled)")
                 
                 # Get image embedding using the selected CLIP model
                 embedding, model_name = get_image_embedding(image_path)
@@ -587,7 +596,7 @@ def process_image_tagging(self, filename):
 
 def reembed_image(filename):
     """
-    Recompute the embedding, tags, and description for an image and update its record.
+    Recompute the tags and description for an image and update its record.
     """
     from models import ImageDB, db, UserConfig
     from flask import current_app
@@ -596,7 +605,7 @@ def reembed_image(filename):
     config = UserConfig.query.first()
     if not config:
         from models import db
-        config = UserConfig(ram_enabled=True, ram_model="ram_large")
+        config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
         db.session.add(config)
         db.session.commit()
     
@@ -607,7 +616,7 @@ def reembed_image(filename):
         return {"status": "error", "message": "Image file not found", "filename": filename}
     
     try:
-        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use RAM)
+        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use zero-shot)
         is_screenshot = filename.startswith("screenshot_")
         
         if is_screenshot:
@@ -624,32 +633,38 @@ def reembed_image(filename):
             tags, description = generate_tags_and_description(embedding, model_name)
             model_used = f"CLIP: {model_name}"
         else:
-            # For regular images, use RAM if enabled
-            if config.ram_enabled:
+            # For regular images, use zero-shot if enabled
+            if hasattr(config, 'zero_shot_enabled') and config.zero_shot_enabled:
                 try:
-                    # Import RAM tagger
-                    from utils.ram_tagger import generate_tags_with_ram
+                    # Import zero-shot tagger
+                    from utils.zero_shot_tagger import generate_tags_with_zero_shot
                     
-                    # Get RAM model name from config
-                    ram_model = config.ram_model if config and config.ram_model else "ram_large"
-                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with RAM model: {ram_model}")
+                    # Get model size from config
+                    model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
+                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with zero-shot model: {model_size}")
                     
-                    # Generate tags and description using RAM
-                    tags, description = generate_tags_with_ram(
+                    # Get max tags from config
+                    max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
+                    
+                    # Get min confidence from config
+                    min_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
+                    
+                    # Generate tags and description using zero-shot
+                    tags, description = generate_tags_with_zero_shot(
                         image_path,
-                        model_name=ram_model,
-                        max_tags=config.min_tags,
-                        min_confidence=config.ram_min_confidence
+                        model_size=model_size,
+                        max_tags=max_tags,
+                        min_confidence=min_confidence
                     )
                     
                     # Check if tags were generated successfully
                     if tags and len(tags) > 0:
-                        model_used = f"RAM: {ram_model}"
+                        model_used = f"Zero-Shot: {model_size}"
                     else:
-                        # If RAM failed to generate tags, fall back to CLIP
-                        current_app.logger.warning(f"RAM failed to generate tags for {filename}, falling back to CLIP")
+                        # If zero-shot failed to generate tags, fall back to CLIP
+                        current_app.logger.warning(f"Zero-shot failed to generate tags for {filename}, falling back to CLIP")
                         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                        current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM fallback)")
+                        current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot fallback)")
                         
                         # Get image embedding using the selected CLIP model
                         embedding, model_name = get_image_embedding(image_path)
@@ -660,10 +675,10 @@ def reembed_image(filename):
                         tags, description = generate_tags_and_description(embedding, model_name)
                         model_used = f"CLIP: {model_name}"
                 except Exception as e:
-                    # If RAM fails with an exception, fall back to CLIP
-                    current_app.logger.error(f"Error using RAM for {filename}: {e}, falling back to CLIP")
+                    # If zero-shot fails with an exception, fall back to CLIP
+                    current_app.logger.error(f"Error using zero-shot for {filename}: {e}, falling back to CLIP")
                     clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM error fallback)")
+                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot error fallback)")
                     
                     # Get image embedding using the selected CLIP model
                     embedding, model_name = get_image_embedding(image_path)
@@ -674,9 +689,9 @@ def reembed_image(filename):
                     tags, description = generate_tags_and_description(embedding, model_name)
                     model_used = f"CLIP: {model_name}"
             else:
-                # If RAM is disabled, fall back to CLIP
+                # If zero-shot is disabled, fall back to CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (RAM disabled)")
+                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot disabled)")
                 
                 # Get image embedding using the selected CLIP model
                 embedding, model_name = get_image_embedding(image_path)
@@ -747,18 +762,18 @@ def reembed_all_images(self):
         config = UserConfig.query.first()
         if not config:
             from models import db
-            config = UserConfig(ram_enabled=True, ram_model="ram_large")
+            config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
             db.session.add(config)
             db.session.commit()
         
         # Determine which models will be used
         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-        ram_model = config.ram_model if config and config.ram_model else "ram_large"
-        ram_enabled = config.ram_enabled if config else True
+        zero_shot_model = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
+        zero_shot_enabled = config.zero_shot_enabled if hasattr(config, 'zero_shot_enabled') else True
         
         # Log the operation
-        if ram_enabled:
-            current_app.logger.info(f"Rerunning tagging on all images with RAM model: {ram_model} (screenshots will use CLIP: {clip_model_name})")
+        if zero_shot_enabled:
+            current_app.logger.info(f"Rerunning tagging on all images with Zero-Shot model: {zero_shot_model} (screenshots will use CLIP: {clip_model_name})")
         else:
             current_app.logger.info(f"Rerunning tagging on all images with CLIP model: {clip_model_name}")
         

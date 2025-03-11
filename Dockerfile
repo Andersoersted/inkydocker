@@ -2,7 +2,7 @@
 
 # Build arguments
 ARG USE_GPU=false
-ARG PYTHON_VERSION=3.8
+ARG PYTHON_VERSION=3.13.2
 
 # ===== BUILDER STAGE =====
 FROM python:${PYTHON_VERSION}-slim AS builder
@@ -54,15 +54,14 @@ gunicorn\n\
 gevent\n\
 psutil>=5.9.0\n\
 pytz>=2024.1\n\
-Pillow==10.1.0\n\
-pillow-heif==0.13.0" > base_requirements.txt
+Pillow>=11.0.0\n\
+pillow-heif>=0.13.0" > base_requirements.txt
 
 # Create model-specific requirements file
-RUN echo "scikit-learn\n\
-transformers==4.30.2\n\
-huggingface_hub==0.16.4\n\
-timm==0.9.2\n\
-open_clip_torch==2.20.0" > model_requirements.txt
+RUN echo "scikit-learn>=1.4.1.post1\n\
+open_clip_torch>=2.20.0\n\
+torch>=2.2.1\n\
+torchvision>=0.17.1" > model_requirements.txt
 
 # Install base requirements first (these change less frequently)
 RUN pip install --upgrade pip && pip install --no-cache-dir -r base_requirements.txt
@@ -78,39 +77,33 @@ RUN if [ "$USE_GPU" = "false" ]; then \
 
 # Install PyTorch and model-specific dependencies separately for better caching
 RUN if [ "$USE_GPU" = "false" ]; then \
-    # Install CPU-only PyTorch first (specific version for compatibility)
-    pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu && \
+    # Install CPU-only PyTorch first
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     # Then install the model-specific requirements
     pip install --no-cache-dir -r model_requirements.txt; \
   else \
     # Install with default PyTorch (with CUDA)
-    pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 && \
+    pip install --no-cache-dir torch torchvision torchaudio && \
     pip install --no-cache-dir -r model_requirements.txt; \
   fi
 
-# Pre-download CLIP model in a separate layer for better caching
-RUN mkdir -p /build/model_cache && \
-    python -c "import open_clip; \
-    print('Downloading ViT-B-32 model...'); \
-    open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai', jit=False, force_quick_gelu=True); \
-    print('CLIP model downloaded successfully.')"
-# Install RAM++ model and dependencies using the recommended approach
-RUN pip install git+https://github.com/xinyu1205/recognize-anything.git
+# Create model cache directory
+RUN mkdir -p /build/model_cache
 
-# Create directory for RAM++ model files
-RUN mkdir -p /app/data/ram_models
+# Pre-download OpenCLIP models in a separate layer for better caching
+RUN python -c "import open_clip; \
+    print('Downloading OpenCLIP ViT-B-32 model...'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai'); \
+    print('OpenCLIP ViT-B-32 model downloaded successfully.')"
 
-# Copy the download script
-COPY download_ram_plus.py /build/download_ram_plus.py
-RUN chmod +x /build/download_ram_plus.py
+# Pre-download large OpenCLIP model
+RUN python -c "import open_clip; \
+    print('Downloading OpenCLIP ViT-L-14 model...'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai'); \
+    print('OpenCLIP ViT-L-14 model downloaded successfully.')" || echo "Warning: Large model download failed, but continuing build"
 
-# Run the download script with CPU-only mode
-ENV CUDA_VISIBLE_DEVICES=""
-ENV FORCE_CPU=1
-RUN python /build/download_ram_plus.py || echo "Warning: Model download failed, but continuing build"
-
-# Verify that the RAM++ model files were downloaded correctly
-RUN ls -la /app/data/ram_models
+# Create directory for model files
+RUN mkdir -p /app/data/models
 
 # ===== FINAL STAGE =====
 FROM python:${PYTHON_VERSION}-slim
@@ -143,12 +136,12 @@ RUN mkdir -p /data /app/data/model_cache /app/data/ram_models
 WORKDIR /app
 
 # Copy Python packages from builder stage
-COPY --from=builder /usr/local/lib/python3.8/site-packages /usr/local/lib/python3.8/site-packages
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy the model caches from the builder stage
 COPY --from=builder /app/data/model_cache /app/data/model_cache
-COPY --from=builder /app/data/ram_models /app/data/ram_models
+COPY --from=builder /app/data/models /app/data/models
 
 # Copy the modified tasks.py from builder stage
 COPY --from=builder /build/tasks.py /app/tasks.py

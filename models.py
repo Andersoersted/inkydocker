@@ -100,10 +100,10 @@ class UserConfig(db.Model):
     custom_model_enabled = db.Column(db.Boolean, default=False)  # Whether to use the custom model
     similarity_threshold = db.Column(db.String(20), default="medium")  # Similarity threshold level (very_high, high, medium, low, very_low)
     
-    # RAM model settings (for image tagging)
-    ram_enabled = db.Column(db.Boolean, default=True)  # Whether to use RAM for image tagging (default to True)
-    ram_model = db.Column(db.String(64), default="ram_medium")  # Selected RAM model (ram_small, ram_medium, ram_large)
-    ram_min_confidence = db.Column(db.Float, default=0.3)  # Minimum confidence threshold for RAM tags
+    # Zero-shot model settings (for image tagging)
+    zero_shot_enabled = db.Column(db.Boolean, default=True)  # Whether to use zero-shot for image tagging (default to True)
+    zero_shot_model = db.Column(db.String(64), default="base")  # Selected zero-shot model (base or large)
+    zero_shot_min_confidence = db.Column(db.Float, default=0.3)  # Minimum confidence threshold for zero-shot tags
 
     def __repr__(self):
         return f"<UserConfig {self.id} - Location: {self.location}>"
