@@ -2,6 +2,7 @@ import os
 import sys
 import warnings
 import torch
+import multiprocessing
 from PIL import Image
 from flask import current_app
 
@@ -10,7 +11,19 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Increase recursion limit for model loading
-sys.setrecursionlimit(15000)
+# Set a higher limit to ensure models can be loaded successfully
+sys.setrecursionlimit(20000)
+print(f"Recursion limit set to {sys.getrecursionlimit()}")
+
+# Initialize CUDA in the main process only
+# This is crucial for Docker containers with GPU support
+if torch.cuda.is_available():
+    # Initialize CUDA in the main process
+    torch.cuda.init()
+    current_app.logger.info(f"CUDA initialized with {torch.cuda.device_count()} devices")
+    current_app.logger.info(f"CUDA device: {torch.cuda.get_device_name(0)}")
+else:
+    current_app.logger.warning("CUDA not available, using CPU")
 
 # Define model configurations
 MODELS = {
@@ -64,18 +77,26 @@ def get_clip_model(model_size=DEFAULT_MODEL):
         try:
             import open_clip
             
-            # Determine device (use CUDA if available)
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            current_app.logger.info(f"Using device: {device} for CLIP model")
+            # Determine device
+            # Always use CPU for model loading to avoid CUDA initialization issues
+            # The model will be moved to GPU after loading if available
+            device = "cpu"
+            current_app.logger.info(f"Loading model on CPU first")
             
-            # Load the model
+            # Load the model on CPU
             model, _, preprocess = open_clip.create_model_and_transforms(
                 model_name,
                 pretrained=pretrained,
                 device=device
             )
             
-            current_app.logger.info(f"Successfully loaded OpenCLIP model")
+            # Move model to GPU if available and we're in the main process
+            if torch.cuda.is_available() and multiprocessing.current_process().name == 'MainProcess':
+                current_app.logger.info(f"Moving model to CUDA device")
+                model = model.to("cuda")
+                device = "cuda"
+            
+            current_app.logger.info(f"Successfully loaded OpenCLIP model on {device}")
             
             # Cache the model
             clip_models[model_size] = (model, preprocess)
@@ -88,6 +109,10 @@ def get_clip_model(model_size=DEFAULT_MODEL):
             
     except Exception as e:
         current_app.logger.error(f"Error loading OpenCLIP model {model_name}: {e}")
+        # Try to load fallback model if this is not already the default model
+        if model_size != DEFAULT_MODEL:
+            current_app.logger.warning(f"Attempting to load fallback model: {DEFAULT_MODEL}")
+            return get_clip_model(DEFAULT_MODEL)
         return None, None
 
 def generate_tags_with_zero_shot(image_path, model_size=DEFAULT_MODEL, max_tags=10, min_confidence=0.3, candidate_labels=None):
@@ -109,13 +134,13 @@ def generate_tags_with_zero_shot(image_path, model_size=DEFAULT_MODEL, max_tags=
         # Default candidate labels if none provided
         if candidate_labels is None:
             candidate_labels = [
-                "person", "people", "animal", "vehicle", "building", "furniture", 
+                "person", "people", "animal", "vehicle", "building", "furniture",
                 "electronics", "food", "plant", "landscape", "indoor", "outdoor",
                 "day", "night", "water", "sky", "mountain", "beach", "city", "rural",
                 "portrait", "group photo", "selfie", "action", "event", "document",
                 # Add more specific object categories
-                "man", "woman", "child", "baby", "dog", "cat", "bird", "car", "truck", 
-                "bicycle", "motorcycle", "boat", "airplane", "train", "bus", "chair", "table", 
+                "man", "woman", "child", "baby", "dog", "cat", "bird", "car", "truck",
+                "bicycle", "motorcycle", "boat", "airplane", "train", "bus", "chair", "table",
                 "sofa", "bed", "tv", "laptop", "phone", "book", "bottle", "cup", "plate", "bowl",
                 "fruit", "vegetable", "tree", "flower", "plant", "mountain", "building", "house",
                 "road", "sidewalk", "river", "lake", "ocean", "beach", "cloud", "sun", "moon"
@@ -132,12 +157,20 @@ def generate_tags_with_zero_shot(image_path, model_size=DEFAULT_MODEL, max_tags=
         # Open the image
         image = Image.open(image_path)
         
-        # Preprocess the image
-        image_input = preprocess(image).unsqueeze(0).to(model.device)
+        # Determine the device to use
+        device = model.device
+        current_app.logger.info(f"Using device {device} for inference")
+        
+        # Preprocess the image and ensure it's on the right device
+        image_input = preprocess(image).unsqueeze(0)
         
         # Generate text features for all candidate labels
         import open_clip
-        text_tokens = open_clip.tokenize(candidate_labels).to(model.device)
+        text_tokens = open_clip.tokenize(candidate_labels)
+        
+        # Make sure everything is on the same device
+        image_input = image_input.to(device)
+        text_tokens = text_tokens.to(device)
         
         # Get image and text features
         with torch.no_grad():
@@ -156,7 +189,7 @@ def generate_tags_with_zero_shot(image_path, model_size=DEFAULT_MODEL, max_tags=
             
         # Filter tags by confidence threshold
         tags = []
-        for value, idx in zip(values, indices):
+        for value, idx in zip(values.cpu().numpy(), indices.cpu().numpy()):
             if value >= min_confidence and len(tags) < max_tags:
                 tag = candidate_labels[idx]
                 if tag not in tags:
@@ -171,6 +204,13 @@ def generate_tags_with_zero_shot(image_path, model_size=DEFAULT_MODEL, max_tags=
         
     except Exception as e:
         current_app.logger.error(f"Error generating tags with OpenCLIP model: {e}")
+        # Try with fallback model if this is not already the default model
+        if model_size != DEFAULT_MODEL:
+            current_app.logger.warning(f"Attempting to generate tags with fallback model: {DEFAULT_MODEL}")
+            try:
+                return generate_tags_with_zero_shot(image_path, DEFAULT_MODEL, max_tags, min_confidence, candidate_labels)
+            except Exception as fallback_error:
+                current_app.logger.error(f"Error with fallback model: {fallback_error}")
         return [], "Error generating tags"
 
 def list_available_models():

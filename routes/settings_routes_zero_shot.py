@@ -48,7 +48,7 @@ def download_zero_shot_model_thread(model_name, task_id, app):
             old_recursion_limit = sys.getrecursionlimit()
             try:
                 # Increase recursion limit temporarily to handle deep call stacks
-                recursion_limit = 15000
+                recursion_limit = 20000
                 sys.setrecursionlimit(recursion_limit)
                 logger.info(f"Temporarily increased recursion limit to {recursion_limit} for loading OpenCLIP model")
                 

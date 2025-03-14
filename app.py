@@ -1,11 +1,5 @@
-# Apply gevent monkey patching before any other imports
-# This fixes the warning about monkey-patching ssl after ssl has already been imported
-try:
-    from gevent import monkey
-    monkey.patch_all()
-except ImportError:
-    # Gevent not installed, ignore
-    pass
+# Removed gevent monkey patching to avoid threading and SSL issues
+# This resolves the warnings and errors related to monkey patching
 
 # Suppress warnings
 import warnings

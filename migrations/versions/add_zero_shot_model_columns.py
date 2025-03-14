@@ -1,7 +1,7 @@
 """add zero shot model columns
 
 Revision ID: add_zero_shot_model_columns
-Revises: add_similarity_threshold_column
+Revises: add_ram_model_columns
 Create Date: 2025-03-11 20:30:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_zero_shot_model_columns'
-down_revision = 'add_similarity_threshold_column'
+down_revision = 'add_ram_model_columns'
 branch_labels = None
 depends_on = None
 

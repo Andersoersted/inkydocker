@@ -40,13 +40,9 @@
           </ul>
           
           <div class="tab-content" id="clipSettingsTabContent">
-            <!-- Hidden inputs for RAM model settings -->
-            <input type="hidden" id="ram_model" value="ram_large">
-            <input type="hidden" id="ram_min_confidence"
-                   value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
+            <!-- Hidden inputs for tagging settings -->
             <input type="hidden" id="confidence_value"
-                   value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}">
-            <input type="hidden" id="enable_ram" value="true">
+                   value="0.3">
             
             <!-- Model Download Progress -->
             <div id="modelDownloadContainer" class="mb-4" style="display: none;">
@@ -60,7 +56,7 @@
             </div>
             
             <!-- Tagging Settings Tab -->
-            <div class="tab-pane fade" id="tagging-settings" role="tabpanel" aria-labelledby="tagging-settings-tab">
+            <div class="tab-pane fade show active" id="tagging-settings" role="tabpanel" aria-labelledby="tagging-settings-tab">
               <div class="row">
                 <div class="col-md-6">
                   <div class="card mb-4">
@@ -87,18 +83,43 @@
                     <div class="card-body">
                       <h5 class="card-title">Tag Confidence Threshold</h5>
                       <div class="mb-3">
-                        <label for="ram_min_confidence" class="form-label">Minimum Confidence: <span id="confidence_value_global">{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}</span></label>
-                        <input type="range" class="form-range" id="ram_min_confidence_global" min="0.1" max="0.9" step="0.05"
-                               value="{{ config.ram_min_confidence if config and config.ram_min_confidence else '0.3' }}"
-                               oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('ram_min_confidence').value = this.value; document.getElementById('confidence_value').textContent = this.value;">
+                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">0.3</span></label>
+                        <input type="range" class="form-range" id="confidence_threshold" min="0.1" max="0.9" step="0.05"
+                               value="0.3"
+                               oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').textContent = this.value;">
                         <div class="form-text">Higher values mean fewer but more accurate tags.</div>
                       </div>
                       <div class="d-grid">
-                        <button type="button" class="btn btn-success" onclick="saveRAMSettings()">
+                        <button type="button" class="btn btn-success" onclick="saveConfidenceThreshold()">
                           <i class="bi bi-check-circle"></i> Save Setting
                         </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Model Selection Card -->
+              <div class="card mb-4">
+                <div class="card-body">
+                  <h5 class="card-title">Tagging Model Selection</h5>
+                  <div class="mb-3">
+                    <label for="zero_shot_model" class="form-label">Choose Model Size:</label>
+                    <select id="zero_shot_model" class="form-select form-select-lg">
+                      <option value="base" {% if config and config.zero_shot_model == 'base' %}selected{% endif %}>Base Model (Faster)</option>
+                      <option value="large" {% if config and config.zero_shot_model == 'large' %}selected{% endif %}>Large Model (More Accurate)</option>
+                    </select>
+                    <div class="form-text">
+                      <ul>
+                        <li><strong>Base Model:</strong> Faster processing, suitable for most systems</li>
+                        <li><strong>Large Model:</strong> More accurate tagging, requires more system resources</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="d-grid">
+                    <button type="button" class="btn btn-success" onclick="saveZeroShotModel()">
+                      <i class="bi bi-check-circle"></i> Save Model Setting
+                    </button>
                   </div>
                 </div>
               </div>
@@ -899,56 +920,102 @@
     resultDiv.style.display = 'block';
     contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Processing image...</p></div>';
     
-    fetch("{{ url_for('settings.test_tagging') }}", {
+    // Determine which endpoint to use based on the selected model
+    const zeroShotModel = document.getElementById('zero_shot_model');
+    const useZeroShot = zeroShotModel && zeroShotModel.value;
+    
+    // Use the zero-shot endpoint if a zero-shot model is selected
+    const endpoint = useZeroShot
+      ? "{{ url_for('zero_shot.test_zero_shot_tagging') }}"
+      : "{{ url_for('settings.test_tagging') }}";
+    
+    console.log(`Using endpoint: ${endpoint} with model: ${useZeroShot || 'CLIP'}`);
+    
+    fetch(endpoint, {
       method: 'POST',
       body: formData
     })
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.status === "success") {
-        let html = `
-          <div class="mb-3">
-            <strong>Model Used:</strong> ${data.model_used}
-          </div>
-          <div class="mb-3">
-            <strong>Generated Tags:</strong><br>
-            <ul class="list-group">
-        `;
-        
-        // Add tags with their similarity scores
-        data.tags_with_scores.forEach(function(tagInfo) {
-          const tag = tagInfo.tag;
-          const score = tagInfo.score;
-          // Color code based on similarity score
-          let badgeClass = "bg-danger";
-          if (score >= 0.5) {
-            badgeClass = "bg-success";
-          } else if (score >= 0.3) {
-            badgeClass = "bg-primary";
-          } else if (score >= 0.2) {
-            badgeClass = "bg-warning text-dark";
-          }
+        // Handle different response formats between the two endpoints
+        if (endpoint.includes('zero_shot')) {
+          // Zero-shot endpoint response format
+          let html = `
+            <div class="mb-3">
+              <strong>Model Used:</strong> ${data.model_used}
+            </div>
+            <div class="mb-3">
+              <strong>Generated Tags:</strong><br>
+              <ul class="list-group">
+          `;
           
-          html += `<li class="list-group-item d-flex justify-content-between align-items-center">
-            ${tag}
-            <span class="badge ${badgeClass} rounded-pill">${score.toFixed(3)}</span>
-          </li>`;
-        });
-        
-        html += `
-            </ul>
-          </div>
-          <div class="alert alert-info">
-            <small>
-              <strong>Tag Relevance Level:</strong> ${data.threshold_description}<br>
-              <strong>Similarity Threshold:</strong> ${data.threshold.toFixed(2)}<br>
-              <strong>Maximum Tags:</strong> ${data.max_tags}<br>
-              <span class="text-muted">Only tags with similarity score ≥ ${data.threshold} are included in the final result.</span>
-            </small>
-          </div>
-        `;
-        
-        contentDiv.innerHTML = html;
+          // Add tags (zero-shot doesn't include scores in the same way)
+          data.tags.forEach(function(tag) {
+            html += `<li class="list-group-item">
+              ${tag}
+            </li>`;
+          });
+          
+          html += `
+              </ul>
+            </div>
+            <div class="alert alert-info">
+              <small>
+                <strong>Description:</strong> ${data.description}<br>
+                <strong>Minimum Confidence:</strong> ${data.min_confidence.toFixed(2)}<br>
+                <strong>Maximum Tags:</strong> ${data.max_tags}
+              </small>
+            </div>
+          `;
+          
+          contentDiv.innerHTML = html;
+        } else {
+          // CLIP endpoint response format
+          let html = `
+            <div class="mb-3">
+              <strong>Model Used:</strong> ${data.model_used}
+            </div>
+            <div class="mb-3">
+              <strong>Generated Tags:</strong><br>
+              <ul class="list-group">
+          `;
+          
+          // Add tags with their similarity scores
+          data.tags_with_scores.forEach(function(tagInfo) {
+            const tag = tagInfo.tag;
+            const score = tagInfo.score;
+            // Color code based on similarity score
+            let badgeClass = "bg-danger";
+            if (score >= 0.5) {
+              badgeClass = "bg-success";
+            } else if (score >= 0.3) {
+              badgeClass = "bg-primary";
+            } else if (score >= 0.2) {
+              badgeClass = "bg-warning text-dark";
+            }
+            
+            html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+              ${tag}
+              <span class="badge ${badgeClass} rounded-pill">${score.toFixed(3)}</span>
+            </li>`;
+          });
+          
+          html += `
+              </ul>
+            </div>
+            <div class="alert alert-info">
+              <small>
+                <strong>Tag Relevance Level:</strong> ${data.threshold_description}<br>
+                <strong>Similarity Threshold:</strong> ${data.threshold.toFixed(2)}<br>
+                <strong>Maximum Tags:</strong> ${data.max_tags}<br>
+                <span class="text-muted">Only tags with similarity score ≥ ${data.threshold} are included in the final result.</span>
+              </small>
+            </div>
+          `;
+          
+          contentDiv.innerHTML = html;
+        }
       } else {
         contentDiv.innerHTML = `<div class="alert alert-danger">${data.message || "Error processing image"}</div>`;
       }
@@ -1098,27 +1165,23 @@
       });
   }
   
-  function saveRAMSettings() {
-    var enableRAM = true; // Always enabled
-    var ramModel = "ram_large"; // Always use the large model
-    var ramMinConfidence;
+  function saveConfidenceThreshold() {
+    var confidenceThreshold;
     
-    // Get confidence value from the global slider if available, otherwise from the hidden field
-    if (document.getElementById('ram_min_confidence_global')) {
-      ramMinConfidence = parseFloat(document.getElementById('ram_min_confidence_global').value);
+    // Get confidence value from the global slider
+    if (document.getElementById('confidence_threshold')) {
+      confidenceThreshold = parseFloat(document.getElementById('confidence_threshold').value);
       // Update the hidden field to keep them in sync
-      document.getElementById('ram_min_confidence').value = ramMinConfidence;
+      document.getElementById('confidence_value').textContent = confidenceThreshold;
     } else {
-      ramMinConfidence = parseFloat(document.getElementById('ram_min_confidence').value);
+      confidenceThreshold = parseFloat(document.getElementById('confidence_value').textContent);
     }
     
     var payload = {
-      ram_enabled: enableRAM,
-      ram_model: ramModel,
-      ram_min_confidence: ramMinConfidence
+      zero_shot_min_confidence: confidenceThreshold
     };
     
-    fetch("{{ url_for('settings.update_ram_settings') }}", {
+    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1126,55 +1189,47 @@
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.status === "success") {
-        showOverlayMessage("RAM model settings updated successfully");
+        showOverlayMessage("Confidence threshold updated successfully");
       } else {
-        showOverlayMessage("Error updating RAM settings: " + data.message);
+        showOverlayMessage("Error updating confidence threshold: " + data.message);
       }
     })
     .catch(function(error) {
       console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating RAM settings.");
+      showOverlayMessage("An error occurred while updating confidence threshold.");
     });
   }
   
-  function downloadRAMModel() {
-    var ramModel = document.getElementById('ram_model').value;
+  function saveZeroShotModel() {
+    var modelSize = document.getElementById('zero_shot_model').value;
     
-    // Show the download progress container
-    var progressContainer = document.getElementById('modelDownloadContainer');
-    var progressBar = document.getElementById('modelDownloadProgress');
-    var modelNameSpan = document.getElementById('modelDownloadName');
+    var payload = {
+      zero_shot_model: modelSize
+    };
     
-    progressContainer.style.display = 'block';
-    progressBar.style.width = '0%';
-    progressBar.textContent = '0%';
-    modelNameSpan.textContent = ramModel;
+    showOverlayMessage("Updating model selection...", 1500);
     
-    // Start the download
-    fetch("{{ url_for('settings.download_ram_model') }}", {
+    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_name: ramModel })
+      body: JSON.stringify(payload)
     })
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.status === "success") {
-        // Start polling for progress
-        var taskId = data.task_id;
-        var progressInterval = setInterval(function() {
-          checkDownloadProgress(taskId, progressBar, progressInterval);
-        }, 1000);
+        var modelName = modelSize === "base" ? "Base Model (Faster)" : "Large Model (More Accurate)";
+        showOverlayMessage("Model selection updated successfully to " + modelName);
       } else {
-        progressContainer.style.display = 'none';
-        showOverlayMessage("Error starting download: " + data.message);
+        showOverlayMessage("Error updating model selection: " + data.message);
       }
     })
     .catch(function(error) {
       console.error("Error:", error);
-      progressContainer.style.display = 'none';
-      showOverlayMessage("An error occurred while starting the download.");
+      showOverlayMessage("An error occurred while updating model selection.");
     });
   }
+  
+  // RAM model download function has been removed
   
   // Function to filter models in the available models list
   function filterModels() {
@@ -1393,7 +1448,7 @@
   
   function rerunAllTagging() {
     showConfirmOverlay(
-      "<strong>Warning:</strong> This will rerun tagging on all images using the selected RAM model and will <span style='color: red;'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",
+      "<strong>Warning:</strong> This will rerun tagging on all images and will <span style='color: red;'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",
       function() {
         fetch("{{ url_for('settings.rerun_all_tagging') }}", {
           method: 'POST'

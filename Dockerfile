@@ -91,16 +91,22 @@ RUN if [ "$USE_GPU" = "false" ]; then \
 RUN mkdir -p /build/model_cache
 
 # Pre-download OpenCLIP models in a separate layer for better caching
-RUN python -c "import open_clip; \
+# Set higher recursion limit to avoid "maximum recursion depth exceeded" errors
+RUN python -c "import sys; import open_clip; \
+    print('Setting recursion limit to 15000...'); \
+    sys.setrecursionlimit(15000); \
     print('Downloading OpenCLIP ViT-B-32 model...'); \
     model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai'); \
     print('OpenCLIP ViT-B-32 model downloaded successfully.')"
 
-# Pre-download large OpenCLIP model
-RUN python -c "import open_clip; \
+# Pre-download large OpenCLIP model with proper recursion limit
+# Remove the fallback to ensure the model is actually downloaded
+RUN python -c "import sys; import open_clip; \
+    print('Setting recursion limit to 15000...'); \
+    sys.setrecursionlimit(15000); \
     print('Downloading OpenCLIP ViT-L-14 model...'); \
     model, _, preprocess = open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai'); \
-    print('OpenCLIP ViT-L-14 model downloaded successfully.')" || echo "Warning: Large model download failed, but continuing build"
+    print('OpenCLIP ViT-L-14 model downloaded successfully.')"
 
 # Create directory for model files
 RUN mkdir -p /app/data/models
@@ -122,6 +128,7 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     tzdata \
     redis-server \
+    bc \
     # Runtime libraries needed for Python packages
     libjpeg62-turbo \
     libpng16-16 \

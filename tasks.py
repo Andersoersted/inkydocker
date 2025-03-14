@@ -14,9 +14,9 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import torch
-from transformers import logging
-# Set transformers logging to ERROR only
-logging.set_verbosity_error()
+# Configure logging
+import logging
+logging.basicConfig(level=logging.ERROR)
 
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
@@ -276,7 +276,8 @@ def get_clip_model():
         # Set recursion limit for model loading
         import sys
         old_recursion_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(15000)  # Increase recursion limit temporarily
+        sys.setrecursionlimit(20000)  # Increase recursion limit temporarily
+        current_app.logger.info(f"Temporarily increased recursion limit to 20000 for loading model {model_key}")
         
         try:
             # Determine cache directory
