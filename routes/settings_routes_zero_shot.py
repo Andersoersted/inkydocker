@@ -357,7 +357,12 @@ def test_zero_shot_tagging():
         logger.info(f"Test zero-shot tagging completed with model {model_size}: generated {len(all_tags)} tags with confidence scores")
         
         # Build the URL for the uploaded image
-        image_url = url_for('static', filename=f"uploads/{filename}", _external=True)
+        try:
+            image_url = url_for('static', filename=f"uploads/{filename}", _external=True)
+        except Exception as url_error:
+            logger.warning(f"Error generating URL for image: {str(url_error)}")
+            # Fallback to a relative path if url_for fails
+            image_url = f"/static/uploads/{filename}"
         
         return jsonify({
             "status": "success",

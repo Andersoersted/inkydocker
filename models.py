@@ -103,7 +103,7 @@ class UserConfig(db.Model):
     # Zero-shot model settings (for image tagging)
     zero_shot_enabled = db.Column(db.Boolean, default=True)  # Whether to use zero-shot for image tagging (default to True)
     zero_shot_model = db.Column(db.String(64), default="base")  # Selected zero-shot model (base or large)
-    zero_shot_min_confidence = db.Column(db.Float, default=0.3)  # Minimum confidence threshold for zero-shot tags
+    zero_shot_min_confidence = db.Column(db.Float, default=0.1)  # Minimum confidence threshold for zero-shot tags
 
     def __repr__(self):
         return f"<UserConfig {self.id} - Location: {self.location}>"

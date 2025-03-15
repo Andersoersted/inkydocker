@@ -93,28 +93,28 @@ RUN mkdir -p /build/model_cache
 # Pre-download OpenCLIP models in a separate layer for better caching
 # Set higher recursion limit to avoid "maximum recursion depth exceeded" errors
 RUN python -c "import sys; import open_clip; \
-    print('Setting recursion limit to 15000...'); \
-    sys.setrecursionlimit(15000); \
+    print('Setting recursion limit to 20000...'); \
+    sys.setrecursionlimit(20000); \
     print('Downloading OpenCLIP ViT-B-32 model (small)...'); \
-    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion400m_e32'); \
     print('OpenCLIP ViT-B-32 model downloaded successfully.')"
 
 # Pre-download medium OpenCLIP model
 RUN python -c "import sys; import open_clip; \
-    print('Setting recursion limit to 15000...'); \
-    sys.setrecursionlimit(15000); \
-    print('Downloading OpenCLIP ViT-B-16 model (medium)...'); \
-    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai'); \
-    print('OpenCLIP ViT-B-16 model downloaded successfully.')"
+    print('Setting recursion limit to 20000...'); \
+    sys.setrecursionlimit(20000); \
+    print('Downloading OpenCLIP ViT-L-14 model (medium)...'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai'); \
+    print('OpenCLIP ViT-L-14 model downloaded successfully.')"
 
 # Pre-download large OpenCLIP model with proper recursion limit
 # Remove the fallback to ensure the model is actually downloaded
 RUN python -c "import sys; import open_clip; \
-    print('Setting recursion limit to 15000...'); \
-    sys.setrecursionlimit(15000); \
-    print('Downloading OpenCLIP ViT-L-14 model (large)...'); \
-    model, _, preprocess = open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai'); \
-    print('OpenCLIP ViT-L-14 model downloaded successfully.')"
+    print('Setting recursion limit to 20000...'); \
+    sys.setrecursionlimit(20000); \
+    print('Downloading OpenCLIP ViT-H-14 model (large)...'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k'); \
+    print('OpenCLIP ViT-H-14 model downloaded successfully.')"
 
 # Create directory for model files
 RUN mkdir -p /app/data/models

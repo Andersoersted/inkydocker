@@ -13,21 +13,21 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 sys.setrecursionlimit(20000)
 print(f"Recursion limit set to {sys.getrecursionlimit()}")
 
-# Define model configurations - simplified to just 3 models
+# Define model configurations - updated to use available pretrained models
 MODELS = {
     "small": {
         "model_name": "ViT-B-32",
-        "pretrained": "openai",
+        "pretrained": "laion400m_e32",
         "description": "Small model (fastest)"
     },
     "medium": {
-        "model_name": "ViT-B-16",
+        "model_name": "ViT-L-14",
         "pretrained": "openai",
         "description": "Medium model (balanced)"
     },
     "large": {
-        "model_name": "ViT-L-14",
-        "pretrained": "openai",
+        "model_name": "ViT-H-14",
+        "pretrained": "laion2b_s32b_b79k",
         "description": "Large model (most accurate)"
     }
 }

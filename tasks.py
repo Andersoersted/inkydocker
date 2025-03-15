@@ -285,8 +285,11 @@ def get_clip_model():
             models_folder = os.path.join(data_folder, "models")
             cache_dir = models_folder if os.path.exists(models_folder) else "/app/data/model_cache"
             
-            # Determine pretrained tag to use
-            pretrained_tag = 'openai'  # Default pretrained tag
+            # Determine pretrained tag to use based on model
+            if model_key == 'ViT-H-14':
+                pretrained_tag = 'laion2b_s32b_b79k'  # Use the correct tag for ViT-H-14
+            else:
+                pretrained_tag = 'openai'  # Default pretrained tag for other models
             
             # Simplified model loading with a single attempt
             current_app.logger.info(f"Loading model {model_key} with pretrained tag: {pretrained_tag}")
@@ -520,7 +523,8 @@ def process_image_tagging(self, filename):
                     min_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
                     
                     # Generate tags and description using zero-shot
-                    tags, description = generate_tags_with_zero_shot(
+                    # The function returns 3 values (tags, description, tags_with_scores) but we only need the first two
+                    tags, description, _ = generate_tags_with_zero_shot(
                         image_path,
                         model_size=model_size,
                         max_tags=max_tags,

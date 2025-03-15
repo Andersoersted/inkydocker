@@ -42,7 +42,7 @@
           <div class="tab-content" id="clipSettingsTabContent">
             <!-- Hidden inputs for tagging settings -->
             <input type="hidden" id="confidence_value"
-                   value="0.3">
+                   value="0.1">
             
             <!-- Model Download Progress -->
             <div id="modelDownloadContainer" class="mb-4" style="display: none;">
@@ -83,9 +83,9 @@
                     <div class="card-body">
                       <h5 class="card-title">Tag Confidence Threshold</h5>
                       <div class="mb-3">
-                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.3 }}</span></label>
+                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}</span></label>
                         <input type="range" class="form-range" id="confidence_threshold" min="0.1" max="0.9" step="0.05"
-                               value="{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.3 }}"
+                               value="{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}"
                                oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').value = this.value;">
                         <div class="form-text">Higher values mean fewer but more accurate tags.</div>
                       </div>
@@ -817,9 +817,9 @@
           `<strong>Current CLIP Model:</strong> ${data.model_name}<br>` +
           `<span class="text-muted">This is the model that will be used for image tagging.</span><br><br>` +
           `<strong>Model Details:</strong><br>` +
-          `• ViT-B-32: Fastest, less accurate<br>` +
-          `• ViT-B-16: Balanced performance<br>` +
-          `• ViT-L-14: Slowest, most accurate`
+          `• Small: ViT-B-32 (laion400m_e32) - Fastest, less accurate<br>` +
+          `• Medium: ViT-L-14 (openai) - Balanced performance<br>` +
+          `• Large: ViT-H-14 (laion2b_s32b_b79k) - Most accurate`
         );
       } else {
         showOverlayMessage("Error verifying CLIP model: " + data.message);
@@ -1246,8 +1246,8 @@
     // Map the zero-shot model size to the corresponding CLIP model
     var clipModelMap = {
       "small": "ViT-B-32",
-      "medium": "ViT-B-16",
-      "large": "ViT-L-14"
+      "medium": "ViT-L-14",
+      "large": "ViT-H-14"
     };
     
     // Add the CLIP model to the payload
