@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, url_for
 import logging
 import threading
 import time
@@ -287,12 +287,13 @@ def list_zero_shot_models():
 def test_zero_shot_tagging():
     """
     Endpoint to test zero-shot image tagging.
+    Shows all possible tags without filtering by confidence to help users set their confidence level.
     """
     try:
-        from utils.zero_shot_tagger import generate_tags_with_zero_shot
+        from utils.zero_shot_tagger import generate_tags_with_zero_shot, MODELS
         from models import UserConfig
         import os
-        import tempfile
+        import torch
         
         # Check if a file was uploaded
         if 'file' not in request.files:
@@ -315,44 +316,60 @@ def test_zero_shot_tagging():
                 "status": "error",
                 "message": "No configuration found"
             }), 404
-            
-        model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
-        max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
-        min_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
         
-        # Save the uploaded file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
-            file.save(temp.name)
-            temp_path = temp.name
+        # Check if a model override was provided in the form data
+        model_size = request.form.get("model_override")
+        if not model_size:
+            model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "small"
         
-        try:
-            # Generate tags using zero-shot
-            tags, description = generate_tags_with_zero_shot(
-                temp_path,
-                model_size=model_size,
-                max_tags=max_tags,
-                min_confidence=min_confidence
-            )
+        # Validate the model size
+        if model_size not in MODELS:
+            logger.warning(f"Invalid model size: {model_size}, using default")
+            model_size = "small"
             
-            # Log the test results
-            logger.info(f"Test zero-shot tagging completed with model {model_size}: generated {len(tags)} tags")
-            
-            # Clean up the temporary file
-            os.unlink(temp_path)
-            
-            return jsonify({
-                "status": "success",
-                "model_used": f"Zero-Shot: {model_size}",
-                "tags": tags,
-                "description": description,
-                "min_confidence": min_confidence,
-                "max_tags": max_tags
-            })
-            
-        except Exception as e:
-            # Clean up the temporary file in case of error
-            os.unlink(temp_path)
-            raise e
+        # Get max tags from config - but use a higher value for testing to show more options
+        max_tags = 20  # Show more tags in test mode
+        
+        # Save the uploaded file to a temporary location in static/uploads
+        upload_folder = os.path.join(current_app.root_path, "static", "uploads")
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+        filename = f"test_{int(time.time())}_{file.filename}"
+        file_path = os.path.join(upload_folder, filename)
+        file.save(file_path)
+        
+        # For testing, use a very low confidence to show all possible tags
+        min_confidence = 0.01  # Very low confidence to show all tags
+        
+        # Generate tags using zero-shot with low confidence to get all possible tags
+        all_tags, description, tags_with_scores = generate_tags_with_zero_shot(
+            file_path,
+            model_size=model_size,
+            max_tags=max_tags,
+            min_confidence=min_confidence
+        )
+        
+        # Get the actual confidence threshold from config for reference
+        actual_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
+        actual_max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
+        
+        # Log the test results
+        logger.info(f"Test zero-shot tagging completed with model {model_size}: generated {len(all_tags)} tags with confidence scores")
+        
+        # Build the URL for the uploaded image
+        image_url = url_for('static', filename=f"uploads/{filename}", _external=True)
+        
+        return jsonify({
+            "status": "success",
+            "model_used": f"Zero-Shot: {model_size}",
+            "tags": all_tags,
+            "tags_with_scores": tags_with_scores,
+            "description": description,
+            "min_confidence": actual_confidence,  # Return the actual confidence for reference
+            "max_tags": actual_max_tags,  # Return the actual max tags for reference
+            "uploaded_image": image_url,
+            "test_mode": True  # Indicate this is test mode with all tags shown
+        })
             
     except Exception as e:
         logger.error(f"Error in test_zero_shot_tagging: {str(e)}")

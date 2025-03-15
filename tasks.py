@@ -470,13 +470,12 @@ def process_image_tagging(self, filename):
     """
     from models import ImageDB, db, UserConfig
     from flask import current_app
-    import gc  # Garbage collection
     
     # Get user configuration
     config = UserConfig.query.first()
     if not config:
         from models import db
-        config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
+        config = UserConfig(zero_shot_enabled=True, zero_shot_model="small")
         db.session.add(config)
         db.session.commit()
     
@@ -511,7 +510,7 @@ def process_image_tagging(self, filename):
                     from utils.zero_shot_tagger import generate_tags_with_zero_shot
                     
                     # Get model size from config
-                    model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
+                    model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "small"
                     current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with zero-shot model: {model_size}")
                     
                     # Get max tags from config
@@ -528,28 +527,10 @@ def process_image_tagging(self, filename):
                         min_confidence=min_confidence
                     )
                     
-                    # Check if tags were generated successfully
-                    if tags and len(tags) > 0:
-                        model_used = f"Zero-Shot: {model_size}"
-                    else:
-                        # If zero-shot failed to generate tags, fall back to CLIP
-                        current_app.logger.warning(f"Zero-shot failed to generate tags for {filename}, falling back to CLIP")
-                        clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                        current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot fallback)")
-                        
-                        # Get image embedding using the selected CLIP model
-                        embedding, model_name = get_image_embedding(image_path)
-                        if embedding is None:
-                            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
-                        
-                        # Generate tags and description using CLIP
-                        tags, description = generate_tags_and_description(embedding, model_name)
-                        model_used = f"CLIP: {model_name}"
+                    model_used = f"Zero-Shot: {model_size}"
                 except Exception as e:
                     # If zero-shot fails with an exception, fall back to CLIP
                     current_app.logger.error(f"Error using zero-shot for {filename}: {e}, falling back to CLIP")
-                    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot error fallback)")
                     
                     # Get image embedding using the selected CLIP model
                     embedding, model_name = get_image_embedding(image_path)
@@ -558,11 +539,11 @@ def process_image_tagging(self, filename):
                     
                     # Generate tags and description using CLIP
                     tags, description = generate_tags_and_description(embedding, model_name)
-                    model_used = f"CLIP: {model_name}"
+                    model_used = f"CLIP: {model_name} (fallback)"
             else:
-                # If zero-shot is disabled, fall back to CLIP
+                # If zero-shot is disabled, use CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot disabled)")
+                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
                 
                 # Get image embedding using the selected CLIP model
                 embedding, model_name = get_image_embedding(image_path)
@@ -591,136 +572,16 @@ def process_image_tagging(self, filename):
             return {"status": "error", "message": "Image not found in database", "filename": filename}
     except Exception as e:
         current_app.logger.error(f"Error in process_image_tagging: {e}")
-        # Don't clear models on error to avoid reloading them
-        
         return {"status": "error", "message": str(e), "filename": filename}
 
 def reembed_image(filename):
     """
     Recompute the tags and description for an image and update its record.
+    Simply calls process_image_tagging to avoid code duplication.
     """
-    from models import ImageDB, db, UserConfig
-    from flask import current_app
-    
-    # Get user configuration
-    config = UserConfig.query.first()
-    if not config:
-        from models import db
-        config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
-        db.session.add(config)
-        db.session.commit()
-    
-    # Determine image path
-    image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
-    image_path = os.path.join(image_folder, filename)
-    if not os.path.exists(image_path):
-        return {"status": "error", "message": "Image file not found", "filename": filename}
-    
-    try:
-        # Check if this is a screenshot (which should use CLIP) or a regular image (which should use zero-shot)
-        is_screenshot = filename.startswith("screenshot_")
-        
-        if is_screenshot:
-            # For screenshots, use the existing CLIP model
-            clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-            current_app.logger.info(f"🔄 RE-TAGGING: Processing screenshot {filename} with CLIP model: {clip_model_name}")
-            
-            # Get image embedding using the selected CLIP model
-            embedding, model_name = get_image_embedding(image_path)
-            if embedding is None:
-                return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
-            
-            # Generate tags and description using CLIP
-            tags, description = generate_tags_and_description(embedding, model_name)
-            model_used = f"CLIP: {model_name}"
-        else:
-            # For regular images, use zero-shot if enabled
-            if hasattr(config, 'zero_shot_enabled') and config.zero_shot_enabled:
-                try:
-                    # Import zero-shot tagger
-                    from utils.zero_shot_tagger import generate_tags_with_zero_shot
-                    
-                    # Get model size from config
-                    model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
-                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with zero-shot model: {model_size}")
-                    
-                    # Get max tags from config
-                    max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
-                    
-                    # Get min confidence from config
-                    min_confidence = config.zero_shot_min_confidence if hasattr(config, 'zero_shot_min_confidence') and config.zero_shot_min_confidence is not None else 0.3
-                    
-                    # Generate tags and description using zero-shot
-                    tags, description = generate_tags_with_zero_shot(
-                        image_path,
-                        model_size=model_size,
-                        max_tags=max_tags,
-                        min_confidence=min_confidence
-                    )
-                    
-                    # Check if tags were generated successfully
-                    if tags and len(tags) > 0:
-                        model_used = f"Zero-Shot: {model_size}"
-                    else:
-                        # If zero-shot failed to generate tags, fall back to CLIP
-                        current_app.logger.warning(f"Zero-shot failed to generate tags for {filename}, falling back to CLIP")
-                        clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                        current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot fallback)")
-                        
-                        # Get image embedding using the selected CLIP model
-                        embedding, model_name = get_image_embedding(image_path)
-                        if embedding is None:
-                            return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
-                        
-                        # Generate tags and description using CLIP
-                        tags, description = generate_tags_and_description(embedding, model_name)
-                        model_used = f"CLIP: {model_name}"
-                except Exception as e:
-                    # If zero-shot fails with an exception, fall back to CLIP
-                    current_app.logger.error(f"Error using zero-shot for {filename}: {e}, falling back to CLIP")
-                    clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                    current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot error fallback)")
-                    
-                    # Get image embedding using the selected CLIP model
-                    embedding, model_name = get_image_embedding(image_path)
-                    if embedding is None:
-                        return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
-                    
-                    # Generate tags and description using CLIP
-                    tags, description = generate_tags_and_description(embedding, model_name)
-                    model_used = f"CLIP: {model_name}"
-            else:
-                # If zero-shot is disabled, fall back to CLIP
-                clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                current_app.logger.info(f"🔄 RE-TAGGING: Processing image {filename} with CLIP model: {clip_model_name} (Zero-shot disabled)")
-                
-                # Get image embedding using the selected CLIP model
-                embedding, model_name = get_image_embedding(image_path)
-                if embedding is None:
-                    return {"status": "error", "message": "Failed to compute embedding", "filename": filename}
-                
-                # Generate tags and description using CLIP
-                tags, description = generate_tags_and_description(embedding, model_name)
-                model_used = f"CLIP: {model_name}"
-        
-        # Update database
-        img = ImageDB.query.filter_by(filename=filename).first()
-        if img:
-            img.tags = ", ".join(tags)
-            img.description = description
-            db.session.commit()
-            return {
-                "status": "success",
-                "filename": filename,
-                "tags": tags,
-                "description": description,
-                "model_used": model_used
-            }
-        else:
-            return {"status": "error", "message": "Image not found in database", "filename": filename}
-    except Exception as e:
-        current_app.logger.error(f"Error in reembed_image: {e}")
-        return {"status": "error", "message": str(e), "filename": filename}
+    # Just call the process_image_tagging function directly
+    # This avoids duplicating the same logic and ensures consistency
+    return process_image_tagging(None, filename)
 
 # Global dictionary to track bulk tagging progress
 BULK_PROGRESS = {}
@@ -756,20 +617,19 @@ def reembed_all_images(self):
     """
     from models import ImageDB, UserConfig
     from flask import current_app
-    import gc  # Garbage collection
     
     try:
         # Get user configuration
         config = UserConfig.query.first()
         if not config:
             from models import db
-            config = UserConfig(zero_shot_enabled=True, zero_shot_model="base")
+            config = UserConfig(zero_shot_enabled=True, zero_shot_model="small")
             db.session.add(config)
             db.session.commit()
         
         # Determine which models will be used
         clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-        zero_shot_model = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "base"
+        zero_shot_model = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "small"
         zero_shot_enabled = config.zero_shot_enabled if hasattr(config, 'zero_shot_enabled') else True
         
         # Log the operation
@@ -791,21 +651,21 @@ def reembed_all_images(self):
         
         # First, clear all existing tags
         current_app.logger.info("Clearing all existing tags before retagging")
-        from models import db  # Import db here to avoid 'db not defined' error
+        from models import db
         for img in images:
             img.tags = ""
             img.description = ""
         db.session.commit()
         
-        # Process images one at a time to manage memory better
+        # Process images one at a time
         for i, img in enumerate(images):
-            # Process one image and wait for it to complete before starting the next
+            # Queue the image for processing
             process_image_tagging.delay(img.filename)
             
             # Update progress
             BULK_PROGRESS[task_id] = min(100, (i + 1) / total * 100)
             
-            # Add a small delay between tasks
+            # Add a small delay between tasks to avoid overwhelming the system
             time.sleep(0.1)
             
         return {
@@ -815,7 +675,6 @@ def reembed_all_images(self):
         }
     except Exception as e:
         current_app.logger.error(f"Error in reembed_all_images: {e}")
-        # No need to clean up memory
         return {"status": "error", "message": str(e)}
 
 def send_scheduled_image(event_id):

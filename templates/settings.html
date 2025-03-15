@@ -83,10 +83,10 @@
                     <div class="card-body">
                       <h5 class="card-title">Tag Confidence Threshold</h5>
                       <div class="mb-3">
-                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">0.3</span></label>
+                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.3 }}</span></label>
                         <input type="range" class="form-range" id="confidence_threshold" min="0.1" max="0.9" step="0.05"
-                               value="0.3"
-                               oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').textContent = this.value;">
+                               value="{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.3 }}"
+                               oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').value = this.value;">
                         <div class="form-text">Higher values mean fewer but more accurate tags.</div>
                       </div>
                       <div class="d-grid">
@@ -99,26 +99,28 @@
                 </div>
               </div>
 
-              <!-- Model Selection Card -->
+              <!-- Unified Model Selection Card -->
               <div class="card mb-4">
                 <div class="card-body">
-                  <h5 class="card-title">Tagging Model Selection</h5>
+                  <h5 class="card-title">Image Tagging Model Selection</h5>
                   <div class="mb-3">
                     <label for="zero_shot_model" class="form-label">Choose Model Size:</label>
                     <select id="zero_shot_model" class="form-select form-select-lg">
-                      <option value="base" {% if config and config.zero_shot_model == 'base' %}selected{% endif %}>Base Model (Faster)</option>
-                      <option value="large" {% if config and config.zero_shot_model == 'large' %}selected{% endif %}>Large Model (More Accurate)</option>
+                      <option value="small" {% if config and config.zero_shot_model == 'small' %}selected{% endif %}>Small Model (Fastest)</option>
+                      <option value="medium" {% if config and config.zero_shot_model == 'medium' %}selected{% endif %}>Medium Model (Balanced)</option>
+                      <option value="large" {% if config and config.zero_shot_model == 'large' %}selected{% endif %}>Large Model (Most Accurate)</option>
                     </select>
                     <div class="form-text">
                       <ul>
-                        <li><strong>Base Model:</strong> Faster processing, suitable for most systems</li>
-                        <li><strong>Large Model:</strong> More accurate tagging, requires more system resources</li>
+                        <li><strong>Small Model:</strong> Fastest processing, suitable for most systems</li>
+                        <li><strong>Medium Model:</strong> Balanced performance between speed and accuracy</li>
+                        <li><strong>Large Model:</strong> Most accurate tagging, requires more system resources</li>
                       </ul>
                     </div>
                   </div>
                   <div class="d-grid">
                     <button type="button" class="btn btn-success" onclick="saveZeroShotModel()">
-                      <i class="bi bi-check-circle"></i> Save Model Setting
+                      <i class="bi bi-check-circle"></i> Save Model Selection
                     </button>
                   </div>
                 </div>
@@ -146,9 +148,25 @@
                   <h5 class="card-title">Test Image Tagging</h5>
                   <p class="card-text">Upload a test image to verify the tagging system is working correctly and see the generated tags.</p>
                   
-                  <div class="mb-3">
-                    <label for="testImageFile" class="form-label">Select an image to test:</label>
-                    <input class="form-control form-control-lg" type="file" id="testImageFile" accept="image/*">
+                  <div class="row">
+                    <div class="col-md-6">
+                      <div class="mb-3">
+                        <label for="testImageFile" class="form-label">Select an image to test:</label>
+                        <input class="form-control form-control-lg" type="file" id="testImageFile" accept="image/*">
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="mb-3">
+                        <label for="test_model" class="form-label">Choose Model for Testing:</label>
+                        <select id="test_model" class="form-select form-select-lg">
+                          <option value="">Default ({{ config.zero_shot_model if config and config.zero_shot_model else 'small' }})</option>
+                          <option value="small">Small Model (Fastest)</option>
+                          <option value="medium">Medium Model (Balanced)</option>
+                          <option value="large">Large Model (Most Accurate)</option>
+                        </select>
+                        <div class="form-text">This selection is only used for testing and won't change your saved settings.</div>
+                      </div>
+                    </div>
                   </div>
                   
                   <div class="d-grid">
@@ -788,34 +806,7 @@
     });
   });
 
-  function saveClipModel() {
-    var clipModel = document.getElementById('clip_model').value;
-    if (!clipModel) {
-      showOverlayMessage("Please select a CLIP model");
-      return;
-    }
-    var payload = {
-      clip_model: clipModel
-    };
-    showOverlayMessage("Switching to model: " + clipModel + "...", 1500);
-    fetch("{{ url_for('settings.update_clip_model') }}", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        showOverlayMessage("CLIP model updated successfully to " + clipModel);
-      } else {
-        showOverlayMessage("Error updating CLIP model: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating CLIP model.");
-    });
-  }
+  // Removed saveClipModel function as we now use a unified model selector
 
   function verifyClipModel() {
     fetch("{{ url_for('settings.verify_clip_model') }}")
@@ -914,22 +905,22 @@
     const formData = new FormData();
     formData.append('file', file);
     
+    // Add model override if a specific model is selected
+    const testModelSelect = document.getElementById('test_model');
+    if (testModelSelect && testModelSelect.value) {
+      formData.append('model_override', testModelSelect.value);
+    }
+    
     // Show loading state
     const resultDiv = document.getElementById('testTaggingResult');
     const contentDiv = document.getElementById('testTaggingContent');
     resultDiv.style.display = 'block';
     contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Processing image...</p></div>';
     
-    // Determine which endpoint to use based on the selected model
-    const zeroShotModel = document.getElementById('zero_shot_model');
-    const useZeroShot = zeroShotModel && zeroShotModel.value;
+    // Always use the zero-shot endpoint for testing
+    const endpoint = "{{ url_for('zero_shot.test_zero_shot_tagging') }}";
     
-    // Use the zero-shot endpoint if a zero-shot model is selected
-    const endpoint = useZeroShot
-      ? "{{ url_for('zero_shot.test_zero_shot_tagging') }}"
-      : "{{ url_for('settings.test_tagging') }}";
-    
-    console.log(`Using endpoint: ${endpoint} with model: ${useZeroShot || 'CLIP'}`);
+    console.log(`Using endpoint: ${endpoint} with model: ${testModelSelect ? testModelSelect.value : 'Default'}`);
     
     fetch(endpoint, {
       method: 'POST',
@@ -944,18 +935,51 @@
           let html = `
             <div class="mb-3">
               <strong>Model Used:</strong> ${data.model_used}
-            </div>
+            </div>`;
+            
+          // Add image preview if available
+          if (data.uploaded_image) {
+            html += `
+            <div class="mb-3">
+              <strong>Uploaded Image:</strong><br>
+              <img src="${data.uploaded_image}" alt="Uploaded test image" class="img-fluid rounded mb-3" style="max-height: 300px;">
+            </div>`;
+          }
+            
+          html += `
             <div class="mb-3">
               <strong>Generated Tags:</strong><br>
               <ul class="list-group">
           `;
           
-          // Add tags (zero-shot doesn't include scores in the same way)
-          data.tags.forEach(function(tag) {
-            html += `<li class="list-group-item">
-              ${tag}
-            </li>`;
-          });
+          // Add tags with their confidence scores
+          if (data.tags_with_scores) {
+            data.tags_with_scores.forEach(function(tagInfo) {
+              const tag = tagInfo.tag;
+              const confidence = tagInfo.confidence;
+              // Color code based on confidence score
+              let badgeClass = "bg-danger";
+              if (confidence >= 0.5) {
+                badgeClass = "bg-success";
+              } else if (confidence >= 0.3) {
+                badgeClass = "bg-primary";
+              } else if (confidence >= 0.2) {
+                badgeClass = "bg-warning text-dark";
+              }
+              
+              html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                ${tag}
+                <span class="badge ${badgeClass} rounded-pill">${confidence.toFixed(3)}</span>
+              </li>`;
+            });
+          } else {
+            // Fallback for older API that doesn't include scores
+            data.tags.forEach(function(tag) {
+              html += `<li class="list-group-item">
+                ${tag}
+              </li>`;
+            });
+          }
           
           html += `
               </ul>
@@ -975,7 +999,18 @@
           let html = `
             <div class="mb-3">
               <strong>Model Used:</strong> ${data.model_used}
-            </div>
+            </div>`;
+            
+          // Add image preview if available
+          if (data.uploaded_image) {
+            html += `
+            <div class="mb-3">
+              <strong>Uploaded Image:</strong><br>
+              <img src="${data.uploaded_image}" alt="Uploaded test image" class="img-fluid rounded mb-3" style="max-height: 300px;">
+            </div>`;
+          }
+            
+          html += `
             <div class="mb-3">
               <strong>Generated Tags:</strong><br>
               <ul class="list-group">
@@ -1203,12 +1238,24 @@
   function saveZeroShotModel() {
     var modelSize = document.getElementById('zero_shot_model').value;
     
+    // Create a payload that updates both zero-shot and CLIP models
     var payload = {
       zero_shot_model: modelSize
     };
     
+    // Map the zero-shot model size to the corresponding CLIP model
+    var clipModelMap = {
+      "small": "ViT-B-32",
+      "medium": "ViT-B-16",
+      "large": "ViT-L-14"
+    };
+    
+    // Add the CLIP model to the payload
+    var clipModel = clipModelMap[modelSize] || "ViT-B-32";
+    
     showOverlayMessage("Updating model selection...", 1500);
     
+    // First update the zero-shot model
     fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1217,15 +1264,35 @@
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.status === "success") {
-        var modelName = modelSize === "base" ? "Base Model (Faster)" : "Large Model (More Accurate)";
+        // Now update the CLIP model to keep them in sync
+        return fetch("{{ url_for('settings.update_clip_model') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clip_model: clipModel })
+        });
+      } else {
+        throw new Error("Error updating zero-shot model: " + data.message);
+      }
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        // Get a user-friendly model name
+        var modelNames = {
+          "small": "Small Model (Fastest)",
+          "medium": "Medium Model (Balanced)",
+          "large": "Large Model (Most Accurate)"
+        };
+        var modelName = modelNames[modelSize] || modelSize;
+        
         showOverlayMessage("Model selection updated successfully to " + modelName);
       } else {
-        showOverlayMessage("Error updating model selection: " + data.message);
+        showOverlayMessage("Error updating CLIP model: " + data.message);
       }
     })
     .catch(function(error) {
       console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating model selection.");
+      showOverlayMessage("An error occurred while updating model selection: " + error.message);
     });
   }
   

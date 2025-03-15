@@ -355,125 +355,106 @@ def verify_clip_model():
 def test_tagging():
     """
     Endpoint to test image tagging with the current CLIP model.
-    This allows users to verify the model is working correctly and see the generated tags.
+    This allows users to verify the model is working correctly, see the generated tags, and view the uploaded image.
     """
     try:
         from tasks import get_image_embedding
         from models import UserConfig
         import os
-        import tempfile
+        import time
         import torch
-        
+        from flask import current_app, url_for
+
         # Check if a file was uploaded
         if 'file' not in request.files:
             return jsonify({
                 "status": "error",
                 "message": "No file uploaded"
             }), 400
-            
         file = request.files['file']
         if file.filename == '':
             return jsonify({
                 "status": "error",
                 "message": "No file selected"
             }), 400
-            
-        # Get the current CLIP model and settings
+
+        # Get the current configuration
         config = UserConfig.query.first()
         if not config:
             return jsonify({
                 "status": "error",
                 "message": "No configuration found"
             }), 404
-            
-        clip_model_name = config.clip_model if config.clip_model else "ViT-B-32"
+
+        # Allow overriding the CLIP model via form data; fallback to config or default
+        clip_model_name = request.form.get("clip_model_override") or (config.clip_model if config.clip_model else "ViT-B-32")
         max_tags = config.min_tags if config.min_tags else 5
         threshold_level = config.similarity_threshold if hasattr(config, 'similarity_threshold') and config.similarity_threshold else "medium"
-        
+
         # Get the actual cosine threshold value from the level
         from tasks import SIMILARITY_THRESHOLDS, DEFAULT_THRESHOLD
         cosine_threshold = SIMILARITY_THRESHOLDS.get(threshold_level, SIMILARITY_THRESHOLDS[DEFAULT_THRESHOLD])
-        
-        # Save the uploaded file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
-            file.save(temp.name)
-            temp_path = temp.name
-        
-        try:
-            # Get the image embedding
-            embedding, model_used = get_image_embedding(temp_path)
-            if embedding is None:
-                os.unlink(temp_path)  # Clean up the temporary file
-                return jsonify({
-                    "status": "error",
-                    "message": "Failed to compute image embedding"
-                }), 500
-                
-            # Calculate similarities with tag embeddings
-            from tasks import tag_embeddings, CANDIDATE_TAGS
-            
-            scores = {}
-            for tag in CANDIDATE_TAGS:
-                if tag in tag_embeddings.get(model_used, {}):
-                    # Get the tag embedding for this model
-                    tag_emb = tag_embeddings[model_used][tag]
-                    # Calculate similarity
-                    similarity = torch.cosine_similarity(
-                        torch.tensor(embedding).unsqueeze(0),
-                        tag_emb.cpu(),
-                        dim=1
-                    ).item()
-                    scores[tag] = similarity
-            
-            # Sort tags by similarity score
-            sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-            
-            # Filter tags by cosine similarity threshold and limit to max_tags
-            filtered_tags = []
-            for tag, score in sorted_tags:
-                # Only include tags with similarity above the threshold
-                if score >= cosine_threshold:
-                    filtered_tags.append({"tag": tag, "score": score})
-                    # Stop once we reach the maximum number of tags
-                    if len(filtered_tags) >= max_tags:
-                        break
-            
-            # Include all tags with scores for display in the UI
-            all_tags_with_scores = [{"tag": tag, "score": score} for tag, score in sorted_tags[:20]]
-            
-            # Log the test results
-            logger.info(f"Test tagging completed with model {model_used}: generated {len(filtered_tags)} tags")
-            
-            # Clean up the temporary file
-            os.unlink(temp_path)
-            
-            # Get human-readable descriptions for the threshold levels
-            threshold_descriptions = {
-                "very_high": "Very High - Only exact matches",
-                "high": "High - Strong matches",
-                "medium": "Medium - Balanced matches",
-                "low": "Low - More inclusive matches",
-                "very_low": "Very Low - Most inclusive matches"
-            }
-            
-            threshold_description = threshold_descriptions.get(threshold_level, "Medium - Balanced matches")
-            
+
+        # Save the uploaded file to a persistent location in static/uploads
+        upload_folder = os.path.join(current_app.root_path, "static", "uploads")
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+        filename = f"test_{int(time.time())}_{file.filename}"
+        file_path = os.path.join(upload_folder, filename)
+        file.save(file_path)
+
+        # Get the image embedding
+        embedding, model_used = get_image_embedding(file_path)
+        if embedding is None:
+            os.remove(file_path)
             return jsonify({
-                "status": "success",
-                "model_used": model_used,
-                "tags_with_scores": all_tags_with_scores,
-                "filtered_tags": filtered_tags,
-                "threshold": cosine_threshold,
-                "threshold_level": threshold_level,
-                "threshold_description": threshold_description,
-                "max_tags": max_tags
-            })
-            
-        except Exception as e:
-            # Clean up the temporary file in case of error
-            os.unlink(temp_path)
-            raise e
-            
+                "status": "error",
+                "message": "Failed to compute image embedding"
+            }), 500
+
+        # Calculate similarities with tag embeddings
+        from tasks import tag_embeddings, CANDIDATE_TAGS
+        scores = {}
+        for tag in CANDIDATE_TAGS:
+            if tag in tag_embeddings.get(model_used, {}):
+                tag_emb = tag_embeddings[model_used][tag]
+                similarity = torch.cosine_similarity(
+                    torch.tensor(embedding).unsqueeze(0),
+                    tag_emb.cpu(),
+                    dim=1
+                ).item()
+                scores[tag] = similarity
+        sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        filtered_tags = []
+        for tag, score in sorted_tags:
+            if score >= cosine_threshold:
+                filtered_tags.append({"tag": tag, "score": score})
+                if len(filtered_tags) >= max_tags:
+                    break
+        all_tags_with_scores = [{"tag": tag, "score": score} for tag, score in sorted_tags[:20]]
+        threshold_descriptions = {
+            "very_high": "Very High - Only exact matches",
+            "high": "High - Strong matches",
+            "medium": "Medium - Balanced matches",
+            "low": "Low - More inclusive matches",
+            "very_low": "Very Low - Most inclusive matches"
+        }
+        threshold_description = threshold_descriptions.get(threshold_level, "Medium - Balanced matches")
+
+        # Build the URL for the uploaded image
+        image_url = url_for('static', filename=f"uploads/{filename}", _external=True)
+
+        return jsonify({
+            "status": "success",
+            "model_used": model_used,
+            "tags_with_scores": all_tags_with_scores,
+            "filtered_tags": filtered_tags,
+            "threshold": cosine_threshold,
+            "threshold_level": threshold_level,
+            "threshold_description": threshold_description,
+            "max_tags": max_tags,
+            "uploaded_image": image_url
+        })
     except Exception as e:
         logger.error(f"Error in test_tagging: {str(e)}")
         return jsonify({

@@ -95,16 +95,24 @@ RUN mkdir -p /build/model_cache
 RUN python -c "import sys; import open_clip; \
     print('Setting recursion limit to 15000...'); \
     sys.setrecursionlimit(15000); \
-    print('Downloading OpenCLIP ViT-B-32 model...'); \
+    print('Downloading OpenCLIP ViT-B-32 model (small)...'); \
     model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai'); \
     print('OpenCLIP ViT-B-32 model downloaded successfully.')"
+
+# Pre-download medium OpenCLIP model
+RUN python -c "import sys; import open_clip; \
+    print('Setting recursion limit to 15000...'); \
+    sys.setrecursionlimit(15000); \
+    print('Downloading OpenCLIP ViT-B-16 model (medium)...'); \
+    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai'); \
+    print('OpenCLIP ViT-B-16 model downloaded successfully.')"
 
 # Pre-download large OpenCLIP model with proper recursion limit
 # Remove the fallback to ensure the model is actually downloaded
 RUN python -c "import sys; import open_clip; \
     print('Setting recursion limit to 15000...'); \
     sys.setrecursionlimit(15000); \
-    print('Downloading OpenCLIP ViT-L-14 model...'); \
+    print('Downloading OpenCLIP ViT-L-14 model (large)...'); \
     model, _, preprocess = open_clip.create_model_and_transforms('ViT-L-14', pretrained='openai'); \
     print('OpenCLIP ViT-L-14 model downloaded successfully.')"
 
