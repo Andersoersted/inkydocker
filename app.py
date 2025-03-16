@@ -1,6 +1,3 @@
-# Removed gevent monkey patching to avoid threading and SSL issues
-# This resolves the warnings and errors related to monkey patching
-
 # Suppress warnings
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -9,14 +6,13 @@ warnings.filterwarnings("ignore", message=".*torch.distributed.reduce_op.*")
 from flask import Flask, send_from_directory, request
 import os
 import multiprocessing
+import logging
 from config import Config
 from models import db
 from flask_migrate import Migrate
 import pillow_heif
-from datetime import timedelta
 
 # Set multiprocessing start method to 'spawn' to fix CUDA issues
-# This must be done before any multiprocessing is used
 try:
     multiprocessing.set_start_method('spawn', force=True)
 except RuntimeError:
@@ -32,6 +28,10 @@ pillow_heif.register_heif_opener()
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    
+    # Configure Flask logging to reduce verbosity
+    app.logger.setLevel(logging.WARNING)
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
     # Ensure required folders exist
     for folder in [app.config['IMAGE_FOLDER'], app.config['THUMBNAIL_FOLDER'], app.config['DATA_FOLDER']]:
@@ -61,33 +61,23 @@ def create_app(config_class=Config):
     app.register_blueprint(browserless_bp)
     app.register_blueprint(zero_shot_bp)
 
-    # Create database tables if they don't exist.
+    # Create database tables if they don't exist
     with app.app_context():
         db.create_all()
 
-    # Configure Celery with optimized Redis settings
+    # Configure Celery with Redis settings
     celery.conf.update(
         broker_url='redis://localhost:6379/0',
         result_backend='redis://localhost:6379/0',
         broker_connection_retry_on_startup=True,
-        broker_pool_limit=10,
         result_expires=3600,  # Results expire after 1 hour
-        worker_prefetch_multiplier=4,  # Prefetch more tasks
         task_acks_late=True  # Only acknowledge tasks after they are completed
     )
-
-    # Note: Scheduler is now started in a dedicated process (scheduler.py)
-    # We no longer need to call start_scheduler here
-    
-    # We no longer run fetch_device_metrics immediately here
-    # The dedicated scheduler process will handle this
 
     # Add cache control for static files
     @app.after_request
     def add_cache_headers(response):
-        # Add cache headers for static files
         if request.path.startswith('/static/'):
-            # Cache static files for 1 week
             response.cache_control.max_age = 604800  # 1 week in seconds
             response.cache_control.public = True
         return response
@@ -108,5 +98,4 @@ app = create_app()
 celery.conf.update(app=app)
 
 if __name__ == '__main__':
-    # When running via 'python app.py' this block will execute.
     app.run(host='0.0.0.0', port=5001, debug=False, threaded=True)

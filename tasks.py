@@ -14,9 +14,13 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import torch
-# Configure logging
+# Configure logging with minimal output
 import logging
 logging.basicConfig(level=logging.ERROR)
+# Disable most loggers to reduce output
+logging.getLogger("PIL").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 import open_clip
 from sklearn.metrics.pairwise import cosine_similarity
@@ -63,19 +67,20 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # Initialize Celery with memory limits
 celery = Celery('tasks', broker='redis://localhost:6379/0', backend='redis://localhost:6379/0')
 
-# Configure Celery with optimized settings but no memory limits
+# Configure Celery with optimized settings and minimal logging
 celery.conf.update(
-    worker_max_tasks_per_child=10,        # Restart worker after 10 tasks (increased from 1)
-    task_time_limit=1800,                 # 30 minute time limit per task (increased from 10 minutes)
-    task_soft_time_limit=1500,            # 25 minute soft time limit (increased from 5 minutes)
-    worker_concurrency=1,                 # Limit to 1 concurrent worker to prevent duplicate tasks
-    broker_connection_retry_on_startup=True,  # Fix deprecation warning
-    worker_hijack_root_logger=False,      # Don't hijack the root logger
-    worker_log_format='%(asctime)s [%(levelname)s] %(message)s',  # Simplified log format
-    task_track_started=False,             # Don't log when tasks are started
-    task_send_sent_event=False,           # Don't send task-sent events
-    worker_send_task_events=False,        # Don't send task events
-    task_ignore_result=True               # Don't store task results
+    worker_max_tasks_per_child=10,        # Restart worker after 10 tasks
+    task_time_limit=1800,                 # 30 minute time limit per task
+    task_soft_time_limit=1500,            # 25 minute soft time limit
+    worker_concurrency=1,                 # Limit to 1 concurrent worker
+    broker_connection_retry_on_startup=True,
+    worker_hijack_root_logger=False,
+    worker_log_format='%(asctime)s [%(levelname)s] %(message)s',
+    worker_log_level='WARNING',           # Only log warnings and errors
+    task_track_started=False,
+    task_send_sent_event=False,
+    worker_send_task_events=False,
+    task_ignore_result=True
 )
 
 class FlaskTask(celery.Task):
@@ -226,9 +231,6 @@ def get_clip_model():
     if config and config.custom_model_enabled and config.custom_model:
         use_custom_model = True
         custom_model_name = config.custom_model
-        current_app.logger.info(f"🔍 CUSTOM MODEL SELECTION: Using custom model {custom_model_name} for image tagging")
-    else:
-        current_app.logger.info(f"🔍 CLIP MODEL SELECTION: Using {clip_model_name} for image tagging")
     
     # If using custom model, use that instead of the standard model
     model_key = custom_model_name if use_custom_model else clip_model_name
@@ -240,7 +242,6 @@ def get_clip_model():
     # Check available memory before loading a new model
     mem = psutil.virtual_memory()
     available_gb = mem.available / (1024 * 1024 * 1024)
-    current_app.logger.info(f"Available memory before loading model: {available_gb:.2f} GB")
     
     # Define large models that might cause memory issues
     large_models = ['ViT-SO400M-16-SigLIP2-512', 'ViT-L-14', 'ViT-H-14', 'ViT-g-14']
@@ -266,18 +267,15 @@ def get_clip_model():
         gc.collect()
         if device == "cuda":
             torch.cuda.empty_cache()
-    
     # Load the model
     try:
         # Determine which device to use for this model
         model_device = "cpu" if force_cpu_for_model else device
-        current_app.logger.info(f"Loading model {model_key} on device: {model_device}")
         
         # Set recursion limit for model loading
         import sys
         old_recursion_limit = sys.getrecursionlimit()
         sys.setrecursionlimit(20000)  # Increase recursion limit temporarily
-        current_app.logger.info(f"Temporarily increased recursion limit to 20000 for loading model {model_key}")
         
         try:
             # Determine cache directory
@@ -291,8 +289,7 @@ def get_clip_model():
             else:
                 pretrained_tag = 'openai'  # Default pretrained tag for other models
             
-            # Simplified model loading with a single attempt
-            current_app.logger.info(f"Loading model {model_key} with pretrained tag: {pretrained_tag}")
+            # Load the model
             model, _, preprocess = open_clip.create_model_and_transforms(
                 model_key,
                 pretrained=pretrained_tag,
@@ -300,7 +297,6 @@ def get_clip_model():
                 force_quick_gelu=False,
                 cache_dir=cache_dir
             )
-            
             current_app.logger.info(f"Successfully loaded {model_key} with pretrained tag: {pretrained_tag}")
         finally:
             # Restore original recursion limit
@@ -451,14 +447,8 @@ def generate_tags_and_description(embedding, model_name):
             if len(filtered_tags) >= max_tags:
                 break
     
-    # Log the threshold, number of tags, and their similarity scores
-    current_app.logger.info(f"📊 TAG GENERATION: Using model {model_name}")
-    current_app.logger.info(f"📊 TAG GENERATION: Generated {len(filtered_tags)} tags with similarity threshold {threshold_level} ({cosine_threshold}) (max: {max_tags})")
-    
-    # Log the selected tags with their similarity scores
+    # No need to log tag generation details
     tag_scores = [(tag, scores[tag]) for tag in filtered_tags]
-    tag_score_str = ", ".join([f"{tag} ({score:.3f})" for tag, score in tag_scores])
-    current_app.logger.info(f"📊 TAG GENERATION: Selected tags with scores: {tag_score_str}")
     
     # Create description
     description = "This image may contain " + ", ".join(filtered_tags) + "."
@@ -495,7 +485,6 @@ def process_image_tagging(self, filename):
         if is_screenshot:
             # For screenshots, use the existing CLIP model
             clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-            current_app.logger.info(f"🏷️ TAGGING: Processing screenshot {filename} with CLIP model: {clip_model_name}")
             
             # Get image embedding using the selected CLIP model
             embedding, model_name = get_image_embedding(image_path)
@@ -514,7 +503,6 @@ def process_image_tagging(self, filename):
                     
                     # Get model size from config
                     model_size = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "small"
-                    current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with zero-shot model: {model_size}")
                     
                     # Get max tags from config
                     max_tags = config.min_tags if hasattr(config, 'min_tags') and config.min_tags is not None else 5
@@ -547,7 +535,6 @@ def process_image_tagging(self, filename):
             else:
                 # If zero-shot is disabled, use CLIP
                 clip_model_name = config.clip_model if config and config.clip_model else "ViT-B-32"
-                current_app.logger.info(f"🏷️ TAGGING: Processing image {filename} with CLIP model: {clip_model_name}")
                 
                 # Get image embedding using the selected CLIP model
                 embedding, model_name = get_image_embedding(image_path)
@@ -636,11 +623,7 @@ def reembed_all_images(self):
         zero_shot_model = config.zero_shot_model if hasattr(config, 'zero_shot_model') and config.zero_shot_model else "small"
         zero_shot_enabled = config.zero_shot_enabled if hasattr(config, 'zero_shot_enabled') else True
         
-        # Log the operation
-        if zero_shot_enabled:
-            current_app.logger.info(f"Rerunning tagging on all images with Zero-Shot model: {zero_shot_model} (screenshots will use CLIP: {clip_model_name})")
-        else:
-            current_app.logger.info(f"Rerunning tagging on all images with CLIP model: {clip_model_name}")
+        # No need to log model selection details
         
         # Get all images
         images = ImageDB.query.all()
@@ -653,8 +636,7 @@ def reembed_all_images(self):
         task_id = str(uuid.uuid4())
         BULK_PROGRESS[task_id] = 0
         
-        # First, clear all existing tags
-        current_app.logger.info("Clearing all existing tags before retagging")
+        # Clear all existing tags
         from models import db
         for img in images:
             img.tags = ""
@@ -686,11 +668,9 @@ def send_scheduled_image(event_id):
     Send a scheduled image to a device.
     """
     # Import the app and create an application context
-    # This is needed when the function is called directly by the scheduler
     import logging
     import asyncio
     logger = logging.getLogger(__name__)
-    logger.info(f"Starting send_scheduled_image for event {event_id}")
     
     # Create a Flask app context to use current_app
     from app import app as flask_app
@@ -700,8 +680,6 @@ def send_scheduled_image(event_id):
         from utils.image_helpers import add_send_log_entry
         from flask import current_app
         from routes.browserless_routes import take_screenshot_with_puppeteer
-        
-        current_app.logger.info(f"Created Flask app context for event {event_id}")
         
         try:
             event = ScheduleEvent.query.get(event_id)

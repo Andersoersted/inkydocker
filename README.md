@@ -1,178 +1,156 @@
 # InkyDocker
 
-A Docker-based application for managing and sending images to e-ink displays.
+InkyDocker is a powerful web application for managing and displaying images on e-ink displays. It provides a comprehensive solution for organizing your image collection, automatically tagging images using AI, capturing screenshots from websites, and scheduling image displays on your e-ink devices.
 
-## Multi-Stage Docker Build
+![InkyDocker Screenshot](https://via.placeholder.com/800x450.png?text=InkyDocker+Screenshot)
 
-This project uses a multi-stage Docker build to create a smaller, more efficient Docker image. The build process is split into two stages:
+## Features
 
-1. **Builder Stage**: Installs all build dependencies and compiles/installs Python packages
-2. **Final Stage**: Contains only the runtime dependencies and copies the built packages from the builder stage
+### 🖼️ Image Management
 
-## Key Features
+- **Image Gallery**: Browse, search, and manage your image collection with an intuitive interface
+- **Batch Upload**: Upload multiple images at once with drag-and-drop support
+- **Image Tagging**: Automatically tag images using AI or add custom tags manually
+- **Favorites**: Mark images as favorites for quick access
+- **Search**: Find images by tags, filenames, or other metadata
 
-- Optimized Docker image size through multi-stage build
-- Redis included in the main container for simplicity
-- Improved caching of Docker layers
-- Reduced CLIP model footprint (only pre-downloads the smallest model)
+### 🤖 AI-Powered Image Tagging
+
+- **CLIP Models**: Utilize OpenAI's CLIP models for automatic image tagging
+- **Zero-Shot Classification**: Advanced image understanding without specific training
+- **Customizable Models**: Choose between different models based on your needs:
+  - Small, fast models for quick tagging
+  - Larger, more accurate models for detailed analysis
+- **Adjustable Confidence Thresholds**: Control the precision of automatic tagging
+
+### 📱 E-Ink Display Integration
+
+- **Multi-Device Support**: Connect and manage multiple e-ink displays
+- **Device Status Monitoring**: Track which devices are online and what they're displaying
+- **Resolution Optimization**: Automatically resize and crop images to match your display's resolution
+- **Orientation Support**: Handle both landscape and portrait display orientations
+- **Direct Sending**: Send images directly to your e-ink displays with a single click
+
+### 🌐 Screenshot Capture
+
+- **Website Screenshots**: Capture screenshots from any website
+- **Scheduled Refreshes**: Automatically refresh screenshots at specified intervals
+- **Cropping Tools**: Select specific portions of websites to display
+- **Browserless Integration**: Headless browser support for efficient screenshot capture
+
+### ⏱️ Scheduling
+
+- **Timed Displays**: Schedule images to be sent to displays at specific times
+- **Recurring Schedules**: Set up daily, weekly, or monthly recurring image displays
+- **Calendar View**: Visualize your scheduled displays in a calendar interface
+- **Flexible Recurrence**: Configure custom recurrence patterns for your needs
+
+### 🔧 Image Processing
+
+- **Smart Cropping**: Intelligently crop images to fit your display's aspect ratio
+- **Manual Cropping**: Fine-tune image crops with an interactive cropping tool
+- **Format Conversion**: Automatic conversion of various image formats (HEIC, RAW, etc.) to compatible formats
+- **Optimization**: Resize and optimize images for e-ink display
+
+### ⚙️ System Features
+
+- **Docker Deployment**: Easy deployment using Docker and Docker Compose
+- **Responsive Design**: Access the application from desktop or mobile devices
+- **API Access**: Programmatic access to all functionality
+- **Logging**: Comprehensive logging for troubleshooting
 
 ## Getting Started
 
 ### Prerequisites
 
-- Docker
-- Docker Compose
+- Docker and Docker Compose
+- E-ink displays with network connectivity
+- Sufficient storage space for your image collection
 
-### Building and Running
+### Installation
 
-#### CPU-only Build (Default)
-
-To build and run the application with CPU-only support:
-
-```bash
-docker-compose up --build
-```
-
-#### GPU-enabled Build
-
-To build with GPU support (requires CUDA-compatible GPU and drivers):
-
-```bash
-USE_GPU=true docker-compose up --build
-```
-
-Both options will:
-1. Build the Docker image using the multi-stage Dockerfile
-2. Start the application container with Redis included
-3. Mount the data and images directories as volumes
-
-### Choosing Between CPU and GPU
-
-- **CPU Build**: Smaller image size, works on any machine, suitable for most use cases
-  - Explicitly installs CPU-only versions of PyTorch and related libraries
-  - Forces CPU usage in the code regardless of CUDA availability
-  - No CUDA dependencies are included in the image
-- **GPU Build**: Faster AI processing for image tagging, requires CUDA-compatible hardware
-  - Includes CUDA dependencies for GPU acceleration
-
-### Pushing to Docker Hub
-
-There are two ways to push your image to Docker Hub:
-
-#### Option 1: Using the provided script
-
-Use the included script which handles building, tagging, and pushing in one step:
-
-```bash
-./push-to-dockerhub.sh [username] [version] [gpu|cpu]
-```
-
-For example:
-```bash
-# CPU version (default)
-./push-to-dockerhub.sh myusername 1.0.0
-
-# GPU version
-./push-to-dockerhub.sh myusername 1.0.0 gpu
-```
-
-If you don't provide parameters, the script will prompt you for them.
-
-#### Option 2: Manual process
-
-1. **Log in to Docker Hub**:
+1. Clone the repository:
    ```bash
-   docker login
+   git clone https://github.com/yourusername/inkydocker.git
+   cd inkydocker
    ```
 
-2. **Build with environment variables**:
+2. Configure your environment:
    ```bash
-   # CPU version
-   DOCKER_USERNAME=yourusername IMAGE_TAG=1.0.0 docker-compose build
-
-   # GPU version
-   DOCKER_USERNAME=yourusername IMAGE_TAG=1.0.0 USE_GPU=true docker-compose build
+   cp .env.example .env
+   # Edit .env with your configuration
    ```
 
-3. **Push the image**:
+3. Build and start the containers:
    ```bash
-   # CPU version
-   docker push yourusername/inkydocker:1.0.0
-
-   # GPU version
-   docker push yourusername/inkydocker:1.0.0-gpu
+   docker-compose up -d
    ```
 
-4. **Also push as latest** (optional):
-   ```bash
-   # CPU version
-   docker tag yourusername/inkydocker:1.0.0 yourusername/inkydocker:latest
-   docker push yourusername/inkydocker:latest
+4. Access the web interface at `http://localhost:5001`
 
-   # GPU version
-   docker tag yourusername/inkydocker:1.0.0-gpu yourusername/inkydocker:latest-gpu
-   docker push yourusername/inkydocker:latest-gpu
-   ```
+## Configuration
 
-### Using Docker Buildx (Recommended for Unraid)
+### E-Ink Display Setup
 
-For Unraid users or anyone who wants to build and push directly to Docker Hub, you can use Docker Buildx:
+1. Navigate to the Settings page
+2. Click "Add Device"
+3. Enter your device's IP address, display name, and specifications
+4. Click "Save" to add the device
 
-#### For CPU-only build (default):
-```bash
-# This will explicitly install CPU-only versions of PyTorch and related libraries
-# No CUDA dependencies will be included in the image
-docker buildx build --platform linux/amd64 \
-  --build-arg USE_GPU=false \
-  -t yourusername/inkydocker:cpu \
-  --push .
-```
+### AI Tagging Configuration
 
-#### For GPU-enabled build:
-```bash
-# This will include CUDA dependencies for GPU acceleration
-docker buildx build --platform linux/amd64 \
-  --build-arg USE_GPU=true \
-  -t yourusername/inkydocker:gpu \
-  --push .
-```
+1. Go to Settings > AI Tagging
+2. Choose your preferred model (small, medium, or large)
+3. Adjust the confidence threshold as needed
+4. Enable or disable Zero-Shot tagging
 
-### Configuration
+### Screenshot Configuration
 
-The application is configured through environment variables in the docker-compose.yml file:
+1. Navigate to Settings > Screenshots
+2. Configure the browserless settings
+3. Set default refresh intervals if desired
 
-- `TZ`: Timezone (default: Europe/Copenhagen)
+## Usage
 
-## Architecture
+### Uploading Images
 
-The application consists of several components:
+1. Go to the main Gallery page
+2. Click "Upload" or drag and drop images onto the upload area
+3. Wait for the upload and automatic tagging to complete
 
-- **Flask Web Application**: Serves the web interface and API
-- **Celery Workers**: Process background tasks like image tagging
-- **Redis**: Used as message broker for Celery and for caching (runs within the same container)
-- **Scheduler**: Manages scheduled tasks like sending images to devices
+### Sending Images to Displays
 
-## Volumes
+1. Browse your gallery and find an image you want to display
+2. Select the target e-ink display from the dropdown
+3. Click "Send" on the image
+4. The image will be processed and sent to the display
 
-The application uses two main volumes:
+### Capturing Screenshots
 
-- `./data:/app/data`: Stores application data, including the SQLite database and model cache
-- `./images:/app/images`: Stores the images managed by the application
+1. Navigate to the Screenshots page
+2. Enter the URL of the website you want to capture
+3. Click "Capture"
+4. Once captured, you can crop and send the screenshot like any other image
 
-## Optimizations
+### Scheduling Displays
 
-Several optimizations have been made to reduce the Docker image size:
+1. Go to the Schedule page
+2. Click on a date/time slot
+3. Select an image and target display
+4. Configure recurrence if desired
+5. Save the schedule
 
-1. **Multi-stage build**: Separates build dependencies from runtime dependencies
-2. **Reduced CLIP models**: Only pre-downloads the smallest CLIP model (ViT-B-32)
-3. **Integrated Redis**: Redis runs in the same container for simplicity
-4. **Optimized cleanup**: Removes unnecessary files after installation
-5. **.dockerignore**: Excludes unnecessary files from the build context
+## Contributing
 
-## Troubleshooting
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-If you encounter issues with the application:
+## License
 
-1. Check the logs: `docker-compose logs`
-2. Verify Redis is running inside the container: `docker-compose exec inkydocker redis-cli ping`
-3. Verify the volumes are mounted correctly: `docker-compose config`
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [OpenAI CLIP](https://github.com/openai/CLIP) for image understanding
+- [Flask](https://flask.palletsprojects.com/) web framework
+- [Celery](https://docs.celeryproject.org/) for task processing
+- [Puppeteer](https://pptr.dev/) for screenshot capture

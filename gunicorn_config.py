@@ -11,18 +11,12 @@ except RuntimeError:
 bind = "0.0.0.0:5001"
 workers = 2
 timeout = 300
-worker_class = "gthread"  # Using threads instead of gevent to avoid monkey patching
-workers_per_core = 2
-threads = 4  # Number of threads per worker
+worker_class = "gthread"
+threads = 4
 max_requests = 100
-max_requests_jitter = 20
-preload_app = True  # Load application code before forking workers
+preload_app = True
 
 # Log settings
 accesslog = "-"
 errorlog = "-"
 loglevel = "info"
-
-# Initialization hook
-def on_starting(server):
-    print("Gunicorn starting with multiprocessing start method:", multiprocessing.get_start_method())
