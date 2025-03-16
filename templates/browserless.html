@@ -220,8 +220,13 @@
       <div class="modal-body">
         <div class="row">
           <div class="col-md-6">
-            <div id="cropContainer" style="max-height: 75vh; overflow-y: scroll; border: 1px solid #ddd; border-radius: 5px;">
-              <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
+            <div class="crop-container-wrapper" style="position: relative; height: 500px; border: 2px solid #ddd; border-radius: 5px; overflow: hidden;">
+              <div id="cropContainer" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: scroll; padding-right: 15px;">
+                <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
+              </div>
+              <div style="position: absolute; top: 10px; right: 10px; background-color: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 3px; font-size: 12px;">
+                <i class="fas fa-arrows-alt-v"></i> Scroll to view full image
+              </div>
             </div>
           </div>
           <div class="col-md-6">
@@ -230,8 +235,11 @@
                 <h6 class="mb-0">Crop Preview</h6>
               </div>
               <div class="card-body text-center">
-                <div id="cropPreview" style="width: 100%; height: 300px; overflow: hidden; margin-bottom: 10px; border: 1px solid #ddd; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center;">
-                  <img id="previewImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Preview" class="lazy" loading="lazy" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                <div id="cropPreview" style="width: 100%; height: 300px; overflow: hidden; margin-bottom: 10px; border: 2px solid #007bff; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; position: relative;">
+                  <img id="previewImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                  <div id="previewPlaceholder" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: #6c757d; font-style: italic; background-color: rgba(248, 249, 250, 0.7);">
+                    <span>Preview will appear here</span>
+                  </div>
                 </div>
                 <small class="text-muted">This is how the image will appear on your eInk display</small>
               </div>
@@ -901,13 +909,35 @@ document.addEventListener('DOMContentLoaded', function() {
     const previewImage = document.getElementById('previewImage');
     const cropPreview = document.getElementById('cropPreview');
     
-    if (!cropperInstance || !previewImage || !cropPreview) return;
+    if (!cropperInstance || !previewImage || !cropPreview) {
+      console.error('Missing required elements for preview update');
+      return;
+    }
     
-    // Get the cropped canvas data
-    const canvas = cropperInstance.getCroppedCanvas();
-    if (canvas) {
-      // Update the preview image with the cropped canvas data
-      previewImage.src = canvas.toDataURL('image/jpeg');
+    try {
+      // Get the cropped canvas data with explicit dimensions
+      const canvas = cropperInstance.getCroppedCanvas({
+        width: 600,  // Set a reasonable width
+        height: 400, // Set a reasonable height
+        minWidth: 100,
+        minHeight: 100,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        fillColor: '#fff',
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high',
+      });
+      
+      if (canvas) {
+        // Update the preview image with the cropped canvas data
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        previewImage.src = dataUrl;
+        console.log('Preview updated successfully');
+      } else {
+        console.error('Failed to get cropped canvas');
+      }
+    } catch (error) {
+      console.error('Error updating preview:', error);
     }
   }
 
@@ -965,7 +995,7 @@ document.addEventListener('DOMContentLoaded', function() {
       cropBoxMovable: true,
       cropBoxResizable: true,
       toggleDragModeOnDblclick: true,
-      preview: '#cropPreview', // Add preview container
+      // Don't use the built-in preview as we're handling it manually
       
       // Update crop information when the crop box changes
       crop: function(event) {
@@ -976,6 +1006,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Update the preview image manually
         updatePreview(event);
+        
+        // Hide the placeholder when we have a preview
+        document.getElementById('previewPlaceholder').style.display = 'none';
       },
       ready: function() {
         // This function runs when the cropper is fully initialized
@@ -1024,6 +1057,9 @@ document.addEventListener('DOMContentLoaded', function() {
           updatePreview({
             detail: cropData
           });
+          
+          // Hide the placeholder when we have a preview
+          document.getElementById('previewPlaceholder').style.display = 'none';
         }
       }
     });
