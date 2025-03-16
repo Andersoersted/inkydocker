@@ -1,5 +1,5 @@
 /**
- * Enhanced Gallery with Masonry Layout and Lazy Loading
+ * Enhanced Gallery with Masonry Layout, Lazy Loading, and Virtual Scrolling
  */
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize masonry layout
@@ -9,15 +9,100 @@ document.addEventListener('DOMContentLoaded', function() {
     initTagFiltering();
     // Initialize lazy loading
     initLazyLoading();
+    // Initialize virtual scrolling
+    initVirtualScrolling();
   }, 100);
 });
 
 /**
- * Initialize lazy loading for images with fade-in effect
+ * Initialize virtual scrolling for automatic loading of more images
+ */
+function initVirtualScrolling() {
+  const gallery = document.querySelector('.gallery');
+  if (!gallery) return;
+  
+  // Create variables to track loading state
+  window.isLoading = false;
+  window.allImagesLoaded = false;
+  
+  // Create a sentinel element that will trigger loading more images
+  const bottomSentinel = document.createElement('div');
+  bottomSentinel.id = 'bottom-sentinel';
+  bottomSentinel.style.height = '10px';
+  gallery.after(bottomSentinel);
+  
+  // Create intersection observer for bottom sentinel
+  const bottomObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && !window.isLoading && !window.allImagesLoaded) {
+      // When sentinel is visible, load more images
+      const loadMoreBtn = document.getElementById('loadMoreBtn');
+      if (loadMoreBtn) {
+        // Simulate click on load more button
+        loadMoreBtn.click();
+      }
+    }
+  });
+  
+  bottomObserver.observe(bottomSentinel);
+  
+  // Modify the loadImages function to update loading state
+  const originalLoadMoreClick = document.getElementById('loadMoreBtn').onclick;
+  document.getElementById('loadMoreBtn').onclick = function() {
+    window.isLoading = true;
+    originalLoadMoreClick.apply(this);
+    
+    // Hide the button while loading
+    this.style.display = 'none';
+  };
+  
+  // Patch the existing code to update loading state after images are loaded
+  const originalLoadImages = window.loadImages;
+  if (originalLoadImages) {
+    window.loadImages = function(page, append) {
+      window.isLoading = true;
+      
+      // Call original function
+      originalLoadImages(page, append);
+      
+      // Add event listener to detect when loading is complete
+      const loadingSpinner = document.getElementById('loadingSpinner');
+      
+      // Create a mutation observer to watch for changes to the loading spinner
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.attributeName === 'style' &&
+              loadingSpinner.style.display === 'none') {
+            // Loading is complete
+            window.isLoading = false;
+            
+            // Check if all images are loaded
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            window.allImagesLoaded = loadMoreBtn.style.display === 'none';
+            
+            // Show the button again if there are more images
+            if (!window.allImagesLoaded) {
+              loadMoreBtn.style.display = 'block';
+            }
+            
+            // Disconnect the observer
+            observer.disconnect();
+          }
+        });
+      });
+      
+      // Start observing the loading spinner
+      observer.observe(loadingSpinner, { attributes: true });
+    };
+  }
+}
+
+/**
+ * Initialize lazy loading for images with fade-in effect and optimized loading
  */
 function initLazyLoading() {
   // Check if IntersectionObserver is supported
   if ('IntersectionObserver' in window) {
+    // Use a more efficient root margin to start loading images before they enter the viewport
     const lazyImageObserver = new IntersectionObserver((entries, observer) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -31,6 +116,14 @@ function initLazyLoading() {
               lazyImage.classList.add('fade-in');
               // Remove the onload handler to prevent memory leaks
               this.onload = null;
+              
+              // Notify the masonry layout that an image has loaded
+              if (typeof initMasonryLayout === 'function') {
+                // Use a small timeout to ensure the image is fully rendered
+                setTimeout(() => {
+                  initMasonryLayout();
+                }, 50);
+              }
             };
             
             // Set the src to trigger loading
@@ -39,6 +132,9 @@ function initLazyLoading() {
           }
         }
       });
+    }, {
+      rootMargin: '200px 0px', // Start loading images when they're 200px from entering the viewport
+      threshold: 0.01 // Trigger when just 1% of the image is visible
     });
 
     // Observe all images with the 'lazy' class
@@ -58,6 +154,13 @@ function initLazyLoading() {
           img.classList.add('fade-in');
           // Remove the onload handler to prevent memory leaks
           this.onload = null;
+          
+          // Notify the masonry layout that an image has loaded
+          if (typeof initMasonryLayout === 'function') {
+            setTimeout(() => {
+              initMasonryLayout();
+            }, 50);
+          }
         };
         
         // Set the src to trigger loading

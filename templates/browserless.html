@@ -220,7 +220,7 @@
       <div class="modal-body">
         <div class="row">
           <div class="col-md-6">
-            <div id="cropContainer" style="max-height: 75vh; overflow: auto;">
+            <div id="cropContainer" style="max-height: 75vh; overflow-y: scroll; border: 1px solid #ddd; border-radius: 5px;">
               <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
             </div>
           </div>
@@ -230,7 +230,7 @@
                 <h6 class="mb-0">Crop Preview</h6>
               </div>
               <div class="card-body text-center">
-                <div id="cropPreview" style="width: 100%; height: 300px; overflow: hidden; margin-bottom: 10px; border: 1px solid #ddd; background-color: #f8f9fa;">
+                <div id="cropPreview" style="width: 100%; height: 300px; overflow: hidden; margin-bottom: 10px; border: 1px solid #ddd; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center;">
                   <img id="previewImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Preview" class="lazy" loading="lazy" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                 </div>
                 <small class="text-muted">This is how the image will appear on your eInk display</small>
@@ -896,6 +896,21 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   };
 
+  // Function to manually update the preview
+  function updatePreview(event) {
+    const previewImage = document.getElementById('previewImage');
+    const cropPreview = document.getElementById('cropPreview');
+    
+    if (!cropperInstance || !previewImage || !cropPreview) return;
+    
+    // Get the cropped canvas data
+    const canvas = cropperInstance.getCroppedCanvas();
+    if (canvas) {
+      // Update the preview image with the cropped canvas data
+      previewImage.src = canvas.toDataURL('image/jpeg');
+    }
+  }
+
   function initCropper() {
     const cropImage = document.getElementById('cropImage');
     const previewImage = document.getElementById('previewImage');
@@ -958,6 +973,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('cropY').textContent = Math.round(event.detail.y);
         document.getElementById('cropWidth').textContent = Math.round(event.detail.width);
         document.getElementById('cropHeight').textContent = Math.round(event.detail.height);
+        
+        // Update the preview image manually
+        updatePreview(event);
       },
       ready: function() {
         // This function runs when the cropper is fully initialized
@@ -1001,6 +1019,11 @@ document.addEventListener('DOMContentLoaded', function() {
           document.getElementById('cropY').textContent = Math.round(cropData.y);
           document.getElementById('cropWidth').textContent = Math.round(cropData.width);
           document.getElementById('cropHeight').textContent = Math.round(cropData.height);
+          
+          // Initialize the preview
+          updatePreview({
+            detail: cropData
+          });
         }
       }
     });

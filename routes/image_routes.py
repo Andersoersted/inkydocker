@@ -13,20 +13,76 @@ def thumbnail(filename):
     image_folder = current_app.config['IMAGE_FOLDER']
     thumbnail_folder = current_app.config['THUMBNAIL_FOLDER']
     thumb_path = os.path.join(thumbnail_folder, filename)
+    webp_thumb_path = os.path.join(thumbnail_folder, os.path.splitext(filename)[0] + '.webp')
     image_path = os.path.join(image_folder, filename)
+    
     if not os.path.exists(image_path):
         return "Not Found", 404
-    if not os.path.exists(thumb_path):
-        try:
-            with Image.open(image_path) as img:
-                img.thumbnail((200, 200))
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-                img.save(thumb_path, "JPEG")
-        except Exception as e:
-            current_app.logger.error("Error generating thumbnail for %s: %s", filename, e)
-            return "Error generating thumbnail", 500
-    return send_from_directory(thumbnail_folder, filename)
+    
+    # Check for WebP thumbnail first
+    if os.path.exists(webp_thumb_path):
+        response = send_from_directory(thumbnail_folder, os.path.basename(webp_thumb_path))
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+    
+    # If WebP doesn't exist, check for regular thumbnail
+    if os.path.exists(thumb_path):
+        return send_from_directory(thumbnail_folder, filename)
+    
+    # If neither exists, create both thumbnails
+    try:
+        with Image.open(image_path) as img:
+            # Get EXIF data to check for orientation
+            exif = None
+            try:
+                exif = img._getexif()
+            except (AttributeError, KeyError, IndexError):
+                # Not all image formats have EXIF data
+                pass
+            
+            # Auto-orient the image based on EXIF data if available
+            # This ensures portrait images display correctly without rotation
+            if exif:
+                # EXIF orientation tag is 274
+                orientation_tag = 274
+                if orientation_tag in exif:
+                    orientation = exif[orientation_tag]
+                    # Apply orientation correction
+                    if orientation == 2:
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                    elif orientation == 3:
+                        img = img.transpose(Image.ROTATE_180)
+                    elif orientation == 4:
+                        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                    elif orientation == 5:
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                    elif orientation == 6:
+                        img = img.transpose(Image.ROTATE_270)
+                    elif orientation == 7:
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                    elif orientation == 8:
+                        img = img.transpose(Image.ROTATE_90)
+            
+            # Create thumbnail
+            img.thumbnail((200, 200))
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            
+            # Save regular JPEG thumbnail for compatibility
+            img.save(thumb_path, "JPEG")
+            
+            # Save WebP version for better performance
+            img.save(webp_thumb_path, "WEBP", quality=80)
+            
+            current_app.logger.info(f"Created thumbnails for {filename}, size: {img.size}")
+        
+        # Return WebP version
+        response = send_from_directory(thumbnail_folder, os.path.basename(webp_thumb_path))
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+    except Exception as e:
+        current_app.logger.error("Error generating thumbnail for %s: %s", filename, e)
+        return "Error generating thumbnail", 500
 
 @image_bp.route('/', methods=['GET', 'POST'])
 def upload_file():
@@ -94,27 +150,141 @@ def upload_file():
 @image_bp.route('/images/<filename>')
 def uploaded_file(filename):
     image_folder = current_app.config['IMAGE_FOLDER']
+    webp_folder = os.path.join(current_app.config['DATA_FOLDER'], 'webp_cache')
+    
+    # Create WebP cache folder if it doesn't exist
+    if not os.path.exists(webp_folder):
+        os.makedirs(webp_folder)
+    
     filepath = os.path.join(image_folder, filename)
     if not os.path.exists(filepath):
         return "File not found", 404
+    
+    # For info modal preview, create a smaller version
     if request.args.get("size") == "info":
         try:
             with Image.open(filepath) as img:
+                # Get EXIF data to check for orientation
+                exif = None
+                try:
+                    exif = img._getexif()
+                except (AttributeError, KeyError, IndexError):
+                    # Not all image formats have EXIF data
+                    pass
+                
+                # Auto-orient the image based on EXIF data if available
+                if exif:
+                    # EXIF orientation tag is 274
+                    orientation_tag = 274
+                    if orientation_tag in exif:
+                        orientation = exif[orientation_tag]
+                        # Apply orientation correction
+                        if orientation == 2:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                        elif orientation == 3:
+                            img = img.transpose(Image.ROTATE_180)
+                        elif orientation == 4:
+                            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                        elif orientation == 5:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                        elif orientation == 6:
+                            img = img.transpose(Image.ROTATE_270)
+                        elif orientation == 7:
+                            img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                        elif orientation == 8:
+                            img = img.transpose(Image.ROTATE_90)
+                
+                # Resize for info modal
                 max_width = 300
                 w, h = img.size
                 if w > max_width:
                     ratio = max_width / float(w)
                     new_size = (max_width, int(h * ratio))
                     img = img.resize(new_size, Image.LANCZOS)
+                
+                # Convert to RGB if needed
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                    
                 from io import BytesIO
                 buf = BytesIO()
-                img.save(buf, format="JPEG")
+                img.save(buf, format="WEBP", quality=85)
                 buf.seek(0)
-                return send_file(buf, mimetype='image/jpeg')
+                return send_file(buf, mimetype='image/webp')
         except Exception as e:
             current_app.logger.error("Error processing image %s for info: %s", filename, e)
             return "Error processing image", 500
-    ext = filename.rsplit('.', 1)[1].lower()
+    
+    # For gallery display, use WebP if available or create it
+    if request.args.get("for") == "gallery" or request.headers.get('Accept', '').find('image/webp') != -1:
+        webp_path = os.path.join(webp_folder, os.path.splitext(filename)[0] + '.webp')
+        
+        # If WebP doesn't exist or is older than original, create it
+        if not os.path.exists(webp_path) or os.path.getmtime(webp_path) < os.path.getmtime(filepath):
+            try:
+                with Image.open(filepath) as img:
+                    # Get EXIF data to check for orientation
+                    exif = None
+                    try:
+                        exif = img._getexif()
+                    except (AttributeError, KeyError, IndexError):
+                        # Not all image formats have EXIF data
+                        pass
+                    
+                    # Auto-orient the image based on EXIF data if available
+                    # This ensures portrait images display correctly without rotation
+                    if exif:
+                        # EXIF orientation tag is 274
+                        orientation_tag = 274
+                        if orientation_tag in exif:
+                            orientation = exif[orientation_tag]
+                            # Apply orientation correction
+                            if orientation == 2:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                            elif orientation == 3:
+                                img = img.transpose(Image.ROTATE_180)
+                            elif orientation == 4:
+                                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                            elif orientation == 5:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                            elif orientation == 6:
+                                img = img.transpose(Image.ROTATE_270)
+                            elif orientation == 7:
+                                img = img.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                            elif orientation == 8:
+                                img = img.transpose(Image.ROTATE_90)
+                    
+                    # Resize for gallery if image is very large
+                    w, h = img.size
+                    max_dimension = 800  # Reasonable size for gallery display
+                    if w > max_dimension or h > max_dimension:
+                        if w > h:
+                            ratio = max_dimension / float(w)
+                            new_size = (max_dimension, int(h * ratio))
+                        else:
+                            ratio = max_dimension / float(h)
+                            new_size = (int(w * ratio), max_dimension)
+                        img = img.resize(new_size, Image.LANCZOS)
+                    
+                    # Convert to RGB if needed
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    
+                    # Save as WebP - DO NOT rotate portrait images for gallery view
+                    img.save(webp_path, "WEBP", quality=85)
+                    current_app.logger.info(f"Created WebP version for gallery: {webp_path}, size: {img.size}")
+            except Exception as e:
+                current_app.logger.error("Error creating WebP for %s: %s", filename, e)
+                # Fall back to original if WebP creation fails
+                return send_from_directory(image_folder, filename)
+        
+        # Serve WebP with caching headers
+        response = send_from_directory(webp_folder, os.path.basename(webp_path))
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+    
+    # For HEIC files, convert to JPEG on-the-fly
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
     if ext == "heic":
         try:
             from io import BytesIO
@@ -126,8 +296,9 @@ def uploaded_file(filename):
         except Exception as e:
             current_app.logger.error("Error processing HEIC image %s: %s", filename, e)
             return "Error processing image", 500
-    else:
-        return send_from_directory(image_folder, filename)
+    
+    # For original image requests (sending to eInk display), serve the original
+    return send_from_directory(image_folder, filename)
 
 @image_bp.route('/save_crop_info/<filename>', methods=['POST'])
 def save_crop_info_endpoint(filename):

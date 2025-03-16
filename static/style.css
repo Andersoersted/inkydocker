@@ -165,6 +165,9 @@ body {
     border-radius: 8px;
     transition: box-shadow 0.3s ease;
     height: 150px; /* Fixed height for consistency */
+    content-visibility: auto; /* Optimize rendering */
+    contain-intrinsic-size: 150px; /* Provide size hint for browser */
+    will-change: transform; /* Hint for GPU acceleration */
   }
   .gallery-item:hover {
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
@@ -181,6 +184,16 @@ body {
     display: block;
     object-fit: cover;
     cursor: pointer;
+    opacity: 0; /* Start invisible */
+    transition: opacity 0.3s ease-in; /* Smooth fade-in */
+  }
+  .img-container img.loaded {
+    opacity: 1; /* Fade in when loaded */
+  }
+  /* Add GPU acceleration for smoother scrolling */
+  .gallery {
+    transform: translateZ(0);
+    /* Keep existing styles */
   }
   
   /* Tag filtering system */

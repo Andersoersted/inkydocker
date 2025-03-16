@@ -293,10 +293,13 @@ function createGalleryItemHTML(image) {
   // Extract tags for filtering
   const tags = image.tags ? image.tags.join(', ') : '';
   
+  // Add query parameter to indicate this is for gallery display
+  const galleryUrl = `${image.url}?for=gallery`;
+  
   return `
     <div class="gallery-item" data-tags="${tags}">
       <div class="img-container">
-        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="${image.url}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy" class="lazy">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="${galleryUrl}" alt="${image.filename}" data-filename="${image.filename}" loading="lazy" class="lazy">
         <div class="overlay">
           <div class="favorite-icon ${image.favorite ? 'favorited' : ''}" title="Favorite" data-image="${image.filename}">
             <i class="fa fa-heart"></i>
