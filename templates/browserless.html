@@ -220,11 +220,14 @@
       <div class="modal-body">
         <div class="row">
           <div class="col-md-6">
+            <!-- Make the crop container scrollable with a fixed height -->
             <div class="crop-container-wrapper" style="position: relative; height: 500px; border: 2px solid #ddd; border-radius: 5px; overflow: hidden;">
-              <div id="cropContainer" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: scroll; padding-right: 15px;">
+              <!-- The container is now explicitly set to be scrollable with overflow-y: auto -->
+              <div id="cropContainer" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: auto; padding-right: 15px; max-height: 500px;">
                 <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
               </div>
-              <div style="position: absolute; top: 10px; right: 10px; background-color: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 3px; font-size: 12px;">
+              <!-- Make the scroll indicator more visible -->
+              <div style="position: absolute; top: 10px; right: 10px; background-color: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-size: 12px; z-index: 1000;">
                 <i class="fas fa-arrows-alt-v"></i> Scroll to view full image
               </div>
             </div>
@@ -235,6 +238,7 @@
                 <h6 class="mb-0">Crop Preview</h6>
               </div>
               <div class="card-body text-center">
+                <!-- Improved preview container with better visibility -->
                 <div id="cropPreview" style="width: 100%; height: 300px; overflow: hidden; margin-bottom: 10px; border: 2px solid #007bff; background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; position: relative;">
                   <img id="previewImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" alt="Preview" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                   <div id="previewPlaceholder" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: #6c757d; font-style: italic; background-color: rgba(248, 249, 250, 0.7);">
@@ -893,21 +897,39 @@ document.addEventListener('DOMContentLoaded', function() {
     const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
     cropModal.show();
     
-    // Initialize Cropper.js after the image is loaded
-    cropImage.onload = function() {
-      if (cropperInstance) {
-        cropperInstance.destroy();
-      }
-      
-      // Initialize cropper
-      initCropper();
-    };
+    // First check if there are existing crop settings for this image
+    fetch(`/api/get_screenshot_crop_info/${encodeURIComponent(currentInfoFilename)}`)
+      .then(response => response.json())
+      .then(data => {
+        // Initialize Cropper.js after the image is loaded
+        cropImage.onload = function() {
+          if (cropperInstance) {
+            cropperInstance.destroy();
+          }
+          
+          // Initialize cropper with existing crop data if available
+          initCropper(data.status === 'success' ? data.crop_info : null);
+        };
+      })
+      .catch(error => {
+        console.error('Error fetching crop info:', error);
+        // Initialize Cropper.js after the image is loaded even if fetch fails
+        cropImage.onload = function() {
+          if (cropperInstance) {
+            cropperInstance.destroy();
+          }
+          
+          // Initialize cropper without existing crop data
+          initCropper(null);
+        };
+      });
   };
 
-  // Function to manually update the preview
+  // Function to manually update the preview with improved error handling
   function updatePreview(event) {
     const previewImage = document.getElementById('previewImage');
     const cropPreview = document.getElementById('cropPreview');
+    const previewPlaceholder = document.getElementById('previewPlaceholder');
     
     if (!cropperInstance || !previewImage || !cropPreview) {
       console.error('Missing required elements for preview update');
@@ -932,16 +954,33 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update the preview image with the cropped canvas data
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
         previewImage.src = dataUrl;
+        
+        // Hide the placeholder and ensure the preview image is visible
+        if (previewPlaceholder) {
+          previewPlaceholder.style.display = 'none';
+        }
+        previewImage.style.display = 'block';
+        
         console.log('Preview updated successfully');
       } else {
         console.error('Failed to get cropped canvas');
+        // Show placeholder with error message if canvas creation failed
+        if (previewPlaceholder) {
+          previewPlaceholder.innerHTML = '<span>Error creating preview</span>';
+          previewPlaceholder.style.display = 'flex';
+        }
       }
     } catch (error) {
       console.error('Error updating preview:', error);
+      // Show placeholder with error message
+      if (previewPlaceholder) {
+        previewPlaceholder.innerHTML = '<span>Error: ' + error.message + '</span>';
+        previewPlaceholder.style.display = 'flex';
+      }
     }
   }
 
-  function initCropper() {
+  function initCropper(existingCropData) {
     const cropImage = document.getElementById('cropImage');
     const previewImage = document.getElementById('previewImage');
     
@@ -982,6 +1021,13 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('cropRatio').textContent = 'Free';
     }
     
+    // Log if we have existing crop data
+    if (existingCropData) {
+      console.log('Using existing crop data:', existingCropData);
+    } else {
+      console.log('No existing crop data found, using default settings');
+    }
+    
     // Initialize cropper with the calculated aspect ratio
     cropperInstance = new Cropper(cropImage, {
       aspectRatio: aspectRatio, // Use the calculated aspect ratio
@@ -1012,7 +1058,44 @@ document.addEventListener('DOMContentLoaded', function() {
       },
       ready: function() {
         // This function runs when the cropper is fully initialized
-        if (aspectRatio && cropperInstance) {
+        if (existingCropData) {
+          // If we have existing crop data, use it
+          try {
+            // Set the crop box using the existing data
+            cropperInstance.setCropBoxData({
+              left: existingCropData.x,
+              top: existingCropData.y,
+              width: existingCropData.width,
+              height: existingCropData.height
+            });
+            
+            // Update crop information
+            document.getElementById('cropX').textContent = Math.round(existingCropData.x);
+            document.getElementById('cropY').textContent = Math.round(existingCropData.y);
+            document.getElementById('cropWidth').textContent = Math.round(existingCropData.width);
+            document.getElementById('cropHeight').textContent = Math.round(existingCropData.height);
+            
+            // Initialize the preview with existing data
+            updatePreview({
+              detail: existingCropData
+            });
+            
+            // Hide the placeholder when we have a preview
+            document.getElementById('previewPlaceholder').style.display = 'none';
+            
+            console.log('Successfully applied existing crop data');
+          } catch (error) {
+            console.error('Error applying existing crop data:', error);
+            // Fall back to default behavior if there's an error
+            setDefaultCropBox();
+          }
+        } else if (aspectRatio && cropperInstance) {
+          // If no existing data but we have an aspect ratio, set default crop box
+          setDefaultCropBox();
+        }
+        
+        // Function to set the default crop box
+        function setDefaultCropBox() {
           // Get the image dimensions
           const imageData = cropperInstance.getImageData();
           const imageWidth = imageData.naturalWidth;

@@ -62,6 +62,7 @@ def load_scheduled_events(app):
         from models import ScheduleEvent
         import datetime
         import pytz
+        import os
         
         try:
             # Clear existing scheduled events
@@ -72,6 +73,11 @@ def load_scheduled_events(app):
             # Load events from database
             events = ScheduleEvent.query.filter_by(sent=False).all()
             logger.info(f"Loading {len(events)} scheduled events from database")
+            
+            # Write to a separate log file for easier debugging
+            with open('/tmp/scheduler_log.txt', 'a') as f:
+                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Loading scheduled events\n")
+                f.write(f"Found {len(events)} unsent events\n")
             
             copenhagen_tz = pytz.timezone('Europe/Copenhagen')
             now = datetime.datetime.now(copenhagen_tz)
@@ -90,24 +96,46 @@ def load_scheduled_events(app):
                     else:
                         dt = dt.astimezone(copenhagen_tz)
                     
+                    # Log event details
+                    with open('/tmp/scheduler_log.txt', 'a') as f:
+                        f.write(f"Event ID: {event.id}, Filename: {event.filename}, Device: {event.device}, Time: {dt}\n")
+                    
+                    # Check if the event is in the past
                     if dt > now:
+                        # Schedule the event
                         scheduler.add_job(
                             send_scheduled_image,
                             'date',
                             run_date=dt,
                             args=[event.id],
-                            id=f'event_{event.id}'
+                            id=f'event_{event.id}',
+                            misfire_grace_time=3600  # Allow misfires up to 1 hour
                         )
                         scheduled_count += 1
+                        with open('/tmp/scheduler_log.txt', 'a') as f:
+                            f.write(f"  -> Scheduled for future: {dt}\n")
                     else:
+                        # For past events, execute them immediately
+                        logger.info(f"Event {event.id} is in the past, executing immediately")
+                        with open('/tmp/scheduler_log.txt', 'a') as f:
+                            f.write(f"  -> In the past, executing immediately\n")
+                        
+                        # Execute the event directly
+                        send_scheduled_image(event.id)
                         past_count += 1
                 except Exception as e:
                     logger.error(f"Error scheduling event {event.id}: {e}")
+                    with open('/tmp/scheduler_log.txt', 'a') as f:
+                        f.write(f"  -> ERROR: {str(e)}\n")
             
             logger.info(f"Scheduled {scheduled_count} events, {past_count} events were in the past")
+            with open('/tmp/scheduler_log.txt', 'a') as f:
+                f.write(f"Scheduled {scheduled_count} events, {past_count} events were in the past\n")
             
         except Exception as e:
             logger.error(f"Error loading scheduled events: {e}")
+            with open('/tmp/scheduler_log.txt', 'a') as f:
+                f.write(f"ERROR loading scheduled events: {str(e)}\n")
 
 def start_scheduler(app):
     """Start the APScheduler with the Flask app context."""

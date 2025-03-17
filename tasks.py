@@ -681,20 +681,30 @@ def send_scheduled_image(event_id):
         from flask import current_app
         from routes.browserless_routes import take_screenshot_with_puppeteer
         
+        # Log the start of the scheduled image send process
+        current_app.logger.info(f"Starting scheduled image send for event ID: {event_id}")
+        
         try:
+            # Get the event from the database
             event = ScheduleEvent.query.get(event_id)
             if not event:
-                current_app.logger.error("Event not found: %s", event_id)
+                current_app.logger.error(f"Event not found: {event_id}")
                 return
             
             current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
             
+            # Get the device from the database
             device_obj = Device.query.filter_by(address=event.device).first()
             if not device_obj:
-                current_app.logger.error("Device not found for event %s", event_id)
+                current_app.logger.error(f"Device not found for event {event_id}")
                 return
             
             current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
+            
+            # Write to a separate log file for easier debugging
+            with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Processing scheduled image send\n")
+                f.write(f"Event ID: {event_id}, Filename: {event.filename}, Device: {device_obj.friendly_name}\n")
     
             # Check if this is a screenshot that needs to be refreshed
             if event.refresh_screenshot:
@@ -899,30 +909,89 @@ def send_scheduled_image(event_id):
                 current_app.logger.error(f"Error verifying temporary file: {e}")
             
             # Send the temporary file to the device using curl with verbose output
-            cmd = f'curl -v "{addr}/send_image" -X POST -F "file=@{temp_filename}"'
-            current_app.logger.info(f"Sending image with command: {cmd}")
+            # Create a unique identifier for this scheduled send
+            import uuid
+            send_id = uuid.uuid4().hex[:8]
             
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            # Log the image details before sending
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Sending image {event.filename} to device {device_obj.friendly_name} at {addr}")
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file path: {temp_filename}")
             
-            # Log the curl response in detail
-            current_app.logger.info(f"Curl stdout: {result.stdout}")
-            current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
-            current_app.logger.info(f"Curl return code: {result.returncode}")
+            # Use a more robust curl command with verbose output and a unique identifier
+            cmd = f'curl -v "{addr}/send_image" -X POST -F "file=@{temp_filename}" -F "source=scheduled" -F "event_id={event_id}"'
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Executing command: {cmd}")
+            
+            try:
+                # Use a longer timeout to ensure the command has time to complete
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+                
+                # Log the curl response in detail
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stdout: {result.stdout}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stderr (includes request details): {result.stderr}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl return code: {result.returncode}")
+                
+                # Write to a separate log file for easier debugging
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Sending image to {addr}\n")
+                    f.write(f"Event ID: {event_id}, Filename: {event.filename}\n")
+                    f.write(f"Command: {cmd}\n")
+                    f.write(f"Return code: {result.returncode}\n")
+                    f.write(f"Stdout: {result.stdout}\n")
+                    f.write(f"Stderr: {result.stderr}\n")
+                    
+                if result.returncode != 0:
+                    current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {result.stderr}")
+                    with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                        f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
+                    return
+                    
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
+                
+            except subprocess.TimeoutExpired:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command timed out after 60 seconds")
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] TIMEOUT sending image to {addr}\n")
+                    f.write(f"Command: {cmd}\n")
+                return
+            except Exception as e:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Error executing curl command: {e}")
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] ERROR sending image to {addr}\n")
+                    f.write(f"Command: {cmd}\n")
+                    f.write(f"Error: {str(e)}\n")
+                return
             
             # Delete the temporary file after sending
-            os.remove(temp_filename)
-            current_app.logger.info(f"Temporary file deleted: {temp_filename}")
+            try:
+                os.remove(temp_filename)
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file deleted: {temp_filename}")
+            except Exception as e:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Error deleting temporary file: {e}")
             
             if result.returncode == 0:
-                current_app.logger.info(f"Successfully sent image to device {device_obj.friendly_name}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
+                
+                # Update the event status in the database
                 event.sent = True
                 db.session.commit()
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Updated database: event {event.id} marked as sent")
+                
+                # Update the device's last_sent field
                 device_obj.last_sent = event.filename
                 db.session.commit()
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Updated device {device_obj.friendly_name} last_sent to {event.filename}")
+                
+                # Add a log entry for this send operation
                 add_send_log_entry(event.filename)
-                current_app.logger.info(f"Updated database: event {event.id} marked as sent")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Added send log entry for {event.filename}")
+                
+                # Write completion to log file
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"{datetime.datetime.now()}: [SCHEDULED-{send_id}] Successfully completed scheduled send\n")
             else:
-                current_app.logger.error(f"Error sending image: {result.stderr}")
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {result.stderr}")
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
         except Exception as e:
             current_app.logger.error("Error in send_scheduled_image: %s", e)
             return

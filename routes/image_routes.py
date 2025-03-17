@@ -1,6 +1,7 @@
 from flask import Blueprint, request, redirect, url_for, render_template, flash, send_from_directory, send_file, jsonify, current_app, abort
 from models import db, ImageDB, CropInfo, SendLog, Device
 import os
+import datetime
 from PIL import Image
 import subprocess
 from utils.image_helpers import allowed_file, convert_to_jpeg
@@ -331,16 +332,26 @@ def save_crop_info_endpoint(filename):
 def send_image(filename):
     image_folder = current_app.config['IMAGE_FOLDER']
     data_folder = current_app.config['DATA_FOLDER']
+    
+    # Log the request details for debugging
+    current_app.logger.info(f"[GALLERY] Send image request received for filename: {filename}")
+    
     filepath = os.path.join(image_folder, filename)
     if not os.path.exists(filepath):
+        current_app.logger.error(f"[GALLERY] File not found: {filepath}")
         return "File not found", 404
+    
     device_addr = request.form.get("device")
     if not device_addr:
+        current_app.logger.error("[GALLERY] No device specified in request")
         return "No device specified", 400
 
+    current_app.logger.info(f"[GALLERY] Sending to device: {device_addr}")
+    
     from models import Device
     device_obj = Device.query.filter_by(address=device_addr).first()
     if not device_obj:
+        current_app.logger.error(f"[GALLERY] Device not found in DB: {device_addr}")
         return "Device not found in DB", 500
     dev_width = None
     dev_height = None
@@ -488,30 +499,106 @@ def send_image(filename):
         except Exception as e:
             current_app.logger.error(f"Error verifying temporary file: {e}")
         
-        # Send the temporary file to the device using curl with verbose output
-        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
-        current_app.logger.info(f"Sending image with command: {cmd}")
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        # Create a unique identifier for this gallery send
+        import uuid
+        send_id = uuid.uuid4().hex[:8]
         
-        # Log the curl response in detail
-        current_app.logger.info(f"Curl stdout: {result.stdout}")
-        current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
-        current_app.logger.info(f"Curl return code: {result.returncode}")
+        # Log the image details before sending
+        current_app.logger.info(f"[GALLERY-{send_id}] Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
+        current_app.logger.info(f"[GALLERY-{send_id}] Temporary file path: {temp_filename}")
+        
+        # Use a more robust curl command with verbose output and a unique identifier
+        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}" -F "source=gallery" -F "filename={filename}"'
+        current_app.logger.info(f"[GALLERY-{send_id}] Executing command: {cmd}")
+        
+        try:
+            # Use a timeout to ensure the command doesn't hang
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
             
-        # Delete the temporary file after sending
-        os.remove(temp_filename)
-        current_app.logger.info(f"Temporary file deleted: {temp_filename}")
-        
-        if result.returncode != 0:
-            return f"Error sending image: {result.stderr}", 500
+            # Log the curl response in detail
+            current_app.logger.info(f"[GALLERY-{send_id}] Curl stdout: {result.stdout}")
+            current_app.logger.info(f"[GALLERY-{send_id}] Curl stderr (includes request details): {result.stderr}")
+            current_app.logger.info(f"[GALLERY-{send_id}] Curl return code: {result.returncode}")
+            
+            # Write to a separate log file for easier debugging
+            with open('/tmp/gallery_send_log.txt', 'a') as f:
+                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [GALLERY-{send_id}] Sending image to {device_addr}\n")
+                f.write(f"Filename: {filename}\n")
+                f.write(f"Command: {cmd}\n")
+                f.write(f"Return code: {result.returncode}\n")
+                f.write(f"Stdout: {result.stdout}\n")
+                f.write(f"Stderr: {result.stderr}\n")
+                
+            # Delete the temporary file after sending
+            try:
+                os.remove(temp_filename)
+                current_app.logger.info(f"[GALLERY-{send_id}] Temporary file deleted: {temp_filename}")
+            except Exception as e:
+                current_app.logger.error(f"[GALLERY-{send_id}] Error deleting temporary file: {e}")
+            
+            if result.returncode != 0:
+                current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {result.stderr}")
+                with open('/tmp/gallery_send_log.txt', 'a') as f:
+                    f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
+                return f"Error sending image: {result.stderr}", 500
 
-        device_obj.last_sent = filename
-        db.session.commit()
-        add_send_log_entry(filename)
-        return f"Image sent successfully: {result.stdout}", 200
+            # Update the device's last_sent field
+            device_obj.last_sent = filename
+            db.session.commit()
+            current_app.logger.info(f"[GALLERY-{send_id}] Updated device {device_obj.friendly_name} last_sent to {filename}")
+            
+            # Add a log entry for this send operation
+            add_send_log_entry(filename)
+            current_app.logger.info(f"[GALLERY-{send_id}] Added send log entry for {filename}")
+            
+            # Write completion to log file
+            with open('/tmp/gallery_send_log.txt', 'a') as f:
+                f.write(f"{datetime.datetime.now()}: [GALLERY-{send_id}] Successfully completed gallery send\n")
+                
+            return f"Image sent successfully: {result.stdout}", 200
+            
+        except subprocess.TimeoutExpired:
+            current_app.logger.error(f"[GALLERY-{send_id}] Curl command timed out after 30 seconds")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return "Request timed out while sending the image", 500
+        except Exception as e:
+            current_app.logger.error(f"[GALLERY-{send_id}] Error executing curl command: {e}")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return f"Error sending image: {str(e)}", 500
     except Exception as e:
         current_app.logger.error("Error resizing/cropping image: %s", e)
         return f"Error processing image: {e}", 500
+
+@image_bp.route('/api/get_crop_info/<filename>', methods=['GET'])
+def get_crop_info(filename):
+    """Get crop information for an image."""
+    # Check if crop info exists for this filename
+    crop_info = CropInfo.query.filter_by(filename=filename).first()
+    
+    if crop_info:
+        # Return the crop info as JSON
+        return jsonify({
+            "status": "success",
+            "crop_info": {
+                "x": crop_info.x,
+                "y": crop_info.y,
+                "width": crop_info.width,
+                "height": crop_info.height,
+                "resolution": crop_info.resolution
+            }
+        }), 200
+    else:
+        # No crop info found
+        return jsonify({
+            "status": "error",
+            "message": "No crop information found for this image"
+        }), 404
 
 @image_bp.route('/api/get_images', methods=['GET'])
 def get_images():

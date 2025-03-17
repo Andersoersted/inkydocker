@@ -598,6 +598,31 @@ def get_screenshot(filename):
     # Return the original image if no cropping requested or if cropping failed
     return send_from_directory(screenshots_folder, filename)
 
+@browserless_bp.route('/api/get_screenshot_crop_info/<filename>', methods=['GET'])
+def get_screenshot_crop_info(filename):
+    """Get crop information for a screenshot."""
+    # Check if crop info exists for this filename
+    crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+    
+    if crop_info:
+        # Return the crop info as JSON
+        return jsonify({
+            "status": "success",
+            "crop_info": {
+                "x": crop_info.x,
+                "y": crop_info.y,
+                "width": crop_info.width,
+                "height": crop_info.height,
+                "resolution": crop_info.resolution
+            }
+        }), 200
+    else:
+        # No crop info found
+        return jsonify({
+            "status": "error",
+            "message": "No crop information found for this screenshot"
+        }), 404
+
 @browserless_bp.route('/api/browserless/delete/<int:screenshot_id>', methods=['POST'])
 def delete_screenshot(screenshot_id):
     screenshot = Screenshot.query.get_or_404(screenshot_id)
@@ -666,15 +691,22 @@ def send_screenshot(filename):
     screenshots_folder = os.path.join(current_app.config['DATA_FOLDER'], 'screenshots')
     filepath = os.path.join(screenshots_folder, filename)
     
+    # Log the request details for debugging
+    current_app.logger.info(f"Send screenshot request received for filename: {filename}")
+    
     if not os.path.exists(filepath):
+        current_app.logger.error(f"File not found: {filepath}")
         return jsonify({"status": "error", "message": "File not found"}), 404
     
     device_addr = request.form.get("device")
     if not device_addr:
+        current_app.logger.error("No device specified in request")
         return jsonify({"status": "error", "message": "No device specified"}), 400
 
+    current_app.logger.info(f"Sending to device: {device_addr}")
     device_obj = Device.query.filter_by(address=device_addr).first()
     if not device_obj:
+        current_app.logger.error(f"Device not found in DB: {device_addr}")
         return jsonify({"status": "error", "message": "Device not found in DB"}), 500
     
     dev_width = None
@@ -799,16 +831,55 @@ def send_screenshot(filename):
             final_img.save(temp_filename, format="JPEG", quality=95)
             current_app.logger.info(f"Saved temporary file: {temp_filename}")
 
-        cmd = f'curl "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        os.remove(temp_filename)
-        if result.returncode != 0:
-            return jsonify({"status": "error", "message": f"Error sending image: {result.stderr}"}), 500
+        # Log the image details before sending
+        current_app.logger.info(f"Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
+        current_app.logger.info(f"Temporary file path: {temp_filename}")
+        
+        # Use a more robust curl command with verbose output
+        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
+        current_app.logger.info(f"Executing command: {cmd}")
+        
+        try:
+            # Use a timeout to ensure the command doesn't hang
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            
+            # Log the curl response in detail
+            current_app.logger.info(f"Curl stdout: {result.stdout}")
+            current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
+            current_app.logger.info(f"Curl return code: {result.returncode}")
+            
+            # Clean up the temporary file
+            os.remove(temp_filename)
+            current_app.logger.info(f"Temporary file deleted: {temp_filename}")
+            
+            if result.returncode != 0:
+                current_app.logger.error(f"Error sending image: {result.stderr}")
+                return jsonify({"status": "error", "message": f"Error sending image: {result.stderr}"}), 500
 
-        device_obj.last_sent = filename
-        db.session.commit()
-        add_send_log_entry(filename)
-        return jsonify({"status": "success", "message": "Screenshot sent successfully"}), 200
+            # Update the device's last_sent field with the current filename
+            device_obj.last_sent = filename
+            db.session.commit()
+            current_app.logger.info(f"Updated device {device_obj.friendly_name} last_sent to {filename}")
+            
+            # Add a log entry for this send operation
+            add_send_log_entry(filename)
+            current_app.logger.info(f"Added send log entry for {filename}")
+            
+            return jsonify({"status": "success", "message": "Screenshot sent successfully"}), 200
+        except subprocess.TimeoutExpired:
+            current_app.logger.error(f"Curl command timed out after 30 seconds")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return jsonify({"status": "error", "message": "Request timed out while sending the image"}), 500
+        except Exception as e:
+            current_app.logger.error(f"Error executing curl command: {e}")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return jsonify({"status": "error", "message": f"Error sending image: {str(e)}"}), 500
     except Exception as e:
         current_app.logger.error(f"Error processing screenshot: {str(e)}")
         return jsonify({"status": "error", "message": f"Error processing screenshot: {str(e)}"}), 500

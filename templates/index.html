@@ -207,8 +207,13 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeCropModal()"></button>
       </div>
       <div class="modal-body">
-        <div id="cropContainer" style="max-height: 70vh; overflow: hidden;">
-          <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
+        <div class="crop-container-wrapper" style="position: relative; height: 70vh; border: 2px solid #ddd; border-radius: 5px; overflow: hidden;">
+          <div id="cropContainer" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: auto; max-height: 70vh;">
+            <img id="cropImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 2'%3E%3C/svg%3E" data-src="" alt="Crop Image" class="img-fluid w-100 lazy" loading="lazy">
+          </div>
+          <div style="position: absolute; top: 10px; right: 10px; background-color: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-size: 12px; z-index: 1000;">
+            <i class="fas fa-arrows-alt-v"></i> Scroll to view full image
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -545,13 +550,26 @@ document.addEventListener('click', function(e) {
 
     const baseUrl = "{{ url_for('image.send_image', filename='') }}";
     const finalUrl = baseUrl + encodeURIComponent(imageFilename);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', finalUrl, true);
     
+    // Add a timestamp to prevent caching issues
+    const timestamp = new Date().getTime();
+    const finalUrlWithTimestamp = `${finalUrl}?t=${timestamp}`;
+    
+    // Log the request details to console for debugging
+    console.log(`Sending image: ${imageFilename} to device: ${deviceFriendly} (${selectedDevice.value})`);
+    console.log(`Request URL: ${finalUrlWithTimestamp}`);
+    
+    // Send the request with a timeout
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', finalUrlWithTimestamp, true);
+    xhr.timeout = 30000; // 30 second timeout
+    
+    // Add event listeners for all possible outcomes
     xhr.onload = function() {
-      // Re-enable button and restore text
+      // Re-enable button
       button.disabled = false;
+      
+      console.log(`Response received: Status ${xhr.status}, Text: ${xhr.responseText}`);
       
       if (xhr.status === 200) {
         // Show success icon in button temporarily
@@ -630,7 +648,9 @@ document.addEventListener('click', function(e) {
       }
     };
 
+    // Handle network errors
     xhr.onerror = function() {
+      console.error("Network error occurred while sending image");
       // Re-enable button and show error
       button.disabled = false;
       button.innerHTML = '<i class="fas fa-times"></i> Failed';
@@ -645,6 +665,47 @@ document.addEventListener('click', function(e) {
         <div class="d-flex">
           <div class="toast-body">
             <i class="fas fa-exclamation-circle me-2"></i> Network error while sending image.
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      `;
+      statusContainer.appendChild(toastEl);
+      
+      // Initialize and show the toast
+      const toast = new bootstrap.Toast(toastEl, {
+        autohide: true,
+        delay: 5000
+      });
+      toast.show();
+      
+      // Remove the toast element when hidden
+      toastEl.addEventListener('hidden.bs.toast', function() {
+        toastEl.remove();
+      });
+      
+      // Restore original button text after delay
+      setTimeout(function() {
+        button.innerHTML = originalText;
+      }, 2000);
+    };
+    
+    // Handle timeout errors
+    xhr.ontimeout = function() {
+      console.error("Request timed out while sending image");
+      // Re-enable button and show error
+      button.disabled = false;
+      button.innerHTML = '<i class="fas fa-times"></i> Timeout';
+      
+      // Create toast notification for timeout error
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast align-items-center text-white bg-warning border-0';
+      toastEl.setAttribute('role', 'alert');
+      toastEl.setAttribute('aria-live', 'assertive');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">
+            <i class="fas fa-clock me-2"></i> Request timed out while sending image. The eInk display might be busy.
           </div>
           <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
@@ -997,7 +1058,6 @@ function openCropModal() {
     deviceResolution = selectedDevice.getAttribute('data-resolution') || '800x600';
     
     // Get device orientation from data attribute
-    // We need to add this data attribute to the radio buttons
     deviceOrientation = selectedDevice.getAttribute('data-orientation') || 'landscape';
     
     console.log(`Selected device: ${selectedDevice.getAttribute('data-friendly')}, orientation: ${deviceOrientation}, resolution: ${deviceResolution}`);
@@ -1018,78 +1078,188 @@ function openCropModal() {
       cropper.destroy();
     }
     
-    // Calculate the aspect ratio based on device resolution and orientation
-    let aspectRatio = NaN; // Default to free aspect ratio
-    
-    if (deviceResolution) {
-      const parts = deviceResolution.split('x');
-      if (parts.length === 2) {
-        const width = parseInt(parts[0], 10);
-        const height = parseInt(parts[1], 10);
+    // First check if there are existing crop settings for this image
+    console.log(`Checking for existing crop settings for ${currentInfoFilename}`);
+    fetch(`/api/get_crop_info/${encodeURIComponent(currentInfoFilename)}`)
+      .then(response => response.json())
+      .then(data => {
+        console.log('Crop info response:', data);
         
-        if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
-          // Set aspect ratio based on device orientation
-          if (deviceOrientation === 'portrait') {
-            // For portrait displays, the physical display is rotated 90°
-            // So we need to swap the dimensions and use height/width (taller than wide)
-            console.log(`Portrait display: swapping dimensions ${width}x${height} -> ${height}x${width}`);
-            aspectRatio = height / width;
-          } else {
-            // For landscape displays, use width/height (wider than tall)
-            aspectRatio = width / height;
+        // Calculate the aspect ratio based on device resolution and orientation
+        let aspectRatio = NaN; // Default to free aspect ratio
+        
+        if (deviceResolution) {
+          const parts = deviceResolution.split('x');
+          if (parts.length === 2) {
+            const width = parseInt(parts[0], 10);
+            const height = parseInt(parts[1], 10);
+            
+            if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+              // Set aspect ratio based on device orientation
+              if (deviceOrientation === 'portrait') {
+                // For portrait displays, the physical display is rotated 90°
+                // So we need to swap the dimensions and use height/width (taller than wide)
+                console.log(`Portrait display: swapping dimensions ${width}x${height} -> ${height}x${width}`);
+                aspectRatio = height / width;
+              } else {
+                // For landscape displays, use width/height (wider than tall)
+                aspectRatio = width / height;
+              }
+              console.log(`Setting aspect ratio to ${aspectRatio} for ${deviceOrientation} display (${deviceResolution})`);
+            }
           }
-          console.log(`Setting aspect ratio to ${aspectRatio} for ${deviceOrientation} display (${deviceResolution})`);
         }
-      }
-    }
-    
-    // Initialize Cropper.js with the calculated aspect ratio
-    cropper = new Cropper(cropImage, {
-      viewMode: 1,
-      dragMode: 'move',
-      aspectRatio: aspectRatio, // Use the calculated aspect ratio based on device
-      autoCropArea: 1, // Use maximum possible area (1 = 100%)
-      restore: false,
-      guides: true,
-      center: true,
-      highlight: false,
-      cropBoxMovable: true,
-      cropBoxResizable: true,
-      toggleDragModeOnDblclick: false,
-      ready: function() {
-        // When the cropper is ready, ensure the crop box is as large as possible
-        // while maintaining the aspect ratio
-        const cropperInstance = this.cropper;
-        const containerData = cropperInstance.getContainerData();
-        const imageData = cropperInstance.getImageData();
         
-        // Calculate the maximum possible crop box size while maintaining aspect ratio
-        let maxWidth, maxHeight;
-        
-        if (aspectRatio > 0) {
-          // If image is wider than it is tall (landscape)
-          if (imageData.width / imageData.height > aspectRatio) {
-            maxHeight = imageData.height;
-            maxWidth = maxHeight * aspectRatio;
-          }
-          // If image is taller than it is wide (portrait)
-          else {
-            maxWidth = imageData.width;
-            maxHeight = maxWidth / aspectRatio;
-          }
+        // Function to set the default crop box
+        function setDefaultCropBox(cropperInstance) {
+          const containerData = cropperInstance.getContainerData();
+          const imageData = cropperInstance.getImageData();
           
-          // Set the crop box to the maximum size
-          cropperInstance.setCropBoxData({
-            left: (containerData.width - maxWidth) / 2,
-            top: (containerData.height - maxHeight) / 2,
-            width: maxWidth,
-            height: maxHeight
-          });
+          // Calculate the maximum possible crop box size while maintaining aspect ratio
+          let maxWidth, maxHeight;
           
-          console.log(`Set initial crop box to ${maxWidth}x${maxHeight}`);
+          if (aspectRatio > 0) {
+            // If image is wider than it is tall (landscape)
+            if (imageData.width / imageData.height > aspectRatio) {
+              maxHeight = imageData.height;
+              maxWidth = maxHeight * aspectRatio;
+            }
+            // If image is taller than it is wide (portrait)
+            else {
+              maxWidth = imageData.width;
+              maxHeight = maxWidth / aspectRatio;
+            }
+            
+            // Set the crop box to the maximum size
+            cropperInstance.setCropBoxData({
+              left: (containerData.width - maxWidth) / 2,
+              top: (containerData.height - maxHeight) / 2,
+              width: maxWidth,
+              height: maxHeight
+            });
+            
+            console.log(`Set initial crop box to ${maxWidth}x${maxHeight}`);
+          }
         }
-      }
-    });
+        
+        // Initialize Cropper.js with the calculated aspect ratio
+        cropper = new Cropper(cropImage, {
+          viewMode: 1,
+          dragMode: 'move',
+          aspectRatio: aspectRatio, // Use the calculated aspect ratio based on device
+          autoCropArea: 1, // Use maximum possible area (1 = 100%)
+          restore: false,
+          guides: true,
+          center: true,
+          highlight: false,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          toggleDragModeOnDblclick: false,
+          ready: function() {
+            // When the cropper is ready, check if we have existing crop data
+            if (data.status === 'success' && data.crop_info) {
+              try {
+                console.log('Applying existing crop data:', data.crop_info);
+                
+                // Set the crop box using the existing data
+                this.cropper.setCropBoxData({
+                  left: data.crop_info.x,
+                  top: data.crop_info.y,
+                  width: data.crop_info.width,
+                  height: data.crop_info.height
+                });
+                
+                console.log('Successfully applied existing crop data');
+              } catch (error) {
+                console.error('Error applying existing crop data:', error);
+                // Fall back to default behavior if there's an error
+                setDefaultCropBox(this.cropper);
+              }
+            } else {
+              // No existing crop data, use default behavior
+              console.log('No existing crop data found, using default settings');
+              setDefaultCropBox(this.cropper);
+            }
+          }
+        });
+      })
+      .catch(error => {
+        console.error('Error fetching crop info:', error);
+        
+        // Initialize Cropper.js with default settings if fetch fails
+        // Calculate the aspect ratio based on device resolution and orientation
+        let aspectRatio = NaN; // Default to free aspect ratio
+        
+        if (deviceResolution) {
+          const parts = deviceResolution.split('x');
+          if (parts.length === 2) {
+            const width = parseInt(parts[0], 10);
+            const height = parseInt(parts[1], 10);
+            
+            if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+              // Set aspect ratio based on device orientation
+              if (deviceOrientation === 'portrait') {
+                // For portrait displays, the physical display is rotated 90°
+                console.log(`Portrait display: swapping dimensions ${width}x${height} -> ${height}x${width}`);
+                aspectRatio = height / width;
+              } else {
+                // For landscape displays, use width/height (wider than tall)
+                aspectRatio = width / height;
+              }
+              console.log(`Setting aspect ratio to ${aspectRatio} for ${deviceOrientation} display (${deviceResolution})`);
+            }
+          }
+        }
+        
+        // Function to set the default crop box
+        function setDefaultCropBox(cropperInstance) {
+          const containerData = cropperInstance.getContainerData();
+          const imageData = cropperInstance.getImageData();
+          
+          // Calculate the maximum possible crop box size
+          let maxWidth, maxHeight;
+          
+          if (aspectRatio > 0) {
+            if (imageData.width / imageData.height > aspectRatio) {
+              maxHeight = imageData.height;
+              maxWidth = maxHeight * aspectRatio;
+            } else {
+              maxWidth = imageData.width;
+              maxHeight = maxWidth / aspectRatio;
+            }
+            
+            // Set the crop box to the maximum size
+            cropperInstance.setCropBoxData({
+              left: (containerData.width - maxWidth) / 2,
+              top: (containerData.height - maxHeight) / 2,
+              width: maxWidth,
+              height: maxHeight
+            });
+            
+            console.log(`Set initial crop box to ${maxWidth}x${maxHeight}`);
+          }
+        }
+        
+        // Initialize Cropper.js with the calculated aspect ratio
+        cropper = new Cropper(cropImage, {
+          viewMode: 1,
+          dragMode: 'move',
+          aspectRatio: aspectRatio,
+          autoCropArea: 1,
+          restore: false,
+          guides: true,
+          center: true,
+          highlight: false,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          toggleDragModeOnDblclick: false,
+          ready: function() {
+            // Set default crop box
+            setDefaultCropBox(this.cropper);
+          }
+        });
+      });
+  }, { once: true });
     
     // Add a note about device orientation to the modal
     const modalBody = document.querySelector('#cropModal .modal-body');
