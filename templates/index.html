@@ -1260,26 +1260,32 @@ function openCropModal() {
         });
       });
   }, { once: true });
-    
-    // Add a note about device orientation to the modal
-    const modalBody = document.querySelector('#cropModal .modal-body');
-    let orientationNote = document.getElementById('orientationNote');
-    
-    if (!orientationNote) {
-      orientationNote = document.createElement('div');
-      orientationNote.id = 'orientationNote';
-      orientationNote.className = 'alert alert-info mt-3';
-      modalBody.appendChild(orientationNote);
-    }
-    orientationNote.innerHTML = `
-      <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display (${deviceResolution}).
-      <br>The crop area is locked to the correct aspect ratio for your display and starts at the maximum possible size.
-      <br>You can move and resize the crop area to select which part of the image to send.
-      <br>${deviceOrientation === 'portrait'
-        ? 'Since your display is in portrait mode, the image will be rotated 90° clockwise after cropping to fit correctly.'
-        : 'Since your display is in landscape mode, the image will be sent exactly as cropped, without rotation.'}
-    `;
-  }, { once: true });
+  
+  // Add a note about device orientation to the modal
+  const modalBody = document.querySelector('#cropModal .modal-body');
+  let orientationNote = document.getElementById('orientationNote');
+  
+  if (!orientationNote) {
+    orientationNote = document.createElement('div');
+    orientationNote.id = 'orientationNote';
+    orientationNote.className = 'alert alert-info mt-3';
+    modalBody.appendChild(orientationNote);
+  }
+  
+  // Prepare the orientation-specific message without using a multi-line ternary operator (which causes syntax errors)
+  let orientationMsg = '';
+  if (deviceOrientation === 'portrait') {
+    orientationMsg = 'Since your display is in portrait mode, the image will be rotated 90° clockwise after cropping to fit correctly.';
+  } else {
+    orientationMsg = 'Since your display is in landscape mode, the image will be sent exactly as cropped, without rotation.';
+  }
+  
+  orientationNote.innerHTML = `
+    <strong>Note:</strong> You are cropping for a <strong>${deviceOrientation}</strong> display (${deviceResolution}).
+    <br>The crop area is locked to the correct aspect ratio for your display and starts at the maximum possible size.
+    <br>You can move and resize the crop area to select which part of the image to send.
+    <br>${orientationMsg}
+  `;
 }
 
 function closeCropModal() {

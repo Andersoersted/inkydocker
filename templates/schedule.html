@@ -577,7 +577,8 @@
                 start: info.event.start,
                 device: info.event.extendedProps.device,
                 filename: info.event.extendedProps.filename,
-                recurrence: info.event.extendedProps.recurrence
+                recurrence: info.event.extendedProps.recurrence,
+                extendedProps: info.event.extendedProps // Include all extended properties
               };
               
               // Populate the event form with this data - use local timezone

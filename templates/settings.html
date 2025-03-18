@@ -648,6 +648,13 @@
       .then(function(data) {
         if (data.status === "success") {
           var modelsGroup = document.getElementById('downloaded_models_group');
+          
+          // Check if the element exists
+          if (!modelsGroup) {
+            console.log("Element 'downloaded_models_group' not found, skipping model population");
+            return;
+          }
+          
           // Clear existing options
           modelsGroup.innerHTML = '';
           

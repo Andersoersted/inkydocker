@@ -46,14 +46,29 @@ function initVirtualScrolling() {
   bottomObserver.observe(bottomSentinel);
   
   // Modify the loadImages function to update loading state
-  const originalLoadMoreClick = document.getElementById('loadMoreBtn').onclick;
-  document.getElementById('loadMoreBtn').onclick = function() {
-    window.isLoading = true;
-    originalLoadMoreClick.apply(this);
-    
-    // Hide the button while loading
-    this.style.display = 'none';
-  };
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  if (loadMoreBtn) {
+    const originalLoadMoreClick = loadMoreBtn.onclick;
+    loadMoreBtn.onclick = function() {
+      window.isLoading = true;
+      
+      // Only call the original click handler if it exists
+      if (originalLoadMoreClick) {
+        originalLoadMoreClick.apply(this);
+      } else {
+        // Fallback behavior if no click handler exists yet
+        if (typeof window.currentPage !== 'undefined') {
+          window.currentPage++;
+          if (typeof window.loadImages === 'function') {
+            window.loadImages(window.currentPage, true);
+          }
+        }
+      }
+      
+      // Hide the button while loading
+      this.style.display = 'none';
+    };
+  }
   
   // Patch the existing code to update loading state after images are loaded
   const originalLoadImages = window.loadImages;
