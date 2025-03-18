@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from models import Device, db
-import subprocess, json
+import json
+import httpx
 
 additional_bp = Blueprint('additional', __name__)
 
@@ -9,12 +10,24 @@ def fetch_display_info():
     address = request.args.get('address')
     if not address:
         return jsonify({"status": "error", "message": "No address provided"}), 400
-    cmd = f'curl -s "{address}/display_info"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        return jsonify({"status": "error", "message": result.stderr}), 500
+        
+    # Ensure address has HTTP protocol
+    if not address.startswith(('http://', 'https://')):
+        address = f'http://{address}'
+        
+    url = f"{address}/display_info"
+    
     try:
-        raw_info = json.loads(result.stdout)
+        # Use httpx with a short timeout to match curl's behavior
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url)
+            
+        # Check if request was successful
+        if response.status_code != 200:
+            return jsonify({"status": "error", "message": f"HTTP error: {response.status_code}"}), 500
+        
+        # Parse the JSON response
+        raw_info = response.json()
         colour_str = raw_info.get("colour", "").capitalize()
         model_str = raw_info.get("model", "")
         resolution_arr = raw_info.get("resolution", [])

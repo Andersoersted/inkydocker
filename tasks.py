@@ -908,56 +908,74 @@ def send_scheduled_image(event_id):
             except Exception as e:
                 current_app.logger.error(f"Error verifying temporary file: {e}")
             
-            # Send the temporary file to the device using curl with verbose output
+            # Send the temporary file to the device using httpx
             # Create a unique identifier for this scheduled send
             import uuid
+            import httpx
             send_id = uuid.uuid4().hex[:8]
             
             # Log the image details before sending
             current_app.logger.info(f"[SCHEDULED-{send_id}] Sending image {event.filename} to device {device_obj.friendly_name} at {addr}")
             current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file path: {temp_filename}")
             
-            # Use a more robust curl command with verbose output and a unique identifier
-            cmd = f'curl -v "{addr}/send_image" -X POST -F "file=@{temp_filename}" -F "source=scheduled" -F "event_id={event_id}"'
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Executing command: {cmd}")
+            # URL for the send_image endpoint
+            url = f"{addr}/send_image"
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Sending request to: {url}")
             
             try:
-                # Use a timeout of 2 minutes to ensure the command has enough time to complete
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
-                
-                # Log the curl response in detail
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stdout: {result.stdout}")
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stderr (includes request details): {result.stderr}")
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Curl return code: {result.returncode}")
-                
-                # Write to a separate log file for easier debugging
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Sending image to {addr}\n")
-                    f.write(f"Event ID: {event_id}, Filename: {event.filename}\n")
-                    f.write(f"Command: {cmd}\n")
-                    f.write(f"Return code: {result.returncode}\n")
-                    f.write(f"Stdout: {result.stdout}\n")
-                    f.write(f"Stderr: {result.stderr}\n")
+                # Use httpx to send a multipart form request
+                with open(temp_filename, 'rb') as file_obj:
+                    # Prepare files and data for the multipart request
+                    files = {'file': (event.filename, file_obj, 'image/jpeg')}
+                    data = {
+                        'source': 'scheduled',
+                        'event_id': str(event_id)
+                    }
                     
-                if result.returncode != 0:
-                    current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {result.stderr}")
+                    # Send the request with a timeout of 2 minutes
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Sending httpx POST request")
+                    with httpx.Client(timeout=120.0) as client:
+                        response = client.post(url, files=files, data=data)
+                    
+                    # Log the response details
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Response status code: {response.status_code}")
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Response headers: {response.headers}")
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Response content: {response.text}")
+                    
+                    # Write to a separate log file for easier debugging
                     with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                        f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
-                    return
+                        f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Sending image to {addr}\n")
+                        f.write(f"Event ID: {event_id}, Filename: {event.filename}\n")
+                        f.write(f"URL: {url}\n")
+                        f.write(f"Status code: {response.status_code}\n")
+                        f.write(f"Response: {response.text}\n")
+                        
+                    if response.status_code != 200:
+                        current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {response.text}")
+                        with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                            f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
+                        return
                     
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
                 
-            except subprocess.TimeoutExpired:
-                current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command timed out after 120 seconds")
+            except httpx.TimeoutException:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request timed out after 120 seconds")
                 with open('/tmp/scheduled_image_log.txt', 'a') as f:
                     f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] TIMEOUT sending image to {addr}\n")
-                    f.write(f"Command: {cmd}\n")
+                    f.write(f"URL: {url}\n")
                 return
-            except Exception as e:
-                current_app.logger.error(f"[SCHEDULED-{send_id}] Error executing curl command: {e}")
+            except httpx.RequestError as e:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request error: {e}")
                 with open('/tmp/scheduled_image_log.txt', 'a') as f:
                     f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] ERROR sending image to {addr}\n")
-                    f.write(f"Command: {cmd}\n")
+                    f.write(f"URL: {url}\n")
+                    f.write(f"Error: {str(e)}\n")
+                return
+            except Exception as e:
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Unexpected error: {e}")
+                with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] ERROR sending image to {addr}\n")
+                    f.write(f"URL: {url}\n")
                     f.write(f"Error: {str(e)}\n")
                 return
             

@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app, send_file
 from models import db, Device
 import httpx
-import subprocess, os, datetime, json
+import os, datetime, json
 
 device_bp = Blueprint('device', __name__)
 
@@ -150,21 +150,23 @@ def metrics_stream(index):
     if index < 0 or index >= len(all_devices):
         return "Device not found", 404
     device_address = all_devices[index].address
+    
+    # Ensure address has HTTP protocol
+    if not device_address.startswith(('http://', 'https://')):
+        device_address = f'http://{device_address}'
+    
     def generate():
-        command = f'curl -N -s "{device_address}/stream"'
-        process = subprocess.Popen(command, shell=True,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True)
         try:
-            while True:
-                line = process.stdout.readline()
-                if not line:
-                    break
-                yield line
-        except Exception:
-            process.kill()
-        finally:
-            process.kill()
+            # Stream the response using httpx
+            with httpx.stream('GET', f"{device_address}/stream", timeout=None) as response:
+                for line in response.iter_lines():
+                    if line:
+                        # Return each line from the stream
+                        yield line.decode('utf-8') + '\n'
+        except Exception as e:
+            current_app.logger.error(f"Error streaming metrics: {e}")
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+    
     return current_app.response_class(generate(), mimetype='text/event-stream')
 
 @device_bp.route('/test_device/<int:index>', methods=['GET'])
@@ -174,27 +176,49 @@ def test_device(index):
         return jsonify({"status": "error", "message": "Device not found"}), 404
     device = all_devices[index]
     address = device.address
-    cmd = f'curl -I --max-time 5 -s "{address}"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    current_app.logger.info("Curl output for %s: %s", address, result.stdout)
-    if result.returncode == 0 and "200 OK" in result.stdout.upper():
-        device.online = True
-        db.session.commit()
-        return jsonify({"status": "ok"}), 200
-    else:
+    
+    # Ensure address has HTTP protocol
+    if not address.startswith(('http://', 'https://')):
+        address = f'http://{address}'
+    
+    try:
+        # Use httpx for the HEAD request with a 5-second timeout
+        response = httpx.head(address, timeout=5.0, follow_redirects=True)
+        current_app.logger.info("HTTP status for %s: %s", address, response.status_code)
+        
+        if response.status_code == 200:
+            device.online = True
+            db.session.commit()
+            return jsonify({"status": "ok"}), 200
+        else:
+            device.online = False
+            db.session.commit()
+            return jsonify({"status": "error", "message": f"HTTP status code: {response.status_code}"}), 500
+    except Exception as e:
+        current_app.logger.error("Error testing device %s: %s", address, str(e))
         device.online = False
         db.session.commit()
-        return jsonify({"status": "error"}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @device_bp.route('/test_connection_address', methods=['GET'])
 def test_connection_address():
     address = request.args.get('address')
     if not address:
         return jsonify({"status": "error", "message": "No address provided"}), 400
-    cmd = f'curl -I --max-time 5 -s "{address}"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    current_app.logger.info("Curl output for %s: %s", address, result.stdout)
-    if result.returncode == 0 and "200 OK" in result.stdout.upper():
-        return jsonify({"status": "ok"}), 200
-    else:
-        return jsonify({"status": "failed"}), 500
+    
+    # Ensure address has HTTP protocol
+    if not address.startswith(('http://', 'https://')):
+        address = f'http://{address}'
+    
+    try:
+        # Use httpx for the HEAD request with a 5-second timeout
+        response = httpx.head(address, timeout=5.0, follow_redirects=True)
+        current_app.logger.info("HTTP status for %s: %s", address, response.status_code)
+        
+        if response.status_code == 200:
+            return jsonify({"status": "ok"}), 200
+        else:
+            return jsonify({"status": "failed", "message": f"HTTP status code: {response.status_code}"}), 500
+    except Exception as e:
+        current_app.logger.error("Error testing connection to %s: %s", address, str(e))
+        return jsonify({"status": "failed", "message": str(e)}), 500

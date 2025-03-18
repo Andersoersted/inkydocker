@@ -562,7 +562,7 @@ document.addEventListener('click', function(e) {
     // Send the request with a timeout
     const xhr = new XMLHttpRequest();
     xhr.open('POST', finalUrlWithTimestamp, true);
-    xhr.timeout = 30000; // 30 second timeout
+    xhr.timeout = 120000; // 120 second timeout (matching server-side timeout)
     
     // Add event listeners for all possible outcomes
     xhr.onload = function() {

@@ -4,6 +4,7 @@ import os
 import datetime
 from PIL import Image
 import subprocess
+import httpx
 from utils.image_helpers import allowed_file, convert_to_jpeg
 from utils.crop_helpers import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry, get_last_sent
 
@@ -497,7 +498,6 @@ def send_image(filename):
                 current_app.logger.debug(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
         except Exception as e:
             current_app.logger.error(f"Error verifying temporary file: {e}")
-        
         # Create a unique identifier for this gallery send
         import uuid
         send_id = uuid.uuid4().hex[:8]
@@ -506,39 +506,55 @@ def send_image(filename):
         current_app.logger.debug(f"[GALLERY-{send_id}] Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
         current_app.logger.debug(f"[GALLERY-{send_id}] Temporary file path: {temp_filename}")
         
-        # Use a more robust curl command with verbose output and a unique identifier
-        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}" -F "source=gallery" -F "filename={filename}"'
-        current_app.logger.debug(f"[GALLERY-{send_id}] Executing command: {cmd}")
+        # Ensure device address has HTTP protocol
+        if not device_addr.startswith(('http://', 'https://')):
+            device_addr = f'http://{device_addr}'
+        
+        # Prepare URL for the request
+        url = f"{device_addr}/send_image"
+        current_app.logger.debug(f"[GALLERY-{send_id}] Sending request to: {url}")
         
         try:
-            # Use a timeout of 2 minutes to ensure the command has enough time to complete
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
-            
-            # Log the curl response only at debug level
-            current_app.logger.debug(f"[GALLERY-{send_id}] Curl stdout: {result.stdout}")
-            current_app.logger.debug(f"[GALLERY-{send_id}] Curl stderr (includes request details): {result.stderr}")
-            current_app.logger.debug(f"[GALLERY-{send_id}] Curl return code: {result.returncode}")
-            
-            # Write to a separate log file for easier debugging
-            with open('/tmp/gallery_send_log.txt', 'a') as f:
-                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [GALLERY-{send_id}] Sending image to {device_addr}\n")
-                f.write(f"Filename: {filename}\n")
-                f.write(f"Command: {cmd}\n")
-                f.write(f"Return code: {result.returncode}\n")
-                f.write(f"Stdout: {result.stdout}\n")
-                f.write(f"Stderr: {result.stderr}\n")
+            # Use httpx to send a multipart form request
+            with open(temp_filename, 'rb') as file_obj:
+                # Prepare files and data for the multipart request
+                files = {'file': (filename, file_obj, 'image/jpeg')}
+                data = {
+                    'source': 'gallery',
+                    'filename': filename
+                }
                 
-            # Delete the temporary file after sending
-            try:
-                os.remove(temp_filename)
-                current_app.logger.debug(f"[GALLERY-{send_id}] Temporary file deleted: {temp_filename}")
-            except Exception as e:
-                current_app.logger.error(f"[GALLERY-{send_id}] Error deleting temporary file: {e}")
-            
-            if result.returncode != 0:
-                current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {result.stderr}")
+                # Send the request with a timeout of 2 minutes
+                current_app.logger.debug(f"[GALLERY-{send_id}] Sending httpx POST request")
+                with httpx.Client(timeout=120.0) as client:
+                    response = client.post(url, files=files, data=data)
+                
+                # Log the response details
+                current_app.logger.debug(f"[GALLERY-{send_id}] Response status code: {response.status_code}")
+                current_app.logger.debug(f"[GALLERY-{send_id}] Response headers: {response.headers}")
+                current_app.logger.debug(f"[GALLERY-{send_id}] Response content: {response.text}")
+                
+                # Write to a separate log file for easier debugging
                 with open('/tmp/gallery_send_log.txt', 'a') as f:
-                    f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
+                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [GALLERY-{send_id}] Sending image to {device_addr}\n")
+                    f.write(f"Filename: {filename}\n")
+                    f.write(f"URL: {url}\n")
+                    f.write(f"Status code: {response.status_code}\n")
+                    f.write(f"Response: {response.text}\n")
+                
+                # Delete the temporary file after sending
+                try:
+                    os.remove(temp_filename)
+                    current_app.logger.debug(f"[GALLERY-{send_id}] Temporary file deleted: {temp_filename}")
+                except Exception as e:
+                    current_app.logger.error(f"[GALLERY-{send_id}] Error deleting temporary file: {e}")
+                
+                # Check if the request was successful
+                if response.status_code != 200:
+                    current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {response.text}")
+                    with open('/tmp/gallery_send_log.txt', 'a') as f:
+                        f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
+                    return f"Error sending image: {response.text}", 500
                 return f"Error sending image: {result.stderr}", 500
 
             # Update the device's last_sent field
@@ -556,15 +572,22 @@ def send_image(filename):
                 
             return f"Image sent successfully: {result.stdout}", 200
             
-        except subprocess.TimeoutExpired:
-            current_app.logger.error(f"[GALLERY-{send_id}] Curl command timed out after 120 seconds")
+        except httpx.TimeoutException:
+            current_app.logger.error(f"[GALLERY-{send_id}] HTTP request timed out after 120 seconds")
             try:
                 os.remove(temp_filename)
             except:
                 pass
-            return "Request timed out while sending the image", 500
+            return "Request timed out while sending the image to the device", 500
+        except httpx.RequestError as e:
+            current_app.logger.error(f"[GALLERY-{send_id}] HTTP request error: {e}")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return f"Network error while sending the image: {str(e)}", 500
         except Exception as e:
-            current_app.logger.error(f"[GALLERY-{send_id}] Error executing curl command: {e}")
+            current_app.logger.error(f"[GALLERY-{send_id}] Unexpected error: {e}")
             try:
                 os.remove(temp_filename)
             except:

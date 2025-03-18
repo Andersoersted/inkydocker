@@ -7,6 +7,7 @@ from PIL import Image
 from io import BytesIO
 from utils.crop_helpers import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry
 import subprocess
+import httpx
 import base64
 import asyncio
 import pyppeteer
@@ -835,26 +836,37 @@ def send_screenshot(filename):
         current_app.logger.info(f"Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
         current_app.logger.info(f"Temporary file path: {temp_filename}")
         
-        # Use a more robust curl command with verbose output
-        cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}"'
-        current_app.logger.info(f"Executing command: {cmd}")
+        # Ensure device address has HTTP protocol
+        if not device_addr.startswith(('http://', 'https://')):
+            device_addr = f'http://{device_addr}'
+            
+        # Prepare URL for the request
+        url = f"{device_addr}/send_image"
+        current_app.logger.info(f"Sending request to: {url}")
         
         try:
-            # Use a timeout of 2 minutes to ensure the command has enough time to complete
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
-            
-            # Log the curl response in detail
-            current_app.logger.info(f"Curl stdout: {result.stdout}")
-            current_app.logger.info(f"Curl stderr (includes request details): {result.stderr}")
-            current_app.logger.info(f"Curl return code: {result.returncode}")
+            # Use httpx to send a multipart form request
+            with open(temp_filename, 'rb') as file_obj:
+                # Prepare files for the multipart request
+                files = {'file': (filename, file_obj, 'image/jpeg')}
+                
+                # Send the request with a timeout of 2 minutes
+                current_app.logger.info(f"Sending httpx POST request")
+                with httpx.Client(timeout=120.0) as client:
+                    response = client.post(url, files=files)
+                
+                # Log the response details
+                current_app.logger.info(f"Response status code: {response.status_code}")
+                current_app.logger.info(f"Response headers: {response.headers}")
+                current_app.logger.info(f"Response content: {response.text}")
             
             # Clean up the temporary file
             os.remove(temp_filename)
             current_app.logger.info(f"Temporary file deleted: {temp_filename}")
             
-            if result.returncode != 0:
-                current_app.logger.error(f"Error sending image: {result.stderr}")
-                return jsonify({"status": "error", "message": f"Error sending image: {result.stderr}"}), 500
+            if response.status_code != 200:
+                current_app.logger.error(f"Error sending image: {response.text}")
+                return jsonify({"status": "error", "message": f"Error sending image: {response.text}"}), 500
 
             # Update the device's last_sent field with the current filename
             device_obj.last_sent = filename
@@ -866,15 +878,22 @@ def send_screenshot(filename):
             current_app.logger.info(f"Added send log entry for {filename}")
             
             return jsonify({"status": "success", "message": "Screenshot sent successfully"}), 200
-        except subprocess.TimeoutExpired:
-            current_app.logger.error(f"Curl command timed out after 30 seconds")
+        except httpx.TimeoutException:
+            current_app.logger.error(f"HTTP request timed out after 120 seconds")
             try:
                 os.remove(temp_filename)
             except:
                 pass
-            return jsonify({"status": "error", "message": "Request timed out while sending the image"}), 500
+            return jsonify({"status": "error", "message": "Request timed out while sending the image to the device"}), 500
+        except httpx.RequestError as e:
+            current_app.logger.error(f"HTTP request error: {e}")
+            try:
+                os.remove(temp_filename)
+            except:
+                pass
+            return jsonify({"status": "error", "message": f"Network error while sending the image: {str(e)}"}), 500
         except Exception as e:
-            current_app.logger.error(f"Error executing curl command: {e}")
+            current_app.logger.error(f"Unexpected error during image sending: {e}")
             try:
                 os.remove(temp_filename)
             except:
