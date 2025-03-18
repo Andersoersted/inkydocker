@@ -922,8 +922,8 @@ def send_scheduled_image(event_id):
             current_app.logger.info(f"[SCHEDULED-{send_id}] Executing command: {cmd}")
             
             try:
-                # Use a longer timeout to ensure the command has time to complete
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+                # Use a timeout of 2 minutes to ensure the command has enough time to complete
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
                 
                 # Log the curl response in detail
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stdout: {result.stdout}")
@@ -948,7 +948,7 @@ def send_scheduled_image(event_id):
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
                 
             except subprocess.TimeoutExpired:
-                current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command timed out after 60 seconds")
+                current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command timed out after 120 seconds")
                 with open('/tmp/scheduled_image_log.txt', 'a') as f:
                     f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] TIMEOUT sending image to {addr}\n")
                     f.write(f"Command: {cmd}\n")

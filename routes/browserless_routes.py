@@ -840,8 +840,8 @@ def send_screenshot(filename):
         current_app.logger.info(f"Executing command: {cmd}")
         
         try:
-            # Use a timeout to ensure the command doesn't hang
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            # Use a timeout of 2 minutes to ensure the command has enough time to complete
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
             
             # Log the curl response in detail
             current_app.logger.info(f"Curl stdout: {result.stdout}")

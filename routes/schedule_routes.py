@@ -81,12 +81,15 @@ def get_events():
             # Check if the file is a screenshot
             is_screenshot = False
             thumbnail_url = f"/thumbnail/{ev.filename}"
+            current_filename = ev.filename  # Keep track of the current filename
             
             # Check if this is a screenshot
             screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
             if screenshot:
                 is_screenshot = True
-                thumbnail_url = f"/screenshots/{ev.filename}?cropped=true"
+                # Use the current filename from the Screenshot record, which could be updated during refresh
+                thumbnail_url = f"/screenshots/{screenshot.filename}?cropped=true"
+                current_filename = screenshot.filename  # Update to the current screenshot filename
             
             event_list.append({
                 "id": ev.id,
@@ -103,7 +106,8 @@ def get_events():
                 "extendedProps": {
                     "thumbnail": thumbnail_url,
                     "isScreenshot": is_screenshot,
-                    "refreshScreenshot": ev.refresh_screenshot
+                    "refreshScreenshot": ev.refresh_screenshot,
+                    "currentFilename": current_filename
                 }
             })
         else:
@@ -156,12 +160,15 @@ def get_events():
                 # Check if the file is a screenshot
                 is_screenshot = False
                 thumbnail_url = f"/thumbnail/{ev.filename}"
+                current_filename = ev.filename  # Keep track of the current filename
                 
                 # Check if this is a screenshot
                 screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
                 if screenshot:
                     is_screenshot = True
-                    thumbnail_url = f"/screenshots/{ev.filename}?cropped=true"
+                    # Use the current filename from the Screenshot record, which could be updated during refresh
+                    thumbnail_url = f"/screenshots/{screenshot.filename}?cropped=true"
+                    current_filename = screenshot.filename  # Update to the current screenshot filename
                 
                 event_list.append({
                     "id": ev.id,  # same series id
@@ -180,7 +187,8 @@ def get_events():
                         "thumbnail": thumbnail_url,
                         "isRecurring": True,  # Flag for frontend to identify recurring events
                         "isScreenshot": is_screenshot,
-                        "refreshScreenshot": ev.refresh_screenshot
+                        "refreshScreenshot": ev.refresh_screenshot,
+                        "currentFilename": current_filename
                     }
                 })
                 if rec == "daily":

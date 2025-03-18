@@ -75,7 +75,7 @@ def thumbnail(filename):
             # Save WebP version for better performance
             img.save(webp_thumb_path, "WEBP", quality=80)
             
-            current_app.logger.info(f"Created thumbnails for {filename}, size: {img.size}")
+            current_app.logger.debug(f"Created thumbnails for {filename}, size: {img.size}")
         
         # Return WebP version
         response = send_from_directory(thumbnail_folder, os.path.basename(webp_thumb_path))
@@ -273,7 +273,7 @@ def uploaded_file(filename):
                     
                     # Save as WebP - DO NOT rotate portrait images for gallery view
                     img.save(webp_path, "WEBP", quality=85)
-                    current_app.logger.info(f"Created WebP version for gallery: {webp_path}, size: {img.size}")
+                    current_app.logger.debug(f"Created WebP version for gallery: {webp_path}, size: {img.size}")
             except Exception as e:
                 current_app.logger.error("Error creating WebP for %s: %s", filename, e)
                 # Fall back to original if WebP creation fails
@@ -319,7 +319,7 @@ def save_crop_info_endpoint(filename):
         device_obj = Device.query.filter_by(address=device_addr).first()
         if device_obj and device_obj.resolution:
             crop_data["resolution"] = device_obj.resolution
-            current_app.logger.info(f"Saving crop with resolution: {device_obj.resolution}")
+            current_app.logger.debug(f"Saving crop with resolution: {device_obj.resolution}")
         else:
             current_app.logger.warning(f"Device not found or missing resolution: {device_addr}")
     else:
@@ -333,8 +333,8 @@ def send_image(filename):
     image_folder = current_app.config['IMAGE_FOLDER']
     data_folder = current_app.config['DATA_FOLDER']
     
-    # Log the request details for debugging
-    current_app.logger.info(f"[GALLERY] Send image request received for filename: {filename}")
+    # Log only basic request details
+    current_app.logger.debug(f"[GALLERY] Send image request received for filename: {filename}")
     
     filepath = os.path.join(image_folder, filename)
     if not os.path.exists(filepath):
@@ -346,7 +346,7 @@ def send_image(filename):
         current_app.logger.error("[GALLERY] No device specified in request")
         return "No device specified", 400
 
-    current_app.logger.info(f"[GALLERY] Sending to device: {device_addr}")
+    current_app.logger.debug(f"[GALLERY] Sending to device: {device_addr}")
     
     from models import Device
     device_obj = Device.query.filter_by(address=device_addr).first()
@@ -372,21 +372,21 @@ def send_image(filename):
             
             # Check if device is in portrait orientation
             is_portrait = device_obj.orientation.lower() == 'portrait'
-            current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
+            current_app.logger.debug(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
             
             # Calculate aspect ratio based on device orientation
             # This ratio is used for cropping to ensure the image fits the display correctly
             if is_portrait:
                 # For portrait displays, use height/width (taller than wide)
                 device_ratio = dev_height / dev_width
-                current_app.logger.info(f"Portrait display: using height/width ratio = {device_ratio}")
+                current_app.logger.debug(f"Portrait display: using height/width ratio = {device_ratio}")
             else:
                 # For landscape displays, use width/height (wider than tall)
                 device_ratio = dev_width / dev_height
-                current_app.logger.info(f"Landscape display: using width/height ratio = {device_ratio}")
+                current_app.logger.debug(f"Landscape display: using width/height ratio = {device_ratio}")
                 
             # Log the original image dimensions and device info
-            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
+            current_app.logger.debug(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
             
             # Step 1: Apply crop if available
             cdata = load_crop_info_from_db(filename)
@@ -405,22 +405,22 @@ def send_image(filename):
                     # If we have stored resolution and it matches the current device,
                     # use the stored crop data directly
                     stored_resolution = cdata.get("resolution")
-                    current_app.logger.info(f"Stored resolution: {stored_resolution}, device resolution: {device_obj.resolution}")
+                    current_app.logger.debug(f"Stored resolution: {stored_resolution}, device resolution: {device_obj.resolution}")
                     
                     if stored_resolution and stored_resolution == device_obj.resolution:
-                        current_app.logger.info(f"Using stored crop data: ({x}, {y}, {w}, {h})")
+                        current_app.logger.debug(f"Using stored crop data: ({x}, {y}, {w}, {h})")
                         cropped = orig_img.crop((x, y, x+w, y+h))
                     else:
                         # Always use the user's crop selection directly without any adjustments
                         # This respects the user's crop choice regardless of device orientation
-                        current_app.logger.info(f"Using stored crop data directly: ({x}, {y}, {w}, {h})")
+                        current_app.logger.debug(f"Using stored crop data directly: ({x}, {y}, {w}, {h})")
                         cropped = orig_img.crop((x, y, x+w, y+h))
                         crop_w, crop_h = cropped.size
-                        current_app.logger.info(f"Cropped dimensions: {crop_w}x{crop_h}")
+                        current_app.logger.debug(f"Cropped dimensions: {crop_w}x{crop_h}")
             
             # If no valid crop data, create an auto-centered crop
             if not cdata or "x" not in cdata:
-                current_app.logger.info(f"No crop data found, using auto-centered crop")
+                current_app.logger.debug(f"No crop data found, using auto-centered crop")
                 orig_ratio = orig_w / orig_h
                 
                 # For auto-cropping, we use the device's aspect ratio based on orientation
@@ -428,7 +428,7 @@ def send_image(filename):
                 # device_ratio is already calculated above based on orientation
                 
                 # Log the ratios for debugging
-                current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
+                current_app.logger.debug(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
                 
                 if orig_ratio > device_ratio:
                     # Image is wider than device ratio, use full height
@@ -441,40 +441,39 @@ def send_image(filename):
                     top = (orig_h - new_height) // 2
                     crop_box = (0, top, orig_w, top + new_height)
                 
-                current_app.logger.info(f"Auto crop box: {crop_box}")
+                current_app.logger.debug(f"Auto crop box: {crop_box}")
                 cropped = orig_img.crop(crop_box)
-                current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
+                current_app.logger.debug(f"Auto-cropped image dimensions: {cropped.size}")
 
             # Step 2: Resize and rotate the cropped image to match the target resolution and orientation
-            current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
+            current_app.logger.debug(f"Cropped image size before resize/rotation: {cropped.size}")
             
             # Check if device is in portrait orientation directly from the database
             is_portrait = device_obj.orientation.lower() == 'portrait'
-            current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
-            current_app.logger.info(f"Device resolution from database: {device_obj.resolution} (width x height)")
+            current_app.logger.debug(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
+            current_app.logger.debug(f"Device resolution from database: {device_obj.resolution} (width x height)")
             # IMPORTANT: The rotation is applied based on the device orientation in the database
             # If the eInk display itself is also rotating the image, this might cause double rotation
             
             # If portrait, rotate the image 90 degrees clockwise
             if is_portrait:
-                current_app.logger.info(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
+                current_app.logger.debug(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
                 cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                current_app.logger.info(f"After rotation size: {cropped.size}")
+                current_app.logger.debug(f"After rotation size: {cropped.size}")
                 
                 # For portrait displays, we swap width and height in the final resize
                 # This is because the physical display is rotated, but the native resolution
                 # is still reported as if it were in landscape
-                current_app.logger.info(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
+                current_app.logger.debug(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
                 final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)
-                current_app.logger.info(f"Final image size after portrait resize: {final_img.size}")
+                current_app.logger.debug(f"Final image size after portrait resize: {final_img.size}")
             else:
-                current_app.logger.info(f"Device is in LANDSCAPE mode, no rotation needed")
+                current_app.logger.debug(f"Device is in LANDSCAPE mode, no rotation needed")
                 # For landscape displays, we use the normal dimensions
                 final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
-                current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
-                current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
+                current_app.logger.debug(f"Final image size after landscape resize: {final_img.size}")
             
-            current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
+            current_app.logger.debug(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
             
             # Save the processed image as a temporary file
             temp_dir = os.path.join(data_folder, "temp")
@@ -488,14 +487,14 @@ def send_image(filename):
             
             # Save the final image with high quality
             final_img.save(temp_filename, format="JPEG", quality=95)
-            current_app.logger.info(f"Original image path: {filepath}")
-            current_app.logger.info(f"Saved temporary file: {temp_filename}")
-            current_app.logger.info(f"Final image dimensions being sent: {final_img.size}")
+            current_app.logger.debug(f"Original image path: {filepath}")
+            current_app.logger.debug(f"Saved temporary file: {temp_filename}")
+            current_app.logger.debug(f"Final image dimensions being sent: {final_img.size}")
 
         # Verify the temporary file exists and has the correct dimensions
         try:
             with Image.open(temp_filename) as verify_img:
-                current_app.logger.info(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
+                current_app.logger.debug(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
         except Exception as e:
             current_app.logger.error(f"Error verifying temporary file: {e}")
         
@@ -504,21 +503,21 @@ def send_image(filename):
         send_id = uuid.uuid4().hex[:8]
         
         # Log the image details before sending
-        current_app.logger.info(f"[GALLERY-{send_id}] Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
-        current_app.logger.info(f"[GALLERY-{send_id}] Temporary file path: {temp_filename}")
+        current_app.logger.debug(f"[GALLERY-{send_id}] Sending image {filename} to device {device_obj.friendly_name} at {device_addr}")
+        current_app.logger.debug(f"[GALLERY-{send_id}] Temporary file path: {temp_filename}")
         
         # Use a more robust curl command with verbose output and a unique identifier
         cmd = f'curl -v "{device_addr}/send_image" -X POST -F "file=@{temp_filename}" -F "source=gallery" -F "filename={filename}"'
-        current_app.logger.info(f"[GALLERY-{send_id}] Executing command: {cmd}")
+        current_app.logger.debug(f"[GALLERY-{send_id}] Executing command: {cmd}")
         
         try:
-            # Use a timeout to ensure the command doesn't hang
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            # Use a timeout of 2 minutes to ensure the command has enough time to complete
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
             
-            # Log the curl response in detail
-            current_app.logger.info(f"[GALLERY-{send_id}] Curl stdout: {result.stdout}")
-            current_app.logger.info(f"[GALLERY-{send_id}] Curl stderr (includes request details): {result.stderr}")
-            current_app.logger.info(f"[GALLERY-{send_id}] Curl return code: {result.returncode}")
+            # Log the curl response only at debug level
+            current_app.logger.debug(f"[GALLERY-{send_id}] Curl stdout: {result.stdout}")
+            current_app.logger.debug(f"[GALLERY-{send_id}] Curl stderr (includes request details): {result.stderr}")
+            current_app.logger.debug(f"[GALLERY-{send_id}] Curl return code: {result.returncode}")
             
             # Write to a separate log file for easier debugging
             with open('/tmp/gallery_send_log.txt', 'a') as f:
@@ -532,7 +531,7 @@ def send_image(filename):
             # Delete the temporary file after sending
             try:
                 os.remove(temp_filename)
-                current_app.logger.info(f"[GALLERY-{send_id}] Temporary file deleted: {temp_filename}")
+                current_app.logger.debug(f"[GALLERY-{send_id}] Temporary file deleted: {temp_filename}")
             except Exception as e:
                 current_app.logger.error(f"[GALLERY-{send_id}] Error deleting temporary file: {e}")
             
@@ -545,11 +544,11 @@ def send_image(filename):
             # Update the device's last_sent field
             device_obj.last_sent = filename
             db.session.commit()
-            current_app.logger.info(f"[GALLERY-{send_id}] Updated device {device_obj.friendly_name} last_sent to {filename}")
+            current_app.logger.debug(f"[GALLERY-{send_id}] Updated device {device_obj.friendly_name} last_sent to {filename}")
             
             # Add a log entry for this send operation
             add_send_log_entry(filename)
-            current_app.logger.info(f"[GALLERY-{send_id}] Added send log entry for {filename}")
+            current_app.logger.debug(f"[GALLERY-{send_id}] Added send log entry for {filename}")
             
             # Write completion to log file
             with open('/tmp/gallery_send_log.txt', 'a') as f:
@@ -558,7 +557,7 @@ def send_image(filename):
             return f"Image sent successfully: {result.stdout}", 200
             
         except subprocess.TimeoutExpired:
-            current_app.logger.error(f"[GALLERY-{send_id}] Curl command timed out after 30 seconds")
+            current_app.logger.error(f"[GALLERY-{send_id}] Curl command timed out after 120 seconds")
             try:
                 os.remove(temp_filename)
             except:
