@@ -130,10 +130,18 @@
                         <a href="{{ screenshot.url }}" target="_blank">{{ screenshot.url }}</a><br>
                         Last updated: {{ screenshot.last_updated.strftime('%Y-%m-%d %H:%M') }}
                       </p>
-                      <div class="btn-group w-100" role="group">
-                        <button type="button" class="btn btn-sm btn-primary send-screenshot" data-filename="{{ screenshot.filename }}">Send</button>
-                        <button type="button" class="btn btn-sm btn-info info-screenshot" data-filename="{{ screenshot.filename }}">Info</button>
-                        <button type="button" class="btn btn-sm btn-success refresh-screenshot" data-id="{{ screenshot.id }}" data-url="{{ screenshot.url }}" data-name="{{ screenshot.name }}">Refresh</button>
+                      <div class="d-grid gap-2 mt-2">
+                        <div class="btn-group" role="group">
+                          <button type="button" class="btn btn-primary send-screenshot" data-filename="{{ screenshot.filename }}">
+                            <i class="fas fa-paper-plane me-1"></i> Send
+                          </button>
+                          <button type="button" class="btn btn-outline-primary info-screenshot" data-filename="{{ screenshot.filename }}">
+                            <i class="fas fa-info-circle me-1"></i> Info
+                          </button>
+                          <button type="button" class="btn btn-outline-primary refresh-screenshot" data-id="{{ screenshot.id }}" data-url="{{ screenshot.url }}" data-name="{{ screenshot.name }}">
+                            <i class="fas fa-sync-alt me-1"></i> Refresh
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

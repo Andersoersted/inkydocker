@@ -929,7 +929,8 @@ def send_scheduled_image(event_id):
                     files = {'file': (event.filename, file_obj, 'image/jpeg')}
                     data = {
                         'source': 'scheduled',
-                        'event_id': str(event_id)
+                        'event_id': str(event_id),
+                        'filename': event.filename  # Add filename parameter to match what the e-ink display expects
                     }
                     
                     # Send the request with a timeout of 2 minutes
@@ -986,30 +987,26 @@ def send_scheduled_image(event_id):
             except Exception as e:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] Error deleting temporary file: {e}")
             
-            if result.returncode == 0:
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
-                
-                # Update the event status in the database
-                event.sent = True
-                db.session.commit()
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Updated database: event {event.id} marked as sent")
-                
-                # Update the device's last_sent field
-                device_obj.last_sent = event.filename
-                db.session.commit()
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Updated device {device_obj.friendly_name} last_sent to {event.filename}")
-                
-                # Add a log entry for this send operation
-                add_send_log_entry(event.filename)
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Added send log entry for {event.filename}")
-                
-                # Write completion to log file
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"{datetime.datetime.now()}: [SCHEDULED-{send_id}] Successfully completed scheduled send\n")
-            else:
-                current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {result.stderr}")
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"ERROR: Failed to send image. Return code: {result.returncode}\n")
+            # If we reach this point, it means the request was successful (status code 200)
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
+            
+            # Update the event status in the database
+            event.sent = True
+            db.session.commit()
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Updated database: event {event.id} marked as sent")
+            
+            # Update the device's last_sent field
+            device_obj.last_sent = event.filename
+            db.session.commit()
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Updated device {device_obj.friendly_name} last_sent to {event.filename}")
+            
+            # Add a log entry for this send operation
+            add_send_log_entry(event.filename)
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Added send log entry for {event.filename}")
+            
+            # Write completion to log file
+            with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                f.write(f"{datetime.datetime.now()}: [SCHEDULED-{send_id}] Successfully completed scheduled send\n")
         except Exception as e:
             current_app.logger.error("Error in send_scheduled_image: %s", e)
             return

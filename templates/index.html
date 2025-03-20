@@ -547,21 +547,22 @@ document.addEventListener('click', function(e) {
     const deviceFriendly = selectedDevice.getAttribute('data-friendly');
     const formData = new FormData();
     formData.append("device", selectedDevice.value);
+    formData.append("filename", imageFilename);
 
-    const baseUrl = "{{ url_for('image.send_image', filename='') }}";
-    const finalUrl = baseUrl + encodeURIComponent(imageFilename);
+    // Use the base send_image endpoint without the filename in the URL
+    const baseUrl = "/send_image";
     
     // Add a timestamp to prevent caching issues
     const timestamp = new Date().getTime();
-    const finalUrlWithTimestamp = `${finalUrl}?t=${timestamp}`;
+    const finalUrl = `${baseUrl}?t=${timestamp}`;
     
     // Log the request details to console for debugging
     console.log(`Sending image: ${imageFilename} to device: ${deviceFriendly} (${selectedDevice.value})`);
-    console.log(`Request URL: ${finalUrlWithTimestamp}`);
+    console.log(`Request URL: ${finalUrl}`);
     
     // Send the request with a timeout
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', finalUrlWithTimestamp, true);
+    xhr.open('POST', finalUrl, true);
     xhr.timeout = 120000; // 120 second timeout (matching server-side timeout)
     
     // Add event listeners for all possible outcomes

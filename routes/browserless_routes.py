@@ -331,11 +331,47 @@ async def detect_cookie_banner_with_clip(page):
         screenshot_bytes = await page.screenshot({'type': 'jpeg', 'quality': 80})
         
         # Import the get_clip_model function from tasks
-        from tasks import get_clip_model
+        from tasks import get_clip_model, clip_models, clip_preprocessors
         
-        # Get the user's chosen CLIP model using the existing function
-        model_name, model, preprocess = get_clip_model()
-        current_app.logger.info(f"Using user-selected CLIP model for cookie detection: {model_name}")
+        # Always use the small model (ViT-B-32) for cookie detection
+        model_name = 'ViT-B-32'  # Small model
+        
+        # Check if the small model is already loaded in cache
+        if model_name in clip_models:
+            model = clip_models[model_name]
+            preprocess = clip_preprocessors[model_name]
+        else:
+            # Load the small model directly
+            # Use the get_clip_model function but override the result to always use ViT-B-32
+            model_name, model, preprocess = get_clip_model()
+            # If the returned model is not ViT-B-32, force loading it
+            if model_name != 'ViT-B-32':
+                current_app.logger.info(f"Forcing small model (ViT-B-32) for cookie detection instead of {model_name}")
+                cache_dir = "/app/data/model_cache"
+                if not os.path.exists(cache_dir):
+                    # Try data folder if app folder doesn't exist
+                    data_folder = current_app.config.get("DATA_FOLDER", "./data")
+                    cache_dir = os.path.join(data_folder, "models")
+                
+                model, _, preprocess = open_clip.create_model_and_transforms(
+                    'ViT-B-32',
+                    pretrained='openai',
+                    jit=False,
+                    force_quick_gelu=False,
+                    cache_dir=cache_dir
+                )
+                # Set device based on availability first
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                
+                model.to(device)
+                model.eval()
+                model_name = 'ViT-B-32'
+                
+                # Store in cache for future use
+                clip_models[model_name] = model
+                clip_preprocessors[model_name] = preprocess
+                
+        current_app.logger.info(f"Using small CLIP model (ViT-B-32) for cookie detection")
         
         # Set device based on availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -360,8 +396,8 @@ async def detect_cookie_banner_with_clip(page):
             "aceptar cookies"  # Spanish
         ]
         
-        # Tokenize the prompts using the same model_name from get_clip_model
-        tokenizer = open_clip.get_tokenizer(model_name)
+        # Always use the tokenizer for ViT-B-32 for consistency
+        tokenizer = open_clip.get_tokenizer('ViT-B-32')
         text_tokens = tokenizer(prompts)
         
         # Get image and text features
@@ -849,11 +885,16 @@ def send_screenshot(filename):
             with open(temp_filename, 'rb') as file_obj:
                 # Prepare files for the multipart request
                 files = {'file': (filename, file_obj, 'image/jpeg')}
+                # Add data parameters including filename parameter
+                data = {
+                    'source': 'browserless',
+                    'filename': filename  # Add filename parameter
+                }
                 
                 # Send the request with a timeout of 2 minutes
                 current_app.logger.info(f"Sending httpx POST request")
                 with httpx.Client(timeout=120.0) as client:
-                    response = client.post(url, files=files)
+                    response = client.post(url, files=files, data=data)
                 
                 # Log the response details
                 current_app.logger.info(f"Response status code: {response.status_code}")

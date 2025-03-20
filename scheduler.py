@@ -59,7 +59,7 @@ def load_scheduled_events(app):
     """Load all scheduled events from the database and schedule them."""
     with app.app_context():
         from tasks import send_scheduled_image
-        from models import ScheduleEvent
+        from models import ScheduleEvent, db
         import datetime
         import pytz
         import os
@@ -82,8 +82,12 @@ def load_scheduled_events(app):
             copenhagen_tz = pytz.timezone('Europe/Copenhagen')
             now = datetime.datetime.now(copenhagen_tz)
             
+            # Define a cutoff time (10 minutes in the past)
+            cutoff_time = now - datetime.timedelta(minutes=10)
+            
             scheduled_count = 0
             past_count = 0
+            skipped_count = 0
             
             for event in events:
                 try:
@@ -100,7 +104,7 @@ def load_scheduled_events(app):
                     with open('/tmp/scheduler_log.txt', 'a') as f:
                         f.write(f"Event ID: {event.id}, Filename: {event.filename}, Device: {event.device}, Time: {dt}\n")
                     
-                    # Check if the event is in the past
+                    # Check if the event is in the future
                     if dt > now:
                         # Schedule the event
                         scheduler.add_job(
@@ -115,22 +119,34 @@ def load_scheduled_events(app):
                         with open('/tmp/scheduler_log.txt', 'a') as f:
                             f.write(f"  -> Scheduled for future: {dt}\n")
                     else:
-                        # For past events, execute them immediately
-                        logger.info(f"Event {event.id} is in the past, executing immediately")
-                        with open('/tmp/scheduler_log.txt', 'a') as f:
-                            f.write(f"  -> In the past, executing immediately\n")
-                        
-                        # Execute the event directly
-                        send_scheduled_image(event.id)
-                        past_count += 1
+                        # For past events, check if they're older than the cutoff time
+                        if dt < cutoff_time:
+                            # For events older than cutoff, mark as sent without executing
+                            logger.info(f"Event {event.id} is older than 10-minute cutoff ({dt}), marking as sent without executing")
+                            with open('/tmp/scheduler_log.txt', 'a') as f:
+                                f.write(f"  -> Older than 10-minute cutoff ({cutoff_time}), skipping and marking as sent\n")
+                            
+                            # Mark as sent
+                            event.sent = True
+                            db.session.commit()
+                            skipped_count += 1
+                        else:
+                            # Only process recent past events (within 10-minute cutoff)
+                            logger.info(f"Event {event.id} is recent past (<10 minutes old, {dt}), executing")
+                            with open('/tmp/scheduler_log.txt', 'a') as f:
+                                f.write(f"  -> Recent past event (<10 minutes old), executing\n")
+                            
+                            # Execute the event directly
+                            send_scheduled_image(event.id)
+                            past_count += 1
                 except Exception as e:
                     logger.error(f"Error scheduling event {event.id}: {e}")
                     with open('/tmp/scheduler_log.txt', 'a') as f:
                         f.write(f"  -> ERROR: {str(e)}\n")
             
-            logger.info(f"Scheduled {scheduled_count} events, {past_count} events were in the past")
+            logger.info(f"Scheduled {scheduled_count} events, {past_count} events were in the recent past (<10 minutes old), {skipped_count} older events were skipped")
             with open('/tmp/scheduler_log.txt', 'a') as f:
-                f.write(f"Scheduled {scheduled_count} events, {past_count} events were in the past\n")
+                f.write(f"Scheduled {scheduled_count} events, {past_count} events were in the recent past (<10 minutes old), {skipped_count} older events were skipped\n")
             
         except Exception as e:
             logger.error(f"Error loading scheduled events: {e}")
