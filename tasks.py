@@ -923,20 +923,76 @@ def send_scheduled_image(event_id):
             current_app.logger.info(f"[SCHEDULED-{send_id}] Sending request to: {url}")
             
             try:
-                # Use httpx to send a multipart form request
-                with open(temp_filename, 'rb') as file_obj:
-                    # Prepare files and data for the multipart request
-                    files = {'file': (event.filename, file_obj, 'image/jpeg')}
-                    data = {
-                        'source': 'scheduled',
-                        'event_id': str(event_id),
-                        'filename': event.filename  # Add filename parameter to match what the e-ink display expects
-                    }
+                # Use curl to send the image as it's proven to work reliably with e-ink displays
+                # First, make sure the URL doesn't have any query parameters
+                base_url = url.split('?')[0]
+                
+                # Add verbose diagnostic logging
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Image properties: temp_file={temp_filename}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Target device: {device_obj.friendly_name} at {addr}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Using URL: {base_url}")
+                
+                # Get the file size for logging
+                file_size = os.path.getsize(temp_filename)
+                current_app.logger.info(f"[SCHEDULED-{send_id}] File size: {file_size} bytes")
+                
+                # Verify the image with Pillow to ensure it's not corrupted
+                try:
+                    with Image.open(temp_filename) as verify_img:
+                        current_app.logger.info(f"[SCHEDULED-{send_id}] Image verification: format={verify_img.format}, size={verify_img.size}, mode={verify_img.mode}")
+                except Exception as e:
+                    current_app.logger.error(f"[SCHEDULED-{send_id}] Image verification failed: {e}")
+                    return f"Error with processed image: {e}", 500
                     
-                    # Send the request with a timeout of 2 minutes
-                    current_app.logger.info(f"[SCHEDULED-{send_id}] Sending httpx POST request")
-                    with httpx.Client(timeout=120.0) as client:
-                        response = client.post(url, files=files, data=data)
+                # Execute the exact curl command that we know works
+                curl_cmd = ["curl", "-v", "-F", f"file=@{temp_filename}", base_url]
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Executing curl command: {' '.join(curl_cmd)}")
+                
+                try:
+                    # Run curl with verbose output to see exactly what's happening
+                    result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=120)
+                    
+                    # Log comprehensive information about the curl command result
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl exit code: {result.returncode}")
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stdout: {result.stdout}")
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stderr: {result.stderr}")
+                    
+                    # Write to a separate log file for easier debugging
+                    with open('/tmp/curl_debug_log.txt', 'a') as f:
+                        f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Curl debug log\n")
+                        f.write(f"Command: {' '.join(curl_cmd)}\n")
+                        f.write(f"Exit code: {result.returncode}\n")
+                        f.write(f"Stdout:\n{result.stdout}\n")
+                        f.write(f"Stderr:\n{result.stderr}\n")
+                    
+                    # Create a response-like object to maintain compatibility
+                    class CurlResponse:
+                        def __init__(self, text, code):
+                            self.text = text
+                            self.status_code = code
+                    
+                    # Use the curl exit code to determine success or failure
+                    status_code = 200 if result.returncode == 0 else 500
+                    
+                    # Check for known error patterns in the output
+                    if "Error" in result.stdout or "error" in result.stdout:
+                        current_app.logger.error(f"[SCHEDULED-{send_id}] Error detected in curl stdout: {result.stdout}")
+                        response = CurlResponse(result.stdout, 500)
+                    else:
+                        response = CurlResponse(result.stdout, status_code)
+                    
+                    # Return error if curl failed
+                    if result.returncode != 0:
+                        current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command failed with exit code {result.returncode}")
+                        return
+                
+                except subprocess.TimeoutExpired:
+                    current_app.logger.error(f"[SCHEDULED-{send_id}] Curl command timed out after 120 seconds")
+                    return
+                
+                except Exception as e:
+                    current_app.logger.error(f"[SCHEDULED-{send_id}] Exception executing curl: {e}")
+                    return
                     
                     # Log the response details
                     current_app.logger.info(f"[SCHEDULED-{send_id}] Response status code: {response.status_code}")
