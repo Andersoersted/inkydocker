@@ -62,6 +62,7 @@ class CropInfo(db.Model):
     width = db.Column(db.Float)
     height = db.Column(db.Float)
     resolution = db.Column(db.String(32))  # Store the display resolution (e.g., "1024x768")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f"<CropInfo {self.filename}>"

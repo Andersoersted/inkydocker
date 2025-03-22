@@ -74,10 +74,22 @@ def load_scheduled_events(app):
             events = ScheduleEvent.query.filter_by(sent=False).all()
             logger.info(f"Loading {len(events)} scheduled events from database")
             
+            # ENHANCEMENT: Also get recent events that might have been marked as sent incorrectly
+            recent_sent_events = ScheduleEvent.query.filter(
+                ScheduleEvent.sent==True,
+                ScheduleEvent.datetime_str >= (datetime.datetime.now() - datetime.timedelta(hours=6)).isoformat()
+            ).all()
+            logger.info(f"Found {len(recent_sent_events)} recent events marked as sent")
+            
             # Write to a separate log file for easier debugging
             with open('/tmp/scheduler_log.txt', 'a') as f:
                 f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Loading scheduled events\n")
                 f.write(f"Found {len(events)} unsent events\n")
+                f.write(f"Found {len(recent_sent_events)} recent events marked as sent\n")
+                
+                # Additional logs for timezone debugging
+                f.write(f"Current time: {datetime.datetime.now()}\n")
+                f.write(f"Current time (Copenhagen): {datetime.datetime.now(copenhagen_tz)}\n")
             
             copenhagen_tz = pytz.timezone('Europe/Copenhagen')
             now = datetime.datetime.now(copenhagen_tz)
@@ -91,8 +103,26 @@ def load_scheduled_events(app):
             
             for event in events:
                 try:
-                    # Parse the datetime string
-                    dt = datetime.datetime.fromisoformat(event.datetime_str)
+                    # Parse the datetime string with enhanced error handling
+                    try:
+                        dt = datetime.datetime.fromisoformat(event.datetime_str)
+                    except ValueError as e:
+                        # Try additional parsing methods if the standard one fails
+                        with open('/tmp/scheduler_log.txt', 'a') as f:
+                            f.write(f"Error parsing datetime '{event.datetime_str}': {e}\n")
+                            f.write(f"Attempting alternative parsing methods...\n")
+                        
+                        # Try removing timezone info and treating as Copenhagen time
+                        if '+' in event.datetime_str:
+                            dt_str = event.datetime_str.split('+')[0]
+                            dt = datetime.datetime.fromisoformat(dt_str)
+                            dt = copenhagen_tz.localize(dt)
+                        else:
+                            # Last resort - try parsing with dateutil
+                            from dateutil import parser
+                            dt = parser.parse(event.datetime_str)
+                            if dt.tzinfo is None:
+                                dt = copenhagen_tz.localize(dt)
                     
                     # Ensure the datetime is in Copenhagen timezone
                     if dt.tzinfo is None:
@@ -100,12 +130,22 @@ def load_scheduled_events(app):
                     else:
                         dt = dt.astimezone(copenhagen_tz)
                     
-                    # Log event details
+                    # ENHANCEMENT: More detailed logging of event time information
                     with open('/tmp/scheduler_log.txt', 'a') as f:
-                        f.write(f"Event ID: {event.id}, Filename: {event.filename}, Device: {event.device}, Time: {dt}\n")
+                        f.write(f"Event ID: {event.id}, Filename: {event.filename}, Device: {event.device}\n")
+                        f.write(f"  Original datetime string: {event.datetime_str}\n")
+                        f.write(f"  Parsed datetime: {dt}\n")
+                        f.write(f"  Current time: {now}\n")
+                        f.write(f"  Time difference: {dt - now}\n")
                     
                     # Check if the event is in the future
-                    if dt > now:
+                    time_diff = dt - now
+                    time_diff_seconds = time_diff.total_seconds()
+                    
+                    # ENHANCEMENT: More detailed event time comparison
+                    if time_diff_seconds > 0:
+                        with open('/tmp/scheduler_log.txt', 'a') as f:
+                            f.write(f"  Event is {time_diff_seconds:.1f} seconds in the future\n")
                         # Schedule the event
                         scheduler.add_job(
                             send_scheduled_image,
@@ -133,11 +173,33 @@ def load_scheduled_events(app):
                         else:
                             # Only process recent past events (within 10-minute cutoff)
                             logger.info(f"Event {event.id} is recent past (<10 minutes old, {dt}), executing")
-                            with open('/tmp/scheduler_log.txt', 'a') as f:
-                                f.write(f"  -> Recent past event (<10 minutes old), executing\n")
+                            with open('/tmp/scheduled_image_log.txt', 'a') as f:
+                                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Executing recent past event\n")
+                                f.write(f"Event ID: {event.id}, Time: {dt}\n")
+                                f.write(f"Time difference from now: {now - dt}\n")
                             
-                            # Execute the event directly
-                            send_scheduled_image(event.id)
+                            with open('/tmp/scheduler_log.txt', 'a') as f:
+                                f.write(f"  -> Recent past event (<10 minutes old), executing immediately\n")
+                            
+                            try:
+                                # Execute the event directly with better error handling
+                                send_scheduled_image(event.id)
+                                
+                                # Verify if the event was actually processed
+                                refreshed_event = ScheduleEvent.query.get(event.id)
+                                if refreshed_event and not refreshed_event.sent:
+                                    logger.warning(f"Event {event.id} was executed but not marked as sent, marking now")
+                                    refreshed_event.sent = True
+                                    db.session.commit()
+                                    
+                                with open('/tmp/scheduler_log.txt', 'a') as f:
+                                    f.write(f"  -> Event executed successfully\n")
+                                    
+                            except Exception as exec_error:
+                                logger.error(f"Error executing past event {event.id}: {exec_error}")
+                                with open('/tmp/scheduler_log.txt', 'a') as f:
+                                    f.write(f"  -> ERROR executing event: {str(exec_error)}\n")
+                                    
                             past_count += 1
                 except Exception as e:
                     logger.error(f"Error scheduling event {event.id}: {e}")

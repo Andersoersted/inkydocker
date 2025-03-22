@@ -357,7 +357,7 @@ async def detect_cookie_banner_with_clip(page):
                     'ViT-B-32',
                     pretrained='openai',
                     jit=False,
-                    force_quick_gelu=False,
+                    force_quick_gelu=True,  # Enable QuickGELU to match pretrained weights
                     cache_dir=cache_dir
                 )
                 # Set device based on availability first
@@ -380,20 +380,47 @@ async def detect_cookie_banner_with_clip(page):
         image = Image.open(io.BytesIO(screenshot_bytes))
         image_input = preprocess(image).unsqueeze(0).to(device)
         
-        # Prepare text prompts for cookie banners in multiple languages
+        # Prepare text prompts for cookie banners in multiple languages - expanded for better detection
         prompts = [
+            # English prompts
             "a cookie consent banner",
             "accept cookies button",
             "cookie policy notification",
             "GDPR consent dialog",
             "privacy settings popup",
             "cookie preferences",
-            "accepter cookies",  # Danish
-            "accepter alle cookies",  # Danish
-            "akzeptieren cookies",  # German
-            "cookie einstellungen",  # German
-            "accepter les cookies",  # French
-            "aceptar cookies"  # Spanish
+            "cookie banner with accept button",
+            "website cookie acceptance dialog",
+            "privacy consent banner",
+            "cookie notice with buttons",
+            "website privacy notice overlay",
+            "cookie compliance banner",
+            
+            # Danish prompts
+            "accepter cookies",
+            "accepter alle cookies",
+            "cookie samtykke banner",
+            "privatlivspolitik popup",
+            "godkend cookies knap",
+            
+            # German prompts
+            "akzeptieren cookies",
+            "cookie einstellungen",
+            "datenschutz-banner",
+            "cookie-zustimmungsdialog",
+            "alle cookies akzeptieren",
+            
+            # French prompts
+            "accepter les cookies",
+            "bannière de consentement aux cookies",
+            "paramètres de confidentialité",
+            "consentement RGPD",
+            
+            # Spanish prompts
+            "aceptar cookies",
+            "banner de consentimiento de cookies",
+            "política de privacidad",
+            "configuración de cookies"
         ]
         
         # Always use the tokenizer for ViT-B-32 for consistency
@@ -418,8 +445,8 @@ async def detect_cookie_banner_with_clip(page):
             
             current_app.logger.info(f"Cookie banner detection: highest similarity {max_similarity:.2f} for '{prompts[max_index]}'")
             
-            # Threshold for detection (may need calibration)
-            threshold = 0.3
+            # Lower threshold for detection to increase sensitivity (may need calibration)
+            threshold = 0.25
             return max_similarity > threshold, max_similarity, prompts[max_index]
     
     except Exception as e:
@@ -436,21 +463,36 @@ async def handle_cookie_consent(page):
         '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
         '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
         '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
+        '#cookieConsent', '#cookieAccept', '#btn-cookie-accept', '#gdpr-consent-accept',
+        '#cookie-banner-accept', '#cookieConsentAcceptAllButton', '#accept-cookie-policy',
         
         # Class-based selectors
         '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
         '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
         '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
+        '.cookie-accept-all', '.cookie-banner-accept', '.cookie-consent-button',
+        '.cookie-notice-accept', '.gdpr-banner-accept', '.privacy-accept-button',
         
         # Framework-specific selectors
         '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
         '#onetrust-accept-btn-handler',
         '.cc-accept', '.cc-allow', '.cc-dismiss',
+        '.js-cookie-banner-accept', '.js-accept-cookie-policy',
         
         # Attribute-based selectors
         '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
         '[data-consent="accept"]', '[data-cookie-accept="all"]',
-        '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]'
+        '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]',
+        '[data-element-id*="cookie-accept"]', '[data-element-id*="cookie-banner"]',
+        '[data-testid*="cookie-accept"]', '[data-testid*="cookie-banner-accept"]',
+        
+        # Additional compound selectors
+        'button[class*="cookie"][class*="accept"]',
+        'button[class*="gdpr"][class*="accept"]',
+        'button[class*="cookie"][class*="allow"]',
+        'button[id*="cookie"][id*="accept"]',
+        'a[class*="cookie"][class*="accept"]',
+        'div[role="button"][class*="cookie"]'
     ]
     
     # Try clicking each selector
@@ -473,19 +515,41 @@ async def handle_cookie_consent(page):
             # Ignore errors for individual selectors
             pass
     
-    # Try to find and click buttons by text content
+    # Try to find and click buttons by text content - expanded to include more variations
     text_patterns = [
         # English
         'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'i agree', 'ok', 'got it',
+        'agree', 'agree to all', 'continue', 'understood', 'consent', 'confirm', 'save', 'close',
+        'agree and close', 'accept and continue', 'accept and proceed', 'accept all cookies',
+        'i understand', 'yes', 'agree to cookies', 'accept & continue',
+        
         # Danish
         'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
+        'forstået', 'fortsæt', 'godkend', 'acceptér alle cookies', 'luk',
+        
         # German
         'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
+        'ich stimme zu', 'verstanden', 'alle cookies akzeptieren', 'cookies zulassen',
+        'erlauben', 'weiter', 'fortfahren', 'bestätigen', 'speichern', 'schließen',
+        
         # French
-        'accepter', 'tout accepter',
+        'accepter', 'tout accepter', 'j\'accepte', 'accepter tous les cookies',
+        'continuer', 'compris', 'je comprends', 'consentir', 'fermer',
+        'accepter et continuer', 'accepter et fermer',
+        
         # Spanish
-        'aceptar', 'aceptar todo', 'permitir'
+        'aceptar', 'aceptar todo', 'permitir', 'aceptar cookies',
+        'entendido', 'acepto', 'continuar', 'estoy de acuerdo', 'cerrar',
+        'aceptar todas', 'aceptar y continuar'
     ]
+    
+    # Also try with uppercase first letter or all caps
+    capitalized_patterns = []
+    for pattern in text_patterns:
+        capitalized_patterns.append(pattern.capitalize())
+        capitalized_patterns.append(pattern.upper())
+    
+    text_patterns.extend(capitalized_patterns)
     
     for pattern in text_patterns:
         try:
@@ -556,15 +620,69 @@ async def handle_cookie_consent(page):
     # Wait a bit for any animations to complete
     await page.waitFor(2000)  # pyppeteer uses waitFor instead of waitForTimeout
     
-    # Try to hide any remaining cookie banners
+    # Try to hide any remaining cookie banners - enhanced with more comprehensive selectors
     banner_selectors = [
+        # Cookie-specific selectors
         '[class*="cookie-banner"]', '[id*="cookie-banner"]',
         '[class*="cookie-consent"]', '[id*="cookie-consent"]',
+        '[class*="cookie-notice"]', '[id*="cookie-notice"]',
+        '[class*="cookie-popup"]', '[id*="cookie-popup"]',
+        '[class*="cookie-alert"]', '[id*="cookie-alert"]',
+        '[class*="cookie-modal"]', '[id*="cookie-modal"]',
+        '[class*="cookie-message"]', '[id*="cookie-message"]',
+        
+        # GDPR-specific selectors
+        '[class*="gdpr-banner"]', '[id*="gdpr-banner"]',
+        '[class*="gdpr-consent"]', '[id*="gdpr-consent"]',
+        '[class*="gdpr-notice"]', '[id*="gdpr-notice"]',
+        '[class*="gdpr-popup"]', '[id*="gdpr-popup"]',
+        
+        # Privacy-specific selectors
+        '[class*="privacy-banner"]', '[id*="privacy-banner"]',
+        '[class*="privacy-consent"]', '[id*="privacy-consent"]',
+        '[class*="privacy-notice"]', '[id*="privacy-notice"]',
+        '[class*="privacy-popup"]', '[id*="privacy-popup"]',
+        
+        # Framework-specific selectors
         '.cc-window', '.cc-banner', '#cookie-law-info-bar',
         '#cookiebanner', '#cookieConsent', '#cookie-consent',
-        '#CybotCookiebotDialog', '#onetrust-banner-sdk'
+        '#CybotCookiebotDialog', '#onetrust-banner-sdk',
+        '.js-cookie-banner', '.js-cookie-consent'
     ]
     
+    # First try direct clicks on any remaining accept buttons
+    try:
+        current_app.logger.info("Executing JavaScript to directly click any remaining cookie acceptance buttons")
+        await page.evaluate('''
+            () => {
+                function containsAcceptText(text) {
+                    text = text.toLowerCase();
+                    const acceptTerms = ['accept', 'accept all', 'agree', 'allow', 'continue', 'ok',
+                                        'yes', 'consent', 'got it', 'understand', 'accepter', 'akzeptieren',
+                                        'tillad', 'aceptar'];
+                    return acceptTerms.some(term => text.includes(term));
+                }
+                
+                // Find all buttons, links, and clickable elements
+                const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"], input[type="button"], input[type="submit"]'));
+                
+                // Try to click any that contain acceptance text and are visible
+                elements.forEach(el => {
+                    if (el && el.offsetParent !== null) {
+                        const text = (el.textContent || el.innerText || el.value || '').trim();
+                        if (containsAcceptText(text)) {
+                            console.log("Directly clicking element with text: " + text);
+                            try { el.click(); } catch (e) { /* ignore */ }
+                        }
+                    }
+                });
+            }
+        ''')
+        await page.waitFor(1000)  # Wait for click actions to process
+    except Exception as e:
+        current_app.logger.info(f"JavaScript direct click failed: {str(e)}")
+    
+    # Then try to hide all cookie banners with multiple techniques
     for selector in banner_selectors:
         try:
             await page.evaluate('''
@@ -572,9 +690,23 @@ async def handle_cookie_consent(page):
                     const elements = document.querySelectorAll(selector);
                     elements.forEach(el => {
                         if (el && el.offsetParent !== null) {
+                            // Try multiple methods to hide the element
                             el.style.display = 'none';
                             el.style.visibility = 'hidden';
+                            el.style.opacity = '0';
+                            el.style.pointerEvents = 'none';
+                            el.style.height = '0px';
+                            el.style.maxHeight = '0px';
+                            el.style.overflow = 'hidden';
+                            el.setAttribute('aria-hidden', 'true');
+                            
+                            // If possible, remove it entirely
                             try { el.remove(); } catch (e) { /* ignore */ }
+                            
+                            // If it has a parent, try to remove from parent
+                            if (el.parentNode) {
+                                try { el.parentNode.removeChild(el); } catch (e) { /* ignore */ }
+                            }
                         }
                     });
                 }
@@ -582,6 +714,44 @@ async def handle_cookie_consent(page):
         except Exception:
             # Ignore errors for individual banner selectors
             pass
+    
+    # Finally, inject CSS to hide common patterns
+    try:
+        await page.evaluate('''
+            () => {
+                // Add a style tag to hide common cookie banner patterns
+                const style = document.createElement('style');
+                style.innerHTML = `
+                    /* Hide common cookie banners */
+                    div[class*="cookie-banner"], div[id*="cookie-banner"],
+                    div[class*="cookie-consent"], div[id*="cookie-consent"],
+                    div[class*="cookie-notice"], div[id*="cookie-notice"],
+                    div[class*="cookie-popup"], div[id*="cookie-popup"],
+                    div[class*="gdpr"], div[id*="gdpr"],
+                    .cc-window, .cc-banner, #cookie-law-info-bar,
+                    div[class*="fixed"][class*="bottom"],
+                    div[style*="position: fixed"][style*="bottom"],
+                    div[style*="position: fixed"][style*="top"] {
+                        display: none !important;
+                        visibility: hidden !important;
+                        opacity: 0 !important;
+                        height: 0 !important;
+                        max-height: 0 !important;
+                        overflow: hidden !important;
+                        pointer-events: none !important;
+                    }
+                    
+                    /* Force body to be scrollable */
+                    body {
+                        overflow: auto !important;
+                        height: auto !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        ''')
+    except Exception as e:
+        current_app.logger.info(f"Could not inject CSS to hide cookie banners: {str(e)}")
 
 @browserless_bp.route('/screenshots/<filename>')
 def get_screenshot(filename):

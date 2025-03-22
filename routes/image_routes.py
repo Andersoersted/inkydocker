@@ -304,14 +304,19 @@ def uploaded_file(filename):
 
 @image_bp.route('/save_crop_info/<filename>', methods=['POST'])
 def save_crop_info_endpoint(filename):
+    import json
     crop_data = request.get_json()
+    current_app.logger.info(f"Received crop data for {filename}: {json.dumps(crop_data)}")
+    
     if not crop_data:
+        current_app.logger.error(f"No crop data provided for {filename}")
         return jsonify({"status": "error", "message": "No crop data provided"}), 400
     
     # Validate crop data
     required_fields = ["x", "y", "width", "height"]
     for field in required_fields:
         if field not in crop_data or not isinstance(crop_data[field], (int, float)) or crop_data[field] < 0:
+            current_app.logger.error(f"Invalid crop data for {filename}: {field} is missing or invalid")
             return jsonify({"status": "error", "message": f"Invalid crop data: {field} is missing or invalid"}), 400
     
     # Get the selected device resolution if provided
@@ -320,14 +325,50 @@ def save_crop_info_endpoint(filename):
         device_obj = Device.query.filter_by(address=device_addr).first()
         if device_obj and device_obj.resolution:
             crop_data["resolution"] = device_obj.resolution
-            current_app.logger.debug(f"Saving crop with resolution: {device_obj.resolution}")
+            current_app.logger.info(f"Saving crop for {filename} with resolution: {device_obj.resolution}")
         else:
-            current_app.logger.warning(f"Device not found or missing resolution: {device_addr}")
+            current_app.logger.warning(f"Device not found or missing resolution: {device_addr} for {filename}")
     else:
-        current_app.logger.warning("No device provided for crop data")
+        current_app.logger.warning(f"No device provided for crop data for {filename}")
     
-    save_crop_info_to_db(filename, crop_data)
-    return jsonify({"status": "success"}), 200
+    # Check for existing crop data before saving
+    existing = CropInfo.query.filter_by(filename=filename).first()
+    if existing:
+        current_app.logger.info(f"Updating existing crop for {filename}. Old values: x={existing.x}, y={existing.y}, w={existing.width}, h={existing.height}")
+    else:
+        current_app.logger.info(f"Creating new crop record for {filename}")
+    
+    # Save the crop data
+    try:
+        save_crop_info_to_db(filename, crop_data)
+        
+        # Verify that the data was actually saved correctly by reloading it
+        db.session.expire_all()  # Force reload from database
+        saved_data = load_crop_info_from_db(filename)
+        if saved_data:
+            current_app.logger.info(f"Verified crop data for {filename} was saved: x={saved_data['x']}, y={saved_data['y']}, w={saved_data['width']}, h={saved_data['height']}")
+            
+            # Check if values match what was submitted
+            all_match = True
+            for field in required_fields:
+                if abs(saved_data[field] - crop_data[field]) > 0.01:  # Allow for small floating point differences
+                    current_app.logger.warning(f"Mismatch in saved crop data for {filename}: {field} should be {crop_data[field]} but is {saved_data[field]}")
+                    all_match = False
+            
+            if all_match:
+                current_app.logger.info(f"All crop values for {filename} match the submitted data")
+            
+            return jsonify({
+                "status": "success",
+                "message": "Crop info saved successfully",
+                "updated_at": saved_data.get("updated_at")
+            }), 200
+        else:
+            current_app.logger.error(f"Failed to verify crop data was saved for {filename}")
+            return jsonify({"status": "error", "message": "Failed to verify crop data was saved"}), 500
+    except Exception as e:
+        current_app.logger.error(f"Error saving crop data for {filename}: {str(e)}")
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
 
 @image_bp.route('/send_image/<filename>', methods=['POST'])
 @image_bp.route('/send_image', methods=['POST'])
@@ -419,13 +460,23 @@ def send_image(filename=None):
                 current_app.logger.debug(f"Target dimensions: {target_width}x{target_height}")
             
             # Step 2: Apply crop if available or do auto-crop to match the target aspect ratio
+            # Force refresh from database to ensure we get the latest crop info
+            db.session.expire_all()
             cdata = load_crop_info_from_db(filename)
+            
+            # Log when the crop data was last updated if available
+            if cdata and "updated_at" in cdata and cdata["updated_at"]:
+                current_app.logger.info(f"Crop data for {filename} was last updated at: {cdata['updated_at']}")
+            
             if cdata and all(key in cdata for key in ["x", "y", "width", "height"]):
                 # We have manual crop data from the user
                 x = cdata.get("x", 0)
                 y = cdata.get("y", 0)
                 w = cdata.get("width", orig_w)
                 h = cdata.get("height", orig_h)
+                
+                # Log the crop data we're using
+                current_app.logger.info(f"Using crop data for {filename}: x={x}, y={y}, w={w}, h={h}, resolution={cdata.get('resolution')}")
                 
                 # Validate crop coordinates
                 if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > orig_w or y + h > orig_h:
@@ -872,11 +923,17 @@ def get_current_image():
 @image_bp.route('/api/get_crop_info/<filename>', methods=['GET'])
 def get_crop_info(filename):
     """Get crop information for an image."""
+    # Force a refresh from database to ensure we get the latest crop info
+    db.session.expire_all()
+    
     # Check if crop info exists for this filename
     crop_info = CropInfo.query.filter_by(filename=filename).first()
     
     if crop_info:
-        # Return the crop info as JSON
+        # Log the crop data we're returning
+        current_app.logger.info(f"Returning crop info for {filename}: x={crop_info.x}, y={crop_info.y}, w={crop_info.width}, h={crop_info.height}")
+        
+        # Return the crop info as JSON with updated_at timestamp
         return jsonify({
             "status": "success",
             "crop_info": {
@@ -884,11 +941,13 @@ def get_crop_info(filename):
                 "y": crop_info.y,
                 "width": crop_info.width,
                 "height": crop_info.height,
-                "resolution": crop_info.resolution
+                "resolution": crop_info.resolution,
+                "updated_at": crop_info.updated_at.isoformat() if hasattr(crop_info, 'updated_at') and crop_info.updated_at else None
             }
         }), 200
     else:
         # No crop info found
+        current_app.logger.info(f"No crop information found for {filename}")
         return jsonify({
             "status": "error",
             "message": "No crop information found for this image"
