@@ -86,11 +86,14 @@ def load_scheduled_events(app):
                 f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Loading scheduled events\n")
                 f.write(f"Found {len(events)} unsent events\n")
                 f.write(f"Found {len(recent_sent_events)} recent events marked as sent\n")
-                
                 # Additional logs for timezone debugging
                 f.write(f"Current time: {datetime.datetime.now()}\n")
-                f.write(f"Current time (Copenhagen): {datetime.datetime.now(copenhagen_tz)}\n")
+                
+            # Define timezone before using it
+            copenhagen_tz = pytz.timezone('Europe/Copenhagen')
             
+            with open('/tmp/scheduler_log.txt', 'a') as f:
+                f.write(f"Current time (Copenhagen): {datetime.datetime.now(copenhagen_tz)}\n")
             copenhagen_tz = pytz.timezone('Europe/Copenhagen')
             now = datetime.datetime.now(copenhagen_tz)
             

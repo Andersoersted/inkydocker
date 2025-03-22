@@ -475,7 +475,7 @@ def send_image(filename=None):
                 w = cdata.get("width", orig_w)
                 h = cdata.get("height", orig_h)
                 
-                # Log the crop data we're using
+                # Log the crop data we're using with timestamp for tracking
                 current_app.logger.info(f"Using crop data for {filename}: x={x}, y={y}, w={w}, h={h}, resolution={cdata.get('resolution')}")
                 
                 # Validate crop coordinates
@@ -926,6 +926,21 @@ def get_crop_info(filename):
     # Force a refresh from database to ensure we get the latest crop info
     db.session.expire_all()
     
+    # Get the original image dimensions to help the frontend scale the crop correctly
+    image_folder = current_app.config['IMAGE_FOLDER']
+    filepath = os.path.join(image_folder, filename)
+    
+    # Default dimensions if image can't be opened
+    original_width = 0
+    original_height = 0
+    
+    try:
+        with Image.open(filepath) as img:
+            original_width, original_height = img.size
+            current_app.logger.info(f"Original dimensions for {filename}: {original_width}x{original_height}")
+    except Exception as e:
+        current_app.logger.error(f"Error getting image dimensions for {filename}: {e}")
+    
     # Check if crop info exists for this filename
     crop_info = CropInfo.query.filter_by(filename=filename).first()
     
@@ -942,17 +957,27 @@ def get_crop_info(filename):
                 "width": crop_info.width,
                 "height": crop_info.height,
                 "resolution": crop_info.resolution,
+                # Handle case where updated_at column doesn't exist yet
                 "updated_at": crop_info.updated_at.isoformat() if hasattr(crop_info, 'updated_at') and crop_info.updated_at else None
+            },
+            "original_dimensions": {
+                "width": original_width,
+                "height": original_height
             }
         }), 200
     else:
-        # No crop info found
+        # No crop info found, but return success with null crop_info instead of an error
+        # This helps the frontend handle this case more gracefully
         current_app.logger.info(f"No crop information found for {filename}")
         return jsonify({
-            "status": "error",
-            "message": "No crop information found for this image"
-        }), 404
-
+            "status": "success",
+            "message": "No crop information found for this image",
+            "crop_info": None,
+            "original_dimensions": {
+                "width": original_width,
+                "height": original_height
+            }
+        }), 200
 @image_bp.route('/api/get_images', methods=['GET'])
 def get_images():
     try:

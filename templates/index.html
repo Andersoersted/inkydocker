@@ -1036,11 +1036,19 @@ function closeInfoModal() {
 // Variable to store the cropper instance
 let cropper = null;
 
+// Store original image dimensions for scaling
+let originalImageWidth = 0;
+let originalImageHeight = 0;
+
 function openCropModal() {
   // Set up crop image
   const cropImage = document.getElementById('cropImage');
   cropImage.dataset.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
   cropImage.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+  
+  // Reset original dimensions
+  originalImageWidth = 0;
+  originalImageHeight = 0;
   
   // Reset the save button state
   const saveBtn = document.querySelector('#cropModal .btn-primary');
@@ -1085,6 +1093,17 @@ function openCropModal() {
       .then(response => response.json())
       .then(data => {
         console.log('Crop info response:', data);
+        
+        // Store original dimensions for scaling
+        if (data.original_dimensions) {
+          originalImageWidth = data.original_dimensions.width;
+          originalImageHeight = data.original_dimensions.height;
+          console.log(`Original image dimensions: ${originalImageWidth}x${originalImageHeight}`);
+        }
+        
+        // Check if data exists and has the expected structure
+        const hasCropData = data.status === "success" && data.crop_info !== null;
+        console.log('Has existing crop data:', hasCropData);
         
         // Calculate the aspect ratio based on device resolution and orientation
         let aspectRatio = NaN; // Default to free aspect ratio
@@ -1158,17 +1177,51 @@ function openCropModal() {
           toggleDragModeOnDblclick: false,
           ready: function() {
             // When the cropper is ready, check if we have existing crop data
-            if (data.status === 'success' && data.crop_info) {
+            if (hasCropData) {
               try {
                 console.log('Applying existing crop data:', data.crop_info);
                 
-                // Set the crop box using the existing data
+                // The image data in the cropper's view
+                const imageData = this.cropper.getImageData();
+                const displayWidth = imageData.naturalWidth; // Width of image shown in browser
+                const displayHeight = imageData.naturalHeight;
+                const containerData = this.cropper.getContainerData();
+                
+                // Calculate scaling factors from original image to display image
+                let scaleX = 1;
+                let scaleY = 1;
+                
+                if (originalImageWidth > 0 && originalImageHeight > 0 &&
+                    displayWidth > 0 && displayHeight > 0) {
+                  // We need to scale DOWN from original to display (opposite of saving)
+                  scaleX = displayWidth / originalImageWidth;
+                  scaleY = displayHeight / originalImageHeight;
+                  
+                  console.log(`For display - scaling factors: ${scaleX}x, ${scaleY}y`);
+                  console.log(`Crop from database: x=${data.crop_info.x}, y=${data.crop_info.y}, w=${data.crop_info.width}, h=${data.crop_info.height}`);
+                }
+                
+                // Scale the coordinates from original image size to display size
+                const scaledX = Math.round(data.crop_info.x * scaleX);
+                const scaledY = Math.round(data.crop_info.y * scaleY);
+                const scaledWidth = Math.round(data.crop_info.width * scaleX);
+                const scaledHeight = Math.round(data.crop_info.height * scaleY);
+                
+                console.log(`Scaled for display: x=${scaledX}, y=${scaledY}, w=${scaledWidth}, h=${scaledHeight}`);
+                
+                // Calculate offsets to position the crop box correctly
+                const offsetX = (containerData.width - imageData.width) / 2;
+                const offsetY = (containerData.height - imageData.height) / 2;
+                
+                // Set crop box relative to the container with scaled coordinates
                 this.cropper.setCropBoxData({
-                  left: data.crop_info.x,
-                  top: data.crop_info.y,
-                  width: data.crop_info.width,
-                  height: data.crop_info.height
+                  left: scaledX + offsetX,
+                  top: scaledY + offsetY,
+                  width: scaledWidth,
+                  height: scaledHeight
                 });
+                
+                console.log(`Applied crop data with offsets: x=${data.crop_info.x}→${data.crop_info.x + offsetX}, y=${data.crop_info.y}→${data.crop_info.y + offsetY}`);
                 
                 console.log('Successfully applied existing crop data');
               } catch (error) {
@@ -1186,6 +1239,19 @@ function openCropModal() {
       })
       .catch(error => {
         console.error('Error fetching crop info:', error);
+        
+        // Even if the fetch fails, try to get the original dimensions from the image
+        try {
+          const img = new Image();
+          img.onload = function() {
+            originalImageWidth = this.naturalWidth;
+            originalImageHeight = this.naturalHeight;
+            console.log(`Got original dimensions from error handler: ${originalImageWidth}x${originalImageHeight}`);
+          };
+          img.src = `/images/${encodeURIComponent(currentInfoFilename)}`;
+        } catch (imgError) {
+          console.error('Could not load image for dimensions:', imgError);
+        }
         
         // Initialize Cropper.js with default settings if fetch fails
         // Calculate the aspect ratio based on device resolution and orientation
@@ -1212,12 +1278,13 @@ function openCropModal() {
           }
         }
         
-        // Function to set the default crop box
+        // Function to set the default crop box (used when no existing crop data exists)
         function setDefaultCropBox(cropperInstance) {
           const containerData = cropperInstance.getContainerData();
           const imageData = cropperInstance.getImageData();
           
-          // Calculate the maximum possible crop box size
+          // Calculate the maximum possible crop box size centered in the image
+          // This ensures we create a center crop for images that haven't been cropped before
           let maxWidth, maxHeight;
           
           if (aspectRatio > 0) {
@@ -1316,8 +1383,40 @@ function saveCropData() {
     return;
   }
   
-  // Get crop data from cropper
+  // Get the image dimensions from the cropper
+  const cropperImageData = cropper.getImageData();
+  const displayWidth = cropperImageData.naturalWidth; // What's shown in the browser
+  const displayHeight = cropperImageData.naturalHeight;
+  
+  // Get crop data from cropper (relative to the display image)
   const cropData = cropper.getData(true); // rounded to integers
+  
+  // Calculate scaling factors between display image and original full-res image
+  let scaleX = 1;
+  let scaleY = 1;
+  
+  if (originalImageWidth > 0 && originalImageHeight > 0 &&
+      displayWidth > 0 && displayHeight > 0) {
+    scaleX = originalImageWidth / displayWidth;
+    scaleY = originalImageHeight / displayHeight;
+    
+    console.log(`Scaling factors: ${scaleX}x, ${scaleY}y`);
+    console.log(`Display image: ${displayWidth}x${displayHeight}`);
+    console.log(`Original image: ${originalImageWidth}x${originalImageHeight}`);
+    console.log(`Crop on display: x=${cropData.x}, y=${cropData.y}, w=${cropData.width}, h=${cropData.height}`);
+    
+    // Scale the crop coordinates to match the original image
+    cropData.x = Math.round(cropData.x * scaleX);
+    cropData.y = Math.round(cropData.y * scaleY);
+    cropData.width = Math.round(cropData.width * scaleX);
+    cropData.height = Math.round(cropData.height * scaleY);
+    
+    console.log(`Scaled crop for original: x=${cropData.x}, y=${cropData.y}, w=${cropData.width}, h=${cropData.height}`);
+  } else {
+    console.warn("Could not scale crop coordinates - missing dimension information");
+    console.log(`Display dimensions: ${displayWidth}x${displayHeight}`);
+    console.log(`Original dimensions: ${originalImageWidth}x${originalImageHeight}`);
+  }
   
   // Get selected device for resolution info
   const selectedDevice = document.querySelector('input[name="device"]:checked');
