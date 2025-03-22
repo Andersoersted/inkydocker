@@ -19,7 +19,7 @@ RUN mkdir -p /app/data/model_cache
 ARG USE_GPU
 
 # Install build dependencies - this layer rarely changes
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     git \
@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libpng-dev \
     libfreetype6-dev \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -37,16 +38,32 @@ WORKDIR /build
 # Upgrade pip to latest version
 RUN pip install --upgrade pip
 
-# Copy requirements from the host for better maintainability
-COPY requirements.txt .
+# Split requirements into base and model-specific for better caching
+# Create base requirements file
+RUN echo "Flask>=3.0.3\n\
+Flask-SQLAlchemy>=3.1.1\n\
+Flask-Migrate>=4.0.0,<4.1.1\n\
+cryptography\n\
+requests>=2.31.0\n\
+pyppeteer>=1.0.2\n\
+httpx>=0.27.0\n\
+APScheduler>=3.10.4\n\
+celery>=5.3.6\n\
+redis>=5.0.1\n\
+tqdm>=4.66.1\n\
+gunicorn>=21.2.0\n\
+gevent\n\
+psutil>=5.9.8\n\
+pytz>=2024.1\n\
+Pillow>=11.0.0\n\
+pillow-heif>=0.13.0" > base_requirements.txt
 
-# Split requirements for better caching
-RUN grep -v "scikit-learn\|torch\|torchvision\|open_clip" requirements.txt > base_requirements.txt && \
-    grep -E "scikit-learn|torch|torchvision|open_clip" requirements.txt > model_requirements.txt && \
-    echo "open_clip_torch>=2.20.0" >> model_requirements.txt && \
-    echo "gevent" >> base_requirements.txt && \
-    echo "cryptography" >> base_requirements.txt && \
-    echo "tqdm>=4.66.1" >> base_requirements.txt
+# Create model-specific requirements file
+RUN echo "scikit-learn>=1.4.1.post1\n\
+open_clip_torch>=2.20.0\n\
+torch>=2.2.1\n\
+torchvision>=0.17.1\n\
+transformers>=4.38.2" > model_requirements.txt
 
 # Install base requirements first (these change less frequently)
 RUN pip install --upgrade pip && pip install --no-cache-dir -r base_requirements.txt
@@ -117,7 +134,7 @@ ENV TZ=Europe/Copenhagen
 ENV XDG_CACHE_HOME=/app/data/model_cache
 
 # Install only runtime dependencies - this layer rarely changes
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     sqlite3 \
     supervisor \
@@ -129,6 +146,7 @@ RUN apt-get update && apt-get install -y \
     libpng16-16 \
     libfreetype6 \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create necessary directories for the database and model cache
