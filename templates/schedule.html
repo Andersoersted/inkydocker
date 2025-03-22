@@ -1,34 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Schedule - InkyDocker{% endblock %}
 {% block head %}
-  <!-- FullCalendar CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.css" rel="stylesheet">
+  <!-- FullCalendar v6 CSS and JS -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/main.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
   
-  <!-- Bootstrap Icons for FullCalendar Bootstrap 5 theme -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
-  
-  <!-- Load FullCalendar and Bootstrap 5 plugin -->
-  <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.0/main.min.js'></script>
-  
-  <!-- Add a simple script to check if JavaScript is running -->
-  <script>
-    console.log("JavaScript is running!");
-    document.addEventListener('DOMContentLoaded', function() {
-      console.log("DOM is loaded!");
-    });
-  </script>
+  <!-- Bootstrap Icons for enhanced UI -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
   <!-- Gallery enhancements -->
   <script src="{{ url_for('static', filename='gallery.js') }}" defer></script>
   
   <style>
-    /* Bootstrap 5 compatible FullCalendar styling */
+    /* Enhanced Calendar Styling */
     #calendar {
       max-width: 1000px;
       margin: 40px auto;
-      margin-bottom: 150px; /* Increased bottom margin to prevent footer overlap */
+      margin-bottom: 150px;
+      box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+      border-radius: 0.5rem;
+      overflow: hidden;
     }
     
-    /* Style for the event content to show thumbnails */
+    /* Enhanced Event Styling */
+    .fc-event {
+      border-radius: 0.25rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .fc-event:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Thumbnail in events */
     .event-thumbnail {
       width: 100%;
       height: 40px;
@@ -37,66 +43,19 @@
       margin-bottom: 2px;
     }
     
-    /* Override any fixed positioning for footer on this page */
-    .footer {
-      position: relative !important;
-    }
-    
-    /* Bootstrap 5 compatible gallery layout */
-    #galleryModal {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-      gap: 5px;
-      max-height: 500px;
-      overflow-y: auto;
-    }
-    
-    #galleryModal .gallery-item {
-      height: 150px !important;
-      position: relative;
-      border: 1px solid rgba(0,0,0,.125);
-      border-radius: 0.25rem;
-      overflow: hidden;
-    }
-    
-    #galleryModal .gallery-item img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      cursor: pointer;
-    }
-    
-    .img-container {
-      height: 100%;
-    }
-    
-    /* Tags display */
-    .image-tags {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: rgba(0,0,0,0.6);
-      color: white;
-      padding: 3px;
-      font-size: 10px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    
-    /* Bootstrap 5 styling for recurring events */
+    /* Recurring event styling */
     .recurring-event {
       border-left: 4px dashed #fff !important;
-      border-right: 4px dashed #fff !important;
+      position: relative;
     }
     
-    .recurring-event:before {
-      content: "↻"; /* Simple repeat symbol instead of Bootstrap icon */
+    .recurring-event::before {
+      content: "\F61B";
+      font-family: "bootstrap-icons";
       position: absolute;
       top: 2px;
       left: 2px;
-      font-weight: bold;
+      font-size: 12px;
       color: white;
       background-color: rgba(0, 0, 0, 0.5);
       border-radius: 50%;
@@ -105,32 +64,132 @@
       line-height: 16px;
       text-align: center;
       z-index: 100;
-      font-size: 10px;
     }
     
-    /* Bootstrap 5 compatible custom modal styles - using Bootstrap 5 classes where possible */
-    .custom-modal {
-      display: none;
-      position: fixed;
-      z-index: 1050;
-      left: 0;
-      top: 0;
+    /* Day-of-week selectors for recurrence */
+    .day-selector {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    
+    .day-selector .btn-check + .btn {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.2s ease-in-out;
+      position: relative;
+    }
+    
+    /* Enhanced styling for selected day buttons */
+    .day-selector .btn-check:checked + .btn {
+      background-color: #0d6efd;
+      color: white;
+      transform: scale(1.1);
+      box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
+      font-weight: bold;
+    }
+    
+    /* Hover effect for day buttons */
+    .day-selector .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Gallery styling */
+    .image-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+      max-height: 500px;
+      overflow-y: auto;
+      padding: 15px 0;
+    }
+    
+    .gallery-item {
+      position: relative;
+      height: 120px;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .gallery-item:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+      z-index: 1;
+    }
+    
+    .gallery-item img {
       width: 100%;
       height: 100%;
-      overflow: auto;
-      background-color: rgba(0,0,0,0.5);
-      padding: 20px;
+      object-fit: cover;
     }
     
-    /* Bootstrap 5 compatible animations */
-    .fc-event-dragging {
-      opacity: 0.8;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    .gallery-item.selected {
+      border: 3px solid #0d6efd;
     }
     
-    /* Smooth transitions for events */
-    .fc-event {
-      transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s !important;
+    .image-tags {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 3px;
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Tab content styling */
+    .tab-pane {
+      padding-top: 1rem;
+    }
+    
+    /* Image preview */
+    .image-preview {
+      max-height: 150px;
+      max-width: 100%;
+      object-fit: contain;
+      border-radius: 0.25rem;
+      margin-top: 0.5rem;
+    }
+    
+    /* Override footer positioning */
+    .footer {
+      position: relative !important;
+    }
+    
+    /* Recurrence pattern preview */
+    .recurrence-preview {
+      margin-top: 1rem;
+      padding: 1rem;
+      background-color: #f8f9fa;
+      border-radius: 0.25rem;
+      font-size: 0.875rem;
+    }
+    
+    .preview-dates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+    
+    .preview-date {
+      padding: 2px 8px;
+      background-color: #e9ecef;
+      border-radius: 4px;
+      font-size: 0.75rem;
     }
   </style>
 {% endblock %}
@@ -138,970 +197,1611 @@
 {% block content %}
 <div class="container py-4">
   <header class="pb-3 mb-4 border-bottom">
-    <h1 class="display-5 fw-bold">Schedule Images</h1>
-    <p class="lead">Manage your scheduled image updates with our interactive calendar.</p>
+    <h1 class="display-5 fw-bold">
+      <i class="bi bi-calendar-event text-primary me-2"></i>
+      Schedule Images
+    </h1>
+    <p class="lead">Schedule and manage automatic updates for your eInk displays</p>
   </header>
   
-  <div id="calendar" class="mb-5"></div>
+  <div class="card shadow-sm mb-5">
+    <div class="card-body p-0">
+      <div id="calendar"></div>
+    </div>
+  </div>
 </div>
 
-<!-- Bootstrap 5 Modal for adding a new scheduled event -->
+<!-- Enhanced Event Modal -->
 <div class="modal fade" id="eventModal" tabindex="-1" aria-labelledby="eventModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="eventModalTitle">Add Scheduled Event</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeEventModal()"></button>
+      <div class="modal-header bg-light">
+        <h5 class="modal-title" id="eventModalTitle">
+          <i class="bi bi-calendar-plus me-2"></i>
+          <span>New Scheduled Event</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <form id="eventForm">
           <input type="hidden" id="editingEventId" value="">
-          <div class="mb-3">
-            <label for="eventDate" class="form-label">Date &amp; Time (24-hour format):</label>
-            <input type="datetime-local" class="form-control" id="eventDate" name="eventDate" required step="60">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Select eInk Display:</label>
-            {% if devices %}
-              {% for device in devices %}
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="device" id="device{{ loop.index }}"
-                         value="{{ device.address }}" {% if loop.first %}checked{% endif %}>
-                  <label class="form-check-label" for="device{{ loop.index }}">
-                    {{ device.friendly_name }}
+
+          <!-- Tab Navigation -->
+          <ul class="nav nav-tabs" id="eventTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic-tab-pane" type="button" role="tab" aria-controls="basic-tab-pane" aria-selected="true">
+                <i class="bi bi-info-circle me-1"></i> Basic Info
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="content-tab" data-bs-toggle="tab" data-bs-target="#content-tab-pane" type="button" role="tab" aria-controls="content-tab-pane" aria-selected="false">
+                <i class="bi bi-image me-1"></i> Content
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="recurrence-tab" data-bs-toggle="tab" data-bs-target="#recurrence-tab-pane" type="button" role="tab" aria-controls="recurrence-tab-pane" aria-selected="false">
+                <i class="bi bi-arrow-repeat me-1"></i> Recurrence
+              </button>
+            </li>
+          </ul>
+
+          <!-- Tab Content -->
+          <div class="tab-content" id="eventTabContent">
+            <!-- Basic Info Tab -->
+            <div class="tab-pane fade show active" id="basic-tab-pane" role="tabpanel" aria-labelledby="basic-tab" tabindex="0">
+              <div class="mb-3">
+                <label for="eventDate" class="form-label">Date & Time</label>
+                <input type="datetime-local" class="form-control" id="eventDate" name="eventDate" required step="60">
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label">Select eInk Display</label>
+                <div class="card border-light">
+                  <div class="card-body py-2">
+                    {% if devices %}
+                      {% for device in devices %}
+                        <div class="form-check mb-2">
+                          <input class="form-check-input" type="radio" name="device" id="device{{ loop.index }}"
+                                value="{{ device.address }}" {% if loop.first %}checked{% endif %}>
+                          <label class="form-check-label d-flex align-items-center" for="device{{ loop.index }}">
+                            <span class="badge rounded-pill me-2" style="background-color: {{ device.color }};">&nbsp;</span>
+                            <strong>{{ device.friendly_name }}</strong>
+                            {% if device.resolution %}
+                              <small class="text-muted ms-2">({{ device.resolution }})</small>
+                            {% endif %}
+                          </label>
+                        </div>
+                      {% endfor %}
+                    {% else %}
+                      <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        No devices configured. Please add devices in <a href="{{ url_for('settings.settings') }}" class="alert-link">Settings</a>.
+                      </div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Content Tab -->
+            <div class="tab-pane fade" id="content-tab-pane" role="tabpanel" aria-labelledby="content-tab" tabindex="0">
+              <div class="mb-3">
+                <label class="form-label">Select Content to Display</label>
+                
+                <div class="d-flex flex-column gap-3">
+                  <!-- Image Selection -->
+                  <div class="card border-light">
+                    <div class="card-body">
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" name="contentType" id="contentTypeImage" value="image" checked>
+                        <label class="form-check-label fw-bold" for="contentTypeImage">
+                          <i class="bi bi-image me-1"></i> Image from Gallery
+                        </label>
+                      </div>
+                      
+                      <div class="mt-2 ps-4">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="browseImagesBtn">
+                          <i class="bi bi-images me-1"></i> Browse Images
+                        </button>
+                        <input type="hidden" id="selectedImage" name="selectedImage">
+                        
+                        <div id="imagePreviewContainer" class="mt-2 d-none">
+                          <img id="imagePreview" class="image-preview border">
+                          <div class="small text-muted mt-1" id="selectedImageName"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Screenshot Selection -->
+                  <div class="card border-light">
+                    <div class="card-body">
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" name="contentType" id="contentTypeScreenshot" value="screenshot">
+                        <label class="form-check-label fw-bold" for="contentTypeScreenshot">
+                          <i class="bi bi-window me-1"></i> Screenshot
+                        </label>
+                      </div>
+                      
+                      <div class="mt-2 ps-4">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="browseScreenshotsBtn">
+                          <i class="bi bi-window-desktop me-1"></i> Browse Screenshots
+                        </button>
+                        <input type="hidden" id="selectedScreenshot" name="selectedScreenshot">
+                        
+                        <div id="screenshotPreviewContainer" class="mt-2 d-none">
+                          <img id="screenshotPreview" class="image-preview border">
+                          <div class="small text-muted mt-1" id="selectedScreenshotName"></div>
+                        </div>
+                        
+                        <div class="form-check mt-2" id="refreshScreenshotContainer">
+                          <input class="form-check-input" type="checkbox" id="refreshScreenshot" name="refreshScreenshot">
+                          <label class="form-check-label" for="refreshScreenshot">
+                            Refresh screenshot before sending
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Recurrence Tab -->
+            <div class="tab-pane fade" id="recurrence-tab-pane" role="tabpanel" aria-labelledby="recurrence-tab" tabindex="0">
+              <div class="mb-3">
+                <label class="form-label">Repeating Pattern</label>
+                <select class="form-select" id="recurrencePattern" name="recurrencePattern">
+                  <option value="none">No Repeat (Single Event)</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              
+              <!-- Daily Options (shown when daily is selected) -->
+              <div id="dailyOptions" class="mb-3 d-none">
+                <label class="form-label">Repeat Every</label>
+                <div class="input-group mb-2">
+                  <input type="number" class="form-control" id="dailyInterval" name="dailyInterval" min="1" value="1">
+                  <span class="input-group-text">day(s)</span>
+                </div>
+                
+                <label class="form-label mt-3">Repeat on these days</label>
+                <div class="row g-2 mb-2">
+                  <div class="col text-center">
+                    <div class="day-label">Mon</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day1" name="dailyWeekdays" value="1" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Tue</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day2" name="dailyWeekdays" value="2" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Wed</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day3" name="dailyWeekdays" value="3" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Thu</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day4" name="dailyWeekdays" value="4" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Fri</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day5" name="dailyWeekdays" value="5" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Sat</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day6" name="dailyWeekdays" value="6" checked>
+                    </div>
+                  </div>
+                  <div class="col text-center">
+                    <div class="day-label">Sun</div>
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input" type="checkbox" id="daily-day0" name="dailyWeekdays" value="0" checked>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="form-text">
+                  Leave all unchecked to repeat every day, or select specific days to limit repetition.
+                </div>
+              </div>
+              
+              <!-- Weekly Options -->
+              <div id="weeklyOptions" class="mb-3 d-none">
+                <label class="form-label">Repeat Every</label>
+                <div class="input-group mb-2">
+                  <input type="number" class="form-control" id="weeklyInterval" name="weeklyInterval" min="1" value="1">
+                  <span class="input-group-text">week(s)</span>
+                </div>
+                
+                <label class="form-label">On These Days</label>
+                <div class="day-selector">
+                  <!-- Monday first, as requested -->
+                  <input type="checkbox" class="btn-check" id="day1" name="weekdays" value="1">
+                  <label class="btn btn-outline-primary day-button" for="day1" data-day="1">Mo</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day2" name="weekdays" value="2">
+                  <label class="btn btn-outline-primary day-button" for="day2" data-day="2">Tu</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day3" name="weekdays" value="3">
+                  <label class="btn btn-outline-primary day-button" for="day3" data-day="3">We</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day4" name="weekdays" value="4">
+                  <label class="btn btn-outline-primary day-button" for="day4" data-day="4">Th</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day5" name="weekdays" value="5">
+                  <label class="btn btn-outline-primary day-button" for="day5" data-day="5">Fr</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day6" name="weekdays" value="6">
+                  <label class="btn btn-outline-primary day-button" for="day6" data-day="6">Sa</label>
+                  
+                  <input type="checkbox" class="btn-check" id="day0" name="weekdays" value="0">
+                  <label class="btn btn-outline-primary day-button" for="day0" data-day="0">Su</label>
+                </div>
+                <div class="form-text mt-2">
+                  <span class="text-info"><i class="bi bi-info-circle"></i> Select at least one day for weekly recurrence.</span>
+                  <span id="selected-day-info" class="ms-2"></span>
+                </div>
+              </div>
+              
+              <!-- Monthly Options -->
+              <div id="monthlyOptions" class="mb-3 d-none">
+                <label class="form-label">Repeat Every</label>
+                <div class="input-group mb-3">
+                  <input type="number" class="form-control" id="monthlyInterval" name="monthlyInterval" min="1" value="1">
+                  <span class="input-group-text">month(s)</span>
+                </div>
+                
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="radio" name="monthlyType" id="monthlyTypeDay" value="day" checked>
+                  <label class="form-check-label" for="monthlyTypeDay">
+                    On day <span id="monthDayNum" class="fw-bold">15</span> of the month
                   </label>
                 </div>
-              {% endfor %}
-            {% else %}
-              <p class="text-danger">No devices configured. Please add devices in <a href="{{ url_for('settings.settings') }}">Settings</a>.</p>
-            {% endif %}
-          </div>
-          <div class="mb-3">
-            <label for="recurrence" class="form-label">Recurrence:</label>
-            <select class="form-select" id="recurrence" name="recurrence">
-              <option value="none">None</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Same date next month</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Choose Image:</label>
-            <div class="d-flex align-items-center mb-2">
-              <button type="button" class="btn btn-outline-primary me-2" onclick="openImageGallery()">Select Image</button>
-              <input type="hidden" id="selectedImage" name="selectedImage">
-              <span id="selectedImageName" class="text-truncate"></span>
-            </div>
-            <div class="d-flex align-items-center">
-              <button type="button" class="btn btn-outline-secondary me-2" onclick="openBrowserlessGallery()">Select Screenshot</button>
-              <input type="hidden" id="selectedScreenshot" name="selectedScreenshot">
-              <span id="selectedScreenshotName" class="text-truncate"></span>
-            </div>
-            <div class="form-check mt-2" id="refreshScreenshotContainer" style="display: none;">
-              <input class="form-check-input" type="checkbox" id="refreshScreenshot" name="refreshScreenshot">
-              <label class="form-check-label" for="refreshScreenshot">
-                Refresh screenshot before sending
-              </label>
+                
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="radio" name="monthlyType" id="monthlyTypePosition" value="position">
+                  <label class="form-check-label" for="monthlyTypePosition">
+                    On the 
+                    <select class="form-select form-select-sm d-inline-block w-auto mx-1" id="monthlyPosition" name="monthlyPosition">
+                      <option value="1">first</option>
+                      <option value="2">second</option>
+                      <option value="3">third</option>
+                      <option value="4">fourth</option>
+                      <option value="-1">last</option>
+                    </select>
+                    <select class="form-select form-select-sm d-inline-block w-auto mx-1" id="monthlyDay" name="monthlyDay">
+                      <!-- Monday first -->
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                      <option value="6">Saturday</option>
+                      <option value="0">Sunday</option>
+                    </select>
+                    of the month
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Recurrence End Options -->
+              <div id="endOptions" class="mb-3 d-none">
+                <label class="form-label">End Recurrence</label>
+                
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="radio" name="endType" id="endTypeNever" value="never" checked>
+                  <label class="form-check-label" for="endTypeNever">
+                    Never
+                  </label>
+                </div>
+                
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="radio" name="endType" id="endTypeCount" value="count">
+                  <label class="form-check-label" for="endTypeCount">
+                    <div class="input-group input-group-sm mt-1" style="width: 150px;">
+                      <span class="input-group-text">After</span>
+                      <input type="number" class="form-control" id="endCount" name="endCount" min="1" value="10">
+                      <span class="input-group-text">occurrence(s)</span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="endType" id="endTypeUntil" value="until">
+                  <label class="form-check-label" for="endTypeUntil">
+                    <div class="input-group input-group-sm mt-1" style="width: 310px;">
+                      <span class="input-group-text">Until</span>
+                      <input type="date" class="form-control" id="endUntil" name="endUntil">
+                    </div>
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Recurrence Preview -->
+              <div id="recurrencePreview" class="recurrence-preview d-none">
+                <div class="fw-bold mb-2"><i class="bi bi-calendar-check me-1"></i> Upcoming Occurrences:</div>
+                <div id="previewDates" class="preview-dates"></div>
+              </div>
             </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeEventModal()">Close</button>
-        <button type="button" class="btn btn-primary" id="eventSubmitButton" onclick="document.getElementById('eventForm').dispatchEvent(new Event('submit'))">Save Event</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="eventSubmitButton">
+          <i class="bi bi-save me-1"></i> Save Event
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Bootstrap 5 Modal for the image gallery -->
-<div class="modal fade" id="imageGalleryModal" tabindex="-1" aria-labelledby="imageGalleryModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+<!-- Image Gallery Modal -->
+<div class="modal fade" id="imageGalleryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Select an Image</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeImageGallery()"></button>
+        <h5 class="modal-title">
+          <i class="bi bi-images me-2"></i>
+          Select an Image
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <!-- Search bar for filtering images by tags -->
-        <div class="mb-3">
-          <input type="text" class="form-control" id="imageSearch" placeholder="Search by tags...">
+        <!-- Search Bar -->
+        <div class="input-group mb-3">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" class="form-control" id="imageSearch" placeholder="Search by tags or filename">
         </div>
         
-        <div class="gallery" id="galleryModal">
+        <!-- Gallery -->
+        <div class="image-gallery" id="galleryContainer">
           {% for image in images %}
-            <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}">
-              <div class="img-container">
-                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" data-src="{{ url_for('image.thumbnail', filename=image) }}" alt="{{ image }}" data-filename="{{ image }}" onclick="selectImage('{{ image }}', this.src)" class="lazy" loading="lazy">
-                {% if image_tags.get(image) %}
-                  <div class="image-tags">{{ image_tags.get(image) }}</div>
-                {% endif %}
-              </div>
+            <div class="gallery-item" data-tags="{{ image_tags.get(image, '') }}" data-filename="{{ image }}">
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E" 
+                   data-src="{{ url_for('image.thumbnail', filename=image) }}" 
+                   alt="{{ image }}" 
+                   class="lazy" 
+                   loading="lazy">
+              {% if image_tags.get(image) %}
+                <div class="image-tags">{{ image_tags.get(image) }}</div>
+              {% endif %}
             </div>
           {% endfor %}
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeImageGallery()">Close</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="selectImageBtn" disabled>
+          <i class="bi bi-check2 me-1"></i> Select Image
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Bootstrap 5 Modal for browserless screenshots gallery -->
-<div class="modal fade" id="browserlessGalleryModal" tabindex="-1" aria-labelledby="browserlessGalleryModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+<!-- Screenshot Gallery Modal -->
+<div class="modal fade" id="browserlessGalleryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Select a Screenshot</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeBrowserlessGallery()"></button>
+        <h5 class="modal-title">
+          <i class="bi bi-window-desktop me-2"></i>
+          Select a Screenshot
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <!-- Search bar for filtering screenshots -->
-        <div class="mb-3">
-          <input type="text" class="form-control" id="screenshotSearch" placeholder="Search by name...">
+        <!-- Search Bar -->
+        <div class="input-group mb-3">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" class="form-control" id="screenshotSearch" placeholder="Search by name">
         </div>
         
-        <div class="gallery" id="browserlessGalleryContainer">
+        <!-- Gallery -->
+        <div class="image-gallery" id="screenshotGalleryContainer">
           {% if screenshots %}
             {% for screenshot in screenshots %}
-              <div class="gallery-item screenshot-item" data-name="{{ screenshot.name.lower() }}">
-                <div class="img-container">
-                  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E"
-                       data-src="/screenshots/{{ screenshot.filename }}?cropped=true"
-                       alt="{{ screenshot.name }}"
-                       data-filename="{{ screenshot.filename }}"
-                       data-id="{{ screenshot.id }}"
-                       onclick="selectScreenshot('{{ screenshot.filename }}', '{{ screenshot.name }}', '{{ screenshot.id }}', this.getAttribute('data-src'))"
-                       class="lazy"
-                       loading="lazy">
-                  <div class="image-tags">{{ screenshot.name }}</div>
-                </div>
+              <div class="gallery-item screenshot-item" data-name="{{ screenshot.name.lower() }}" data-id="{{ screenshot.id }}" data-filename="{{ screenshot.filename }}">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23f8f9fa'/%3E%3Cpath d='M145,80 L155,80 L155,120 L145,120 Z' fill='%23dee2e6'/%3E%3Ccircle cx='150' cy='60' r='10' fill='%23dee2e6'/%3E%3Cpath d='M130,140 L170,140 L170,150 L130,150 Z' fill='%23dee2e6'/%3E%3C/svg%3E"
+                     data-src="/screenshots/{{ screenshot.filename }}?cropped=true"
+                     alt="{{ screenshot.name }}"
+                     class="lazy"
+                     loading="lazy">
+                <div class="image-tags">{{ screenshot.name }}</div>
               </div>
             {% endfor %}
           {% else %}
-            <div class="col-12 text-center py-5">
-              <p class="text-muted">No screenshots available. Add screenshots in the Browserless section.</p>
+            <div class="text-center py-5">
+              <i class="bi bi-exclamation-circle text-muted" style="font-size: 2rem;"></i>
+              <p class="text-muted mt-3">No screenshots available</p>
+              <a href="{{ url_for('browserless.browserless_page') }}" class="btn btn-sm btn-outline-primary mt-2">
+                <i class="bi bi-plus-circle me-1"></i> 
+                Add Screenshots
+              </a>
             </div>
           {% endif %}
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeBrowserlessGallery()">Close</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="selectScreenshotBtn" disabled>
+          <i class="bi bi-check2 me-1"></i> Select Screenshot
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Bootstrap 5 Modal for deleting recurring events -->
-<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+<!-- Delete Event/Series Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Delete Recurring Event</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeDeleteModal()"></button>
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">
+          <i class="bi bi-trash me-2"></i>
+          Delete Event
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body text-center">
-        <p>Delete this occurrence or the entire series?</p>
+      <div class="modal-body text-center p-4">
+        <p class="mb-3">How would you like to delete this event?</p>
+        
+        <div class="d-grid gap-2">
+          <button id="deleteOccurrenceBtn" class="btn btn-outline-danger">
+            <i class="bi bi-calendar-x me-1"></i> This occurrence only
+          </button>
+          <button id="deleteSeriesBtn" class="btn btn-danger">
+            <i class="bi bi-calendar-x-fill me-1"></i> Entire series
+          </button>
+        </div>
       </div>
-      <div class="modal-footer justify-content-center">
-        <button id="deleteOccurrenceBtn" class="btn btn-danger">Delete this occurrence</button>
-        <button id="deleteSeriesBtn" class="btn btn-danger">Delete entire series</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeDeleteModal()">Cancel</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link text-secondary" data-bs-dismiss="modal">Cancel</button>
       </div>
     </div>
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
-  <script>
-    var currentDeleteEventId = null; // store event id for deletion modal
-    var calendar; // Global calendar instance
+<script>
+  // Global variables
+  let calendar;
+  let currentDeleteEventId = null;
+  let selectedGalleryItem = null;
+  let selectedScreenshotItem = null;
+  let currentScreenshotId = null;
+  let currentScreenshotName = null;
+  
+  // Bootstrap modal instances
+  let eventModal, imageGalleryModal, screenshotGalleryModal, deleteModal;
+  
+  // Initialize modals
+  document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Bootstrap modals
+    eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+    imageGalleryModal = new bootstrap.Modal(document.getElementById('imageGalleryModal'));
+    screenshotGalleryModal = new bootstrap.Modal(document.getElementById('browserlessGalleryModal'));
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
     
-    // Bootstrap 5 compatible modal functions
-    function openEventModal() {
-      var eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
-      eventModal.show();
-    }
+    // Initialize FullCalendar
+    initializeCalendar();
     
-    function closeEventModal() {
-      var eventModalEl = document.getElementById('eventModal');
-      var eventModal = bootstrap.Modal.getInstance(eventModalEl);
-      if (eventModal) {
-        eventModal.hide();
-      }
-    }
+    // Initialize form event listeners
+    initializeFormEvents();
     
-    function openImageGallery() {
-      var imageModal = new bootstrap.Modal(document.getElementById('imageGalleryModal'));
-      imageModal.show();
+    // Initialize gallery event listeners
+    initializeGalleries();
+    
+    // Initialize button click handlers
+    document.getElementById('browseImagesBtn').addEventListener('click', function() {
+      imageGalleryModal.show();
       
-      // Clear search field when opening
-      var searchField = document.getElementById('imageSearch');
+      // Clear search field and focus it
+      const searchField = document.getElementById('imageSearch');
       if (searchField) {
         searchField.value = '';
         searchField.focus();
-        // Trigger search to show all images
-        filterImages('');
-      }
-      // Initialize masonry layout after modal is shown
-      document.getElementById('imageGalleryModal').addEventListener('shown.bs.modal', function() {
-        if (typeof initMasonryLayout === 'function') {
-          setTimeout(initMasonryLayout, 300);
-        }
-      }, { once: true });
-    }
-    
-    function closeImageGallery() {
-      var imageModalEl = document.getElementById('imageGalleryModal');
-      var imageModal = bootstrap.Modal.getInstance(imageModalEl);
-      if (imageModal) {
-        imageModal.hide();
-      }
-    }
-    
-    function openDeleteModal() {
-      var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
-      deleteModal.show();
-    }
-    
-    function closeDeleteModal() {
-      var deleteModalEl = document.getElementById('deleteModal');
-      var deleteModal = bootstrap.Modal.getInstance(deleteModalEl);
-      if (deleteModal) {
-        deleteModal.hide();
-      }
-    }
-    
-    // Toast notification function (Bootstrap 5)
-    function showToast(message, isError = false) {
-      const toastContainer = document.createElement('div');
-      toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-      toastContainer.style.zIndex = '1100';
-      
-      const toastEl = document.createElement('div');
-      toastEl.className = `toast align-items-center ${isError ? 'text-white bg-danger' : 'text-white bg-success'}`;
-      toastEl.setAttribute('role', 'alert');
-      toastEl.setAttribute('aria-live', 'assertive');
-      toastEl.setAttribute('aria-atomic', 'true');
-      
-      toastEl.innerHTML = `
-        <div class="d-flex">
-          <div class="toast-body">
-            ${message}
-          </div>
-          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-      `;
-      
-      toastContainer.appendChild(toastEl);
-      document.body.appendChild(toastContainer);
-      
-      const toast = new bootstrap.Toast(toastEl, {
-        autohide: true,
-        delay: 3000
-      });
-      
-      toast.show();
-      
-      // Remove the container after the toast is hidden
-      toastEl.addEventListener('hidden.bs.toast', function() {
-        if (toastContainer.parentNode) {
-          toastContainer.parentNode.removeChild(toastContainer);
-        }
-      });
-    }
-    
-    document.addEventListener('DOMContentLoaded', function() {
-      var calendarEl = document.getElementById('calendar');
-      if (!calendarEl) return;
-      
-      console.log("FullCalendar version:", FullCalendar.version);
-      
-      // Initialize the global calendar variable with Bootstrap 5 theming
-      calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'timeGridWeek',
-        firstDay: 1,
-        nowIndicator: true,
-        editable: true,
-        themeSystem: 'bootstrap5', // Use Bootstrap 5 theming
-        // Use 24-hour format instead of AM/PM
-        eventTimeFormat: {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        },
-        // Use 24-hour format for slot labels (time displayed on the left side)
-        slotLabelFormat: {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        },
-        buttonIcons: {
-          prev: 'chevron-left',
-          next: 'chevron-right',
-          prevYear: 'chevron-double-left',
-          nextYear: 'chevron-double-right'
-        },
-        headerToolbar: {
-          left: 'prev,next today refresh',
-          center: 'title',
-          right: 'timeGridWeek,timeGridDay'
-        },
-        events: '/schedule/events',
-        customButtons: {
-          refresh: {
-            text: '↻', // Simple text instead of HTML
-            click: function() {
-              calendar.refetchEvents();
-            }
-          }
-        },
-        // Disable scrolling in the calendar itself to avoid double scrollbars
-        height: 'auto',
-        // Enhanced Bootstrap 5 styling for events
-        eventClassNames: function(arg) {
-          return ['shadow-sm', 'rounded', 'border-0']; // Add Bootstrap 5 classes
-        },
-        // Bootstrap 5 styling for day headers
-        dayHeaderClassNames: 'fw-bold',
-        // Bootstrap 5 styling for today
-        dayCellClassNames: function(arg) {
-          return arg.isToday ? 'bg-light' : '';
-        },
-        /*
-        UI MODERNIZATION SUGGESTIONS FOR EVENT INTERACTIONS:
-        
-        1. Add visual feedback during drag operations:
-           - Add a CSS class to the event being dragged for visual distinction
-           - Consider adding a shadow effect to indicate "lifting" the event:
-             .fc-event.is-dragging {
-               box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-               opacity: 0.8;
-               transform: scale(1.05);
-               transition: all 0.2s ease;
-             }
-        
-        2. Add smooth animations for event updates:
-           - Use CSS transitions for color changes and movements:
-             .fc-event {
-               transition: background-color 0.3s, transform 0.3s, box-shadow 0.3s;
-             }
-           - Add a highlight effect after successful updates:
-             function highlightEvent(eventEl) {
-               eventEl.classList.add('highlight-success');
-               setTimeout(() => eventEl.classList.remove('highlight-success'), 1000);
-             }
-        
-        3. Replace alert() with toast notifications:
-           - Instead of using alert() for errors, use a toast notification:
-             function showToast(message, isError = false) {
-               const toast = document.createElement('div');
-               toast.className = isError ? 'toast toast-error' : 'toast toast-success';
-               toast.textContent = message;
-               document.body.appendChild(toast);
-               setTimeout(() => {
-                 toast.classList.add('show');
-                 setTimeout(() => {
-                   toast.classList.remove('show');
-                   setTimeout(() => document.body.removeChild(toast), 300);
-                 }, 3000);
-               }, 10);
-             }
-        */
-        
-        eventDrop: function(info) {
-          var newDate = info.event.start;
-          var isoString = newDate.toISOString();
-          
-          fetch("/schedule/update", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              event_id: info.event.id,
-              datetime: isoString
-              // Removed timezone_offset - we want to use the time exactly as entered
-            })
-          })
-          .then(response => response.json())
-          .then(data => {
-            if(data.status !== "success"){
-              showToast("Error updating event: " + data.message, true);
-              info.revert();
-            } else {
-              showToast("Event updated successfully");
-              if (calendar) {
-                calendar.refetchEvents();
-              }
-            }
-          })
-          .catch(err => {
-            console.error("Error updating event:", err);
-            showToast("Error updating event", true);
-            info.revert();
-          });
-        },
-        eventDidMount: function(info) {
-          // Add special styling for recurring events
-          if (info.event.extendedProps.isRecurring) {
-            info.el.classList.add('recurring-event');
-          }
-          
-          // Add Bootstrap 5 styled delete button
-          var deleteEl = document.createElement('button');
-          deleteEl.innerHTML = '×'; // Simple × character instead of Bootstrap icon
-          deleteEl.className = 'btn btn-sm btn-danger rounded-circle position-absolute d-flex align-items-center justify-content-center';
-          deleteEl.style.top = '2px';
-          deleteEl.style.right = '2px';
-          deleteEl.style.width = '20px';
-          deleteEl.style.height = '20px';
-          deleteEl.style.padding = '0';
-          deleteEl.style.zIndex = '100';
-          info.el.appendChild(deleteEl);
-          
-          // Add thumbnail to event
-          if (info.event.extendedProps.thumbnail) {
-            var thumbnailEl = document.createElement('img');
-            thumbnailEl.src = info.event.extendedProps.thumbnail;
-            thumbnailEl.className = 'event-thumbnail';
-            thumbnailEl.alt = info.event.title;
-            thumbnailEl.style.cursor = 'pointer';
-            
-            // Add click event to open the event for editing
-            thumbnailEl.addEventListener('click', function(e) {
-              e.stopPropagation();
-              // Get event data
-              var eventData = {
-                id: info.event.id,
-                title: info.event.title,
-                start: info.event.start,
-                device: info.event.extendedProps.device,
-                filename: info.event.extendedProps.filename,
-                recurrence: info.event.extendedProps.recurrence,
-                extendedProps: info.event.extendedProps // Include all extended properties
-              };
-              
-              // Populate the event form with this data - use local timezone
-              var startDate = eventData.start;
-              var year = startDate.getFullYear();
-              var month = String(startDate.getMonth() + 1).padStart(2, '0');
-              var day = String(startDate.getDate()).padStart(2, '0');
-              var hours = String(startDate.getHours()).padStart(2, '0');
-              var minutes = String(startDate.getMinutes()).padStart(2, '0');
-              
-              var localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
-              document.getElementById('eventDate').value = localDateStr;
-              console.log("Event edit local time:", localDateStr);
-              
-              // Select the correct device radio button
-              var deviceRadios = document.querySelectorAll('input[name="device"]');
-              for (var i = 0; i < deviceRadios.length; i++) {
-                if (deviceRadios[i].value === eventData.device) {
-                  deviceRadios[i].checked = true;
-                  break;
-                }
-              }
-              
-              // Set the recurrence dropdown
-              document.getElementById('recurrence').value = eventData.recurrence || 'none';
-              
-              // Set the selected image
-              document.getElementById('selectedImage').value = eventData.filename;
-              
-              // Check if this is a screenshot and set the refresh checkbox accordingly
-              const isScreenshot = eventData.extendedProps && eventData.extendedProps.isScreenshot;
-              const refreshScreenshot = eventData.extendedProps && eventData.extendedProps.refreshScreenshot;
-              
-              if (isScreenshot) {
-                document.getElementById('refreshScreenshotContainer').style.display = 'block';
-                document.getElementById('refreshScreenshot').checked = refreshScreenshot || false;
-              } else {
-                document.getElementById('refreshScreenshotContainer').style.display = 'none';
-                document.getElementById('refreshScreenshot').checked = false;
-              }
-              
-              // Display the image thumbnail instead of just the filename
-              const nameSpan = document.getElementById('selectedImageName');
-              nameSpan.innerHTML = '';
-              
-              // Create a thumbnail image element
-              const img = document.createElement('img');
-              img.style.height = '40px';
-              img.style.verticalAlign = 'middle';
-              img.loading = 'lazy';
-              img.className = 'lazy';
-              img.src = eventData.extendedProps.thumbnail;
-              nameSpan.appendChild(img);
-              
-              // Set the editing event ID
-              document.getElementById('editingEventId').value = eventData.id;
-              
-              // Update modal title and button text
-              document.getElementById('eventModalTitle').textContent = 'Edit Scheduled Event';
-              document.getElementById('eventSubmitButton').value = 'Update Event';
-              
-              // Open the event modal
-              openEventModal();
-            });
-            
-            // Find the event title element and insert the thumbnail before it
-            var titleEl = info.el.querySelector('.fc-event-title');
-            if (titleEl && titleEl.parentNode) {
-              titleEl.parentNode.insertBefore(thumbnailEl, titleEl);
-              
-              // Hide the title text completely
-              if (titleEl) {
-                titleEl.style.display = 'none';
-              }
-            }
-          }
-          
-          // Add click handler for delete button
-          deleteEl.addEventListener('click', function(e) {
-            e.stopPropagation();
-            // If recurring, show custom deletion modal; otherwise, delete directly.
-            if(info.event.extendedProps.recurrence && info.event.extendedProps.recurrence.toLowerCase() !== "none"){
-              currentDeleteEventId = info.event.id;
-              openDeleteModal();
-            } else {
-              // Directly delete non-recurring event without popup.
-              fetch("/schedule/remove/" + info.event.id, { method: "POST" })
-              .then(response => response.json())
-              .then(data => {
-                if(data.status === "success"){
-                  info.event.remove();
-                  showToast("Event deleted successfully");
-                } else {
-                  showToast("Error deleting event: " + data.message, true);
-                }
-              })
-              .catch(err => {
-                console.error("Error deleting event:", err);
-                showToast("Error deleting event", true);
-              });
-            }
-          });
-        },
-        dateClick: function(info) {
-          // Create a date object from the clicked date
-          var dtLocal = new Date(info.date);
-          
-          // Format the date in local timezone format (YYYY-MM-DDTHH:MM)
-          var year = dtLocal.getFullYear();
-          var month = String(dtLocal.getMonth() + 1).padStart(2, '0');
-          var day = String(dtLocal.getDate()).padStart(2, '0');
-          var hours = String(dtLocal.getHours()).padStart(2, '0');
-          var minutes = String(dtLocal.getMinutes()).padStart(2, '0');
-          
-          var localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
-          console.log("Clicked date local time:", localDateStr);
-          
-          openNewEventModal(localDateStr);
-        }
-      });
-      calendar.render();
-      
-      // Add event listener for page refresh
-      window.addEventListener('beforeunload', function() {
-        // Store a flag indicating that we're refreshing the page
-        localStorage.setItem('calendarRefreshing', 'true');
-      });
-      
-      // Check if we're coming back from a refresh
-      if (localStorage.getItem('calendarRefreshing') === 'true') {
-        // Clear the flag
-        localStorage.removeItem('calendarRefreshing');
-        // Force a refresh of the events
-        setTimeout(function() {
-          calendar.refetchEvents();
-          console.log("Refreshed events after page reload");
-        }, 500);
+        filterGalleryItems('', '#galleryContainer .gallery-item', ['data-tags', 'data-filename']);
       }
     });
-
-    // These functions are already defined above using Bootstrap Modal API
-    // Using the proper Bootstrap Modal API instead of direct style manipulation
     
-    function selectImage(filename, src) {
-      document.getElementById('selectedImage').value = filename;
-      document.getElementById('selectedImageName').textContent = filename;
-      // Only show the thumbnail, not the filename
-      var nameSpan = document.getElementById('selectedImageName');
-      if (nameSpan) {
-        // If src is a data URI (placeholder), get the actual image URL from data-src
-        if (src.startsWith('data:')) {
-          const imgElement = document.querySelector(`img[data-filename="${filename}"]`);
-          if (imgElement && imgElement.dataset.src) {
-            src = imgElement.dataset.src;
-          }
-        }
-        
-        // Create a new image with fade-in effect
-        const img = document.createElement('img');
-        img.style.height = '40px';
-        img.style.verticalAlign = 'middle';
-        img.loading = 'lazy';
-        img.className = 'lazy';
-        
-        // Set up the onload handler before setting src
-        img.onload = function() {
-          img.classList.add('loaded');
-          img.classList.add('fade-in');
-          this.onload = null;
-        };
-        
-        // Set the src to trigger loading
-        img.src = src;
-        
-        // Clear the span and append the new image
-        nameSpan.innerHTML = '';
-        nameSpan.appendChild(img);
-      }
-      // Hide the refresh screenshot checkbox when selecting a regular image
-      document.getElementById('refreshScreenshotContainer').style.display = 'none';
-      document.getElementById('refreshScreenshot').checked = false;
+    document.getElementById('browseScreenshotsBtn').addEventListener('click', function() {
+      screenshotGalleryModal.show();
       
-      closeImageGallery();
-    }
-    
-    // Function to filter images based on search input
-    function filterImages(searchText) {
-      searchText = searchText.toLowerCase();
-      var items = document.querySelectorAll('#galleryModal .gallery-item');
-      
-      items.forEach(function(item) {
-        var tags = item.getAttribute('data-tags') || '';
-        var filename = item.querySelector('img').getAttribute('data-filename') || '';
-        
-        if (tags.toLowerCase().includes(searchText) || filename.toLowerCase().includes(searchText) || searchText === '') {
-          item.style.display = '';
-        } else {
-          item.style.display = 'none';
-        }
-      });
-    }
-    
-    // Functions for browserless screenshots gallery
-    function openBrowserlessGallery() {
-      var browserlessModal = new bootstrap.Modal(document.getElementById('browserlessGalleryModal'));
-      browserlessModal.show();
-      
-      // Clear search field when opening
-      var searchField = document.getElementById('screenshotSearch');
+      // Clear search field and focus it
+      const searchField = document.getElementById('screenshotSearch');
       if (searchField) {
         searchField.value = '';
         searchField.focus();
-        // Trigger search to show all screenshots
-        filterScreenshots('');
+        filterGalleryItems('', '#screenshotGalleryContainer .gallery-item', ['data-name']);
+      }
+    });
+  });
+  
+  // Initialize FullCalendar
+  function initializeCalendar() {
+    const calendarEl = document.getElementById('calendar');
+    if (!calendarEl) return;
+    
+    calendar = new FullCalendar.Calendar(calendarEl, {
+      // General display options
+      initialView: 'timeGridWeek',
+      firstDay: 1, // Monday start
+      nowIndicator: true,
+      editable: true,
+      height: 'auto',
+      themeSystem: 'bootstrap5',
+      
+      // Toolbar configuration
+      headerToolbar: {
+        left: 'prev,next today refresh',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,timeGridDay'
+      },
+      
+      // Custom buttons
+      customButtons: {
+        refresh: {
+          text: '<i class="bi bi-arrow-clockwise"></i>',
+          click: refreshEvents
+        }
+      },
+      
+      // Event display format
+      eventTimeFormat: {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      },
+      
+      // Time format for the time grid
+      slotLabelFormat: {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      },
+      
+      // Define event source
+      events: '/schedule/events',
+      
+      // Style customizations
+      eventClassNames: function(arg) {
+        return ['shadow-sm', 'rounded', 'border-0'];
+      },
+      dayHeaderClassNames: 'fw-bold',
+      dayCellClassNames: function(arg) {
+        return arg.isToday ? 'bg-light' : '';
+      },
+      
+      // Event handlers
+      dateClick: handleDateClick,
+      eventClick: handleEventClick,
+      eventDrop: handleEventDrop,
+      eventDidMount: handleEventDidMount
+    });
+    
+    try {
+      calendar.render();
+      console.log("Calendar initialized successfully");
+    } catch (error) {
+      console.error("Error rendering calendar:", error);
+      showToast("Error initializing calendar. Please reload the page.", true);
+    }
+    
+    // Check if we're coming back from a page refresh
+    if (localStorage.getItem('calendarRefreshing') === 'true') {
+      localStorage.removeItem('calendarRefreshing');
+      refreshEvents();
+    }
+    
+    // Set flag when page is unloaded
+    window.addEventListener('beforeunload', function() {
+      localStorage.setItem('calendarRefreshing', 'true');
+    });
+  }
+  
+  // Refresh calendar events
+  function refreshEvents() {
+    if (calendar) {
+      try {
+        calendar.refetchEvents();
+        showToast("Events refreshed");
+      } catch (error) {
+        console.error("Error refreshing events:", error);
+        showToast("Error refreshing events", true);
+      }
+    }
+  }
+  
+  // Handle clicking on a date in the calendar
+  function handleDateClick(info) {
+    // Format date in local timezone
+    const dtLocal = new Date(info.date);
+    const year = dtLocal.getFullYear();
+    const month = String(dtLocal.getMonth() + 1).padStart(2, '0');
+    const day = String(dtLocal.getDate()).padStart(2, '0');
+    const hours = String(dtLocal.getHours()).padStart(2, '0');
+    const minutes = String(dtLocal.getMinutes()).padStart(2, '0');
+    
+    const localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
+    console.log("Selected date:", localDateStr);
+    
+    // Open event modal with this date
+    openNewEventModal(localDateStr);
+  }
+  
+  // Handle clicking on an existing event
+  function handleEventClick(info) {
+    // Get event data
+    const eventData = {
+      id: info.event.id,
+      title: info.event.title,
+      start: info.event.start,
+      device: info.event.extendedProps.device,
+      filename: info.event.extendedProps.filename,
+      recurrence: info.event.extendedProps.recurrence || 'none',
+      extendedProps: info.event.extendedProps
+    };
+    
+    // Open edit modal
+    openEditEventModal(eventData);
+  }
+  
+  // Handle event drag/drop
+  function handleEventDrop(info) {
+    const newDate = info.event.start;
+    const isoString = newDate.toISOString();
+    
+    // Update event on the server
+    fetch("/schedule/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_id: info.event.id,
+        datetime: isoString
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status !== "success") {
+        showToast("Error updating event: " + data.message, true);
+        info.revert();
+      } else {
+        showToast("Event updated successfully");
+        refreshEvents();
+      }
+    })
+    .catch(err => {
+      console.error("Error updating event:", err);
+      showToast("Error updating event", true);
+      info.revert();
+    });
+  }
+  
+  // Handle event rendering
+  function handleEventDidMount(info) {
+    const event = info.event;
+    const eventEl = info.el;
+    
+    // Add recurrence styling if applicable
+    if (event.extendedProps.isRecurring || event.extendedProps.recurrence) {
+      eventEl.classList.add('recurring-event');
+    }
+    
+    // Add delete button
+    addEventDeleteButton(event, eventEl);
+    
+    // Add thumbnail to event if available
+    if (event.extendedProps.thumbnail) {
+      addEventThumbnail(event, eventEl);
+    }
+  }
+  
+  // Update selected days info text
+  function updateSelectedDaysInfo() {
+    // For weekly pattern
+    const weeklyDays = Array.from(document.querySelectorAll('input[name="weekdays"]:checked'))
+        .map(input => input.nextElementSibling.textContent.trim());
+    
+    const weeklyInfo = document.getElementById('selected-day-info');
+    if (weeklyInfo) {
+      if (weeklyDays.length > 0) {
+        weeklyInfo.textContent = `Selected: ${weeklyDays.join(', ')}`;
+        weeklyInfo.classList.add('text-success');
+      } else {
+        weeklyInfo.textContent = '';
       }
     }
     
-    function closeBrowserlessGallery() {
-      var browserlessModalEl = document.getElementById('browserlessGalleryModal');
-      var browserlessModal = bootstrap.Modal.getInstance(browserlessModalEl);
-      if (browserlessModal) {
-        browserlessModal.hide();
-      }
-    }
+    // Update the preview
+    updateRecurrencePreview();
+  }
+  
+  // Initialize visual feedback for day buttons
+  function initializeDayButtonFeedback() {
+    // Set initial state
+    updateSelectedDaysInfo();
     
-    function selectScreenshot(filename, name, id, src) {
-      // Store screenshot info for refresh functionality
-      currentScreenshotId = id;
-      currentScreenshotUrl = name; // Using name as URL is not directly available
-      currentScreenshotName = name;
-      
-      // Set the selected screenshot
-      document.getElementById('selectedImage').value = filename;
-      
-      // Show the thumbnail
-      var nameSpan = document.getElementById('selectedImageName');
-      if (nameSpan) {
-        // If src is a data URI (placeholder), get the actual image URL from data-src
-        if (src.startsWith('data:')) {
-          const imgElement = document.querySelector(`img[data-filename="${filename}"]`);
-          if (imgElement && imgElement.dataset.src) {
-            src = imgElement.dataset.src;
-          }
+    // Add special highlight for the day of the selected date
+    const dateInput = document.getElementById('eventDate');
+    if (dateInput && dateInput.value) {
+      const selectedDate = new Date(dateInput.value);
+      if (!isNaN(selectedDate.getTime())) {
+        const dayOfWeek = selectedDate.getDay();
+        
+        // Mark the day of week in weekly selector
+        const weekDayBtn = document.querySelector(`.day-button[data-day="${dayOfWeek}"]`);
+        if (weekDayBtn) {
+          weekDayBtn.classList.add('border-info');
+          weekDayBtn.title = 'This is the day of your selected date';
         }
         
-        // Create a new image with fade-in effect
-        const img = document.createElement('img');
-        img.style.height = '40px';
-        img.style.verticalAlign = 'middle';
-        img.loading = 'lazy';
-        img.className = 'lazy';
-        
-        // Set up the onload handler before setting src
-        img.onload = function() {
-          img.classList.add('loaded');
-          img.classList.add('fade-in');
-          this.onload = null;
-        };
-        
-        // Set the src to trigger loading
-        img.src = src;
-        
-        // Clear the span and append the new image
-        nameSpan.innerHTML = '';
-        nameSpan.appendChild(img);
+        // Also mark in daily selector
+        const dailyDayBtn = document.querySelector(`label[for="daily-day${dayOfWeek}"]`);
+        if (dailyDayBtn) {
+          dailyDayBtn.classList.add('border-info');
+          dailyDayBtn.title = 'This is the day of your selected date';
+        }
       }
+    }
+  }
+  
+  // Add delete button to event
+  function addEventDeleteButton(event, eventEl) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.innerHTML = '<i class="bi bi-x"></i>';
+    deleteBtn.className = 'btn btn-sm btn-danger rounded-circle position-absolute d-flex align-items-center justify-content-center';
+    deleteBtn.style.cssText = 'top:2px; right:2px; width:20px; height:20px; padding:0; z-index:100;';
+    eventEl.appendChild(deleteBtn);
+    
+    // Add click event handler for deletion
+    deleteBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
       
-      // Show the refresh checkbox
+      // If recurring event, show delete options modal
+      if (event.extendedProps.recurrence && event.extendedProps.recurrence.toLowerCase() !== "none") {
+        currentDeleteEventId = event.id;
+        deleteModal.show();
+      } else {
+        // For non-recurring events, delete directly
+        deleteEvent(event.id);
+      }
+    });
+  }
+  
+  // Add thumbnail to event
+  function addEventThumbnail(event, eventEl) {
+    const thumbnailEl = document.createElement('img');
+    thumbnailEl.src = event.extendedProps.thumbnail;
+    thumbnailEl.className = 'event-thumbnail';
+    thumbnailEl.alt = event.title;
+    
+    // Find the event title element and insert thumbnail before it
+    const titleEl = eventEl.querySelector('.fc-event-title');
+    if (titleEl && titleEl.parentNode) {
+      titleEl.parentNode.insertBefore(thumbnailEl, titleEl);
+      
+      // Hide the title text
+      titleEl.style.display = 'none';
+    }
+  }
+  
+  // Open modal for new event
+  function openNewEventModal(dateStr) {
+    resetEventForm();
+    
+    // Set the selected date/time
+    if (dateStr) {
+      document.getElementById('eventDate').value = dateStr;
+      
+      // Pre-select weekday for recurring events based on the selected day
+      const selectedDate = new Date(dateStr);
+      const dayOfWeek = selectedDate.getDay();
+      document.getElementById(`day${dayOfWeek}`).checked = true;
+      
+      // Set month day in monthly recurrence options
+      const dayOfMonth = selectedDate.getDate();
+      document.getElementById('monthDayNum').textContent = dayOfMonth;
+    }
+    
+    // Update modal title
+    document.getElementById('eventModalTitle').innerHTML = '<i class="bi bi-calendar-plus me-2"></i><span>New Scheduled Event</span>';
+    
+    // Show the modal
+    eventModal.show();
+  }
+  
+  // Open modal for editing event
+  function openEditEventModal(eventData) {
+    resetEventForm();
+    
+    // Set editing ID
+    document.getElementById('editingEventId').value = eventData.id;
+    
+    // Format the start date
+    const startDate = eventData.start;
+    const year = startDate.getFullYear();
+    const month = String(startDate.getMonth() + 1).padStart(2, '0');
+    const day = String(startDate.getDate()).padStart(2, '0');
+    const hours = String(startDate.getHours()).padStart(2, '0');
+    const minutes = String(startDate.getMinutes()).padStart(2, '0');
+    
+    const localDateStr = `${year}-${month}-${day}T${hours}:${minutes}`;
+    document.getElementById('eventDate').value = localDateStr;
+    
+    // Set device
+    const deviceRadios = document.querySelectorAll('input[name="device"]');
+    for (const radio of deviceRadios) {
+      if (radio.value === eventData.device) {
+        radio.checked = true;
+        break;
+      }
+    }
+    
+    // Set content type and image/screenshot selection
+    if (eventData.extendedProps.isScreenshot) {
+      document.getElementById('contentTypeScreenshot').checked = true;
+      document.getElementById('refreshScreenshot').checked = eventData.extendedProps.refreshScreenshot || false;
       document.getElementById('refreshScreenshotContainer').style.display = 'block';
       
-      closeBrowserlessGallery();
+      // Set screenshot preview
+      setScreenshotPreview(
+        eventData.filename,
+        eventData.extendedProps.currentFilename || eventData.filename,
+        eventData.extendedProps.thumbnail
+      );
+    } else {
+      document.getElementById('contentTypeImage').checked = true;
+      
+      // Set image preview
+      setImagePreview(
+        eventData.filename,
+        eventData.extendedProps.thumbnail
+      );
     }
     
-    function refreshSelectedScreenshot() {
-      if (!currentScreenshotId || !currentScreenshotName) {
-        showToast("No screenshot selected to refresh", true);
-        return;
+    // Set recurrence info if applicable
+    if (eventData.recurrence && eventData.recurrence !== 'none') {
+      document.getElementById('recurrencePattern').value = eventData.recurrence;
+      updateRecurrenceOptions();
+      
+      // TODO: Set additional recurrence options based on the event's data
+      // This would need additional data from the server about the recurrence details
+    }
+    
+    // Update modal title
+    document.getElementById('eventModalTitle').innerHTML = '<i class="bi bi-calendar-check me-2"></i><span>Edit Scheduled Event</span>';
+    
+    // Show the modal
+    eventModal.show();
+  }
+  
+  // Reset the event form
+  function resetEventForm() {
+    // Reset form
+    document.getElementById('eventForm').reset();
+    
+    // Reset hidden inputs
+    document.getElementById('editingEventId').value = '';
+    document.getElementById('selectedImage').value = '';
+    document.getElementById('selectedScreenshot').value = '';
+    
+    // Reset previews
+    document.getElementById('imagePreviewContainer').classList.add('d-none');
+    document.getElementById('screenshotPreviewContainer').classList.add('d-none');
+    
+    // Reset recurrence options
+    document.getElementById('recurrencePattern').value = 'none';
+    updateRecurrenceOptions();
+    
+    // Show first tab
+    const firstTab = document.querySelector('#eventTabs .nav-link:first-child');
+    bootstrap.Tab.getOrCreateInstance(firstTab).show();
+  }
+  
+  // Initialize form event listeners
+  function initializeFormEvents() {
+    // Form submission handler
+    document.getElementById('eventSubmitButton').addEventListener('click', handleFormSubmit);
+    
+    // Recurrence pattern change handler
+    document.getElementById('recurrencePattern').addEventListener('change', updateRecurrenceOptions);
+    
+    // End type change handlers
+    document.querySelectorAll('input[name="endType"]').forEach(input => {
+      input.addEventListener('change', updateEndOptions);
+    });
+    
+    // Content type change handlers
+    document.querySelectorAll('input[name="contentType"]').forEach(input => {
+      input.addEventListener('change', updateContentOptions);
+    });
+    
+    // Day button handlers - add click effects and feedback
+    document.querySelectorAll('.day-button').forEach(btn => {
+      btn.addEventListener('click', function() {
+        // Update selected days info text
+        setTimeout(updateSelectedDaysInfo, 50);
+      });
+    });
+    
+    // Initialize day button feedback
+    initializeDayButtonFeedback();
+    
+    // Delete event handlers
+    document.getElementById('deleteOccurrenceBtn').addEventListener('click', handleDeleteOccurrence);
+    document.getElementById('deleteSeriesBtn').addEventListener('click', handleDeleteSeries);
+    
+    // Set today's date as default for event date
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(Math.floor(now.getMinutes() / 5) * 5).padStart(2, '0');
+    
+    document.getElementById('eventDate').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+    
+    // Set default end date (3 months from now)
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 3);
+    document.getElementById('endUntil').valueAsDate = endDate;
+  }
+  
+  // Update recurrence options based on selected pattern
+  function updateRecurrenceOptions() {
+    const pattern = document.getElementById('recurrencePattern').value;
+    
+    // Hide all option panels first
+    document.getElementById('dailyOptions').classList.add('d-none');
+    document.getElementById('weeklyOptions').classList.add('d-none');
+    document.getElementById('monthlyOptions').classList.add('d-none');
+    document.getElementById('endOptions').classList.add('d-none');
+    document.getElementById('recurrencePreview').classList.add('d-none');
+    
+    // Show relevant options based on pattern
+    if (pattern !== 'none') {
+      document.getElementById('endOptions').classList.remove('d-none');
+      document.getElementById('recurrencePreview').classList.remove('d-none');
+      
+      // Show pattern-specific options
+      if (pattern === 'daily') {
+        document.getElementById('dailyOptions').classList.remove('d-none');
+      } else if (pattern === 'weekly') {
+        document.getElementById('weeklyOptions').classList.remove('d-none');
+      } else if (pattern === 'monthly') {
+        document.getElementById('monthlyOptions').classList.remove('d-none');
       }
       
-      // Show loading indicator
-      const refreshBtn = document.getElementById('refreshScreenshotBtn');
-      const originalText = refreshBtn.innerHTML;
-      refreshBtn.disabled = true;
-      refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
+      // Update preview
+      updateRecurrencePreview();
+    }
+  }
+  
+  // Update end options based on selected end type
+  function updateEndOptions() {
+    const endType = document.querySelector('input[name="endType"]:checked').value;
+    
+    // Enable/disable related inputs
+    document.getElementById('endCount').disabled = (endType !== 'count');
+    document.getElementById('endUntil').disabled = (endType !== 'until');
+    
+    // Update preview
+    updateRecurrencePreview();
+  }
+  
+  // Update content options based on selected content type
+  function updateContentOptions() {
+    const contentType = document.querySelector('input[name="contentType"]:checked').value;
+    
+    // Show/hide refresh screenshot option
+    document.getElementById('refreshScreenshotContainer').style.display = 
+      (contentType === 'screenshot') ? 'block' : 'none';
+  }
+  
+  // Generate and update recurrence preview
+  function updateRecurrencePreview() {
+    const pattern = document.getElementById('recurrencePattern').value;
+    if (pattern === 'none') return;
+    
+    const previewContainer = document.getElementById('previewDates');
+    previewContainer.innerHTML = '';
+    
+    const startDate = new Date(document.getElementById('eventDate').value);
+    if (isNaN(startDate.getTime())) return;
+    
+    // Get end type
+    const endType = document.querySelector('input[name="endType"]:checked').value;
+    let maxOccurrences = 10; // Default preview count
+    let endDate = null;
+    
+    if (endType === 'count') {
+      maxOccurrences = Math.min(parseInt(document.getElementById('endCount').value) || 10, 10);
+    } else if (endType === 'until') {
+      endDate = new Date(document.getElementById('endUntil').value);
+      if (isNaN(endDate.getTime())) {
+        endDate = null;
+      }
+    }
+    
+    // Generate dates based on pattern
+    const dates = [];
+    let currentDate = new Date(startDate);
+    let occurrences = 0;
+    
+    const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+    
+    // Add the start date as the first occurrence
+    dates.push(new Date(startDate));
+    
+    while (dates.length < maxOccurrences) {
       
-      // Create a status message container
-      let statusContainer = document.createElement('div');
-      statusContainer.className = 'alert alert-info mt-2';
-      statusContainer.innerHTML = 'Refreshing screenshot... This may take up to 2 minutes for slow sites.';
-      document.getElementById('selectedScreenshotName').parentNode.appendChild(statusContainer);
-      
-      // Make request to take a new screenshot
-      fetch('/api/browserless/screenshot', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: currentScreenshotName,
-          url: currentScreenshotName // Using name as URL is not directly available
-        })
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.status === 'success') {
-          // Update the image with the new screenshot (with cache-busting)
-          const timestamp = new Date().getTime();
-          const imgElement = document.querySelector('#selectedImageName img');
-          if (imgElement) {
-            imgElement.src = `/screenshots/${encodeURIComponent(data.filename)}?t=${timestamp}&cropped=true`;
-          }
+      // Check end date if applicable
+      if (endDate && currentDate > endDate) break;
+        
+      // Calculate next date based on pattern
+      if (pattern === 'daily') {
+        const interval = parseInt(document.getElementById('dailyInterval').value) || 1;
+        // Check if we have day constraints for daily pattern
+        const selectedDailyDays = Array.from(document.querySelectorAll('input[name="dailyWeekdays"]:checked'))
+            .map(input => parseInt(input.value));
+        
+        // If specific days selected, find next matching day
+        if (selectedDailyDays.length > 0) {
+          let foundNextDay = false;
+          let tempDate = new Date(currentDate);
+          tempDate.setDate(tempDate.getDate() + 1); // Start checking from next day
           
-          // Update the selected image value
-          document.getElementById('selectedImage').value = data.filename;
-          
-          // Show success message
-          statusContainer.className = 'alert alert-success mt-2';
-          statusContainer.innerHTML = 'Screenshot refreshed successfully!';
-          
-          // Hide the status message after 5 seconds
-          setTimeout(() => {
-            if (statusContainer.parentNode) {
-              statusContainer.parentNode.removeChild(statusContainer);
+          // Look ahead up to 7 days to find next matching day
+          for (let i = 0; i < 7; i++) {
+            const checkDay = tempDate.getDay();
+            if (selectedDailyDays.includes(checkDay)) {
+              currentDate = new Date(tempDate);
+              foundNextDay = true;
+              break;
             }
-          }, 5000);
-        } else {
-          // Show error message
-          statusContainer.className = 'alert alert-danger mt-2';
-          statusContainer.innerHTML = `Error refreshing screenshot: ${data.message}`;
-        }
-        
-        // Re-enable the button
-        refreshBtn.disabled = false;
-        refreshBtn.innerHTML = originalText;
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        
-        // Show error message
-        statusContainer.className = 'alert alert-danger mt-2';
-        statusContainer.innerHTML = 'Network error while refreshing the screenshot. Please try again later.';
-        
-        // Re-enable the button
-        refreshBtn.disabled = false;
-        refreshBtn.innerHTML = originalText;
-      });
-    }
-    
-    // Function to filter screenshots based on search input
-    function filterScreenshots(searchText) {
-      searchText = searchText.toLowerCase();
-      var items = document.querySelectorAll('#browserlessGalleryContainer .screenshot-item');
-      
-      items.forEach(function(item) {
-        var name = item.getAttribute('data-name') || '';
-        
-        if (name.includes(searchText) || searchText === '') {
-          item.style.display = '';
-        } else {
-          item.style.display = 'none';
-        }
-      });
-    }
-    
-    // Add event listeners for search inputs
-    document.addEventListener('DOMContentLoaded', function() {
-      var imageSearch = document.getElementById('imageSearch');
-      if (imageSearch) {
-        imageSearch.addEventListener('input', function() {
-          filterImages(this.value);
-        });
-      }
-      
-      var screenshotSearch = document.getElementById('screenshotSearch');
-      if (screenshotSearch) {
-        screenshotSearch.addEventListener('input', function() {
-          filterScreenshots(this.value);
-        });
-      }
-    });
-
-    document.getElementById('deleteOccurrenceBtn').addEventListener('click', function() {
-      // Skip this occurrence for recurring event.
-      fetch("/schedule/skip/" + currentDeleteEventId, { method: "POST" })
-      .then(response => response.json())
-      .then(data => {
-        if(data.status === "success"){
-          if (calendar) {
-            calendar.refetchEvents();
-            showToast("Event occurrence deleted successfully");
-          } else {
-            location.reload();
+            tempDate.setDate(tempDate.getDate() + 1);
           }
-        } else {
-          showToast("Error deleting event occurrence: " + data.message, true);
-        }
-      })
-      .catch(err => {
-        console.error("Error skipping occurrence:", err);
-        showToast("Error deleting event occurrence", true);
-      });
-      closeDeleteModal();
-    });
-
-    document.getElementById('deleteSeriesBtn').addEventListener('click', function() {
-      // Delete the entire series.
-      fetch("/schedule/remove/" + currentDeleteEventId, { method: "POST" })
-      .then(response => response.json())
-      .then(data => {
-        if(data.status === "success"){
-          if (calendar) {
-            calendar.refetchEvents();
-            showToast("Event series deleted successfully");
-          } else {
-            location.reload();
-          }
-        } else {
-          showToast("Error deleting event series: " + data.message, true);
-        }
-      })
-      .catch(err => {
-        console.error("Error deleting series:", err);
-        showToast("Error deleting event series", true);
-      });
-      closeDeleteModal();
-    });
-
-    // Reset the event form when opening for a new event
-    function resetEventForm() {
-      document.getElementById('eventForm').reset();
-      document.getElementById('selectedImage').value = '';
-      document.getElementById('selectedImageName').textContent = '';
-      document.getElementById('editingEventId').value = '';
-      document.getElementById('eventModalTitle').textContent = 'Add Scheduled Event';
-      document.getElementById('eventSubmitButton').value = 'Save Event';
-    }
-    
-    // When clicking on a date, reset the form for a new event
-    function openNewEventModal(date) {
-      resetEventForm();
-      if (date) {
-        document.getElementById('eventDate').value = date;
-      }
-      openEventModal();
-    }
-    
-    // Update the dateClick handler to use the new function
-    document.addEventListener('DOMContentLoaded', function() {
-      // Existing code will still run, this just adds additional functionality
-      var calendarEl = document.getElementById('calendar');
-      if (calendarEl && typeof FullCalendar !== 'undefined') {
-        var existingCalendar = calendarEl._fullCalendar;
-        if (existingCalendar) {
-          existingCalendar.setOption('dateClick', function(info) {
-            var dtLocal = new Date(info.date);
-            var isoStr = dtLocal.toISOString().substring(0,16);
-            openNewEventModal(isoStr);
-          });
-        }
-      }
-    });
-    
-    // Handle form submission for both adding and updating events
-    document.getElementById('eventForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      var datetime = document.getElementById('eventDate').value;
-      var device = document.querySelector('input[name="device"]:checked').value;
-      var recurrence = document.getElementById('recurrence').value;
-      var filename = document.getElementById('selectedImage').value;
-      var eventId = document.getElementById('editingEventId').value;
-      
-      if (!datetime || !device || !filename) {
-        showToast("Please fill in all fields and select an image or screenshot.", true);
-        return;
-      }
-      
-      // Determine if we're adding a new event or updating an existing one
-      var isUpdate = eventId !== '';
-      var url = isUpdate ? "/schedule/update" : "/schedule/add";
-      // Check if the refresh screenshot checkbox is checked
-      var refreshScreenshot = document.getElementById('refreshScreenshot').checked;
-      
-      var requestData = {
-        datetime: datetime,
-        device: device,
-        recurrence: recurrence,
-        filename: filename,
-        refresh_screenshot: refreshScreenshot
-        // Removed timezone_offset - we want to use the time exactly as entered
-      };
-      
-      // If updating, include the event ID
-      if (isUpdate) {
-        requestData.event_id = eventId;
-      }
-      
-      // Show immediate feedback to the user
-      closeEventModal();
-      showToast("Saving event...");
-      
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestData)
-      })
-      .then(response => response.json())
-      .then(data => {
-        if(data.status === "success"){
-          showToast("Event saved successfully!");
           
-          // Use the global calendar instance to refresh events
-          if (calendar) {
-            calendar.refetchEvents();
+          // If no matching day found in next week, default to interval
+          if (!foundNextDay) {
+            currentDate.setDate(currentDate.getDate() + interval);
           }
         } else {
-          showToast("Error: " + data.message, true);
+          // Simple interval without day constraints
+          currentDate.setDate(currentDate.getDate() + interval);
         }
-      })
-      .catch(err => {
-        console.error("Error " + (isUpdate ? "updating" : "adding") + " event:", err);
-        showToast("Error saving event. Please try again.", true);
+      } else if (pattern === 'weekly') {
+        // For weekly, we need to check which days are selected
+        const interval = parseInt(document.getElementById('weeklyInterval').value) || 1;
+        const selectedDays = Array.from(document.querySelectorAll('input[name="weekdays"]:checked'))
+            .map(input => parseInt(input.value));
+        
+        // If no days selected, use the same day of week
+        if (selectedDays.length === 0) {
+          currentDate.setDate(currentDate.getDate() + (7 * interval));
+        } else {
+          // Find the next selected day
+          let found = false;
+          let dayOfWeek = currentDate.getDay();
+          
+          for (let i = 1; i <= 7; i++) {
+            const nextDay = (dayOfWeek + i) % 7;
+            if (selectedDays.includes(nextDay)) {
+              currentDate.setDate(currentDate.getDate() + i);
+              found = true;
+              break;
+            }
+          }
+          
+          // If no next day found, advance to the first selected day next week
+          if (!found) {
+            currentDate.setDate(currentDate.getDate() + 7 * interval);
+            dayOfWeek = currentDate.getDay();
+            // Find closest selected day
+            selectedDays.sort();
+            for (const day of selectedDays) {
+              if (day >= dayOfWeek) {
+                currentDate.setDate(currentDate.getDate() + (day - dayOfWeek));
+                break;
+              }
+            }
+            // If no greater day found, use first selected day
+            if (dayOfWeek > selectedDays[selectedDays.length - 1]) {
+              currentDate.setDate(currentDate.getDate() + (7 - dayOfWeek + selectedDays[0]));
+            }
+          }
+        }
+      } else if (pattern === 'monthly') {
+        const interval = parseInt(document.getElementById('monthlyInterval').value) || 1;
+        const monthlyType = document.querySelector('input[name="monthlyType"]:checked').value;
+        
+        if (monthlyType === 'day') {
+          // Same day each month
+          const currentDay = Math.min(
+            startDate.getDate(),
+            daysInMonth(currentDate.getFullYear(), currentDate.getMonth() + interval)
+          );
+          
+          currentDate.setMonth(currentDate.getMonth() + interval);
+          currentDate.setDate(currentDay);
+        } else {
+          // By position (e.g., second Tuesday)
+          const position = parseInt(document.getElementById('monthlyPosition').value);
+          const day = parseInt(document.getElementById('monthlyDay').value);
+          
+          currentDate.setMonth(currentDate.getMonth() + interval);
+          
+          // Set to 1st of the month
+          currentDate.setDate(1);
+          
+          // Find the first occurrence of the specified day in the month
+          while (currentDate.getDay() !== day) {
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          // Adjust based on position
+          if (position > 0) {
+            // Move to nth occurrence (1st, 2nd, 3rd, 4th)
+            currentDate.setDate(currentDate.getDate() + (position - 1) * 7);
+          } else {
+            // For last occurrence, find last day of month and work backward
+            const lastDay = daysInMonth(currentDate.getFullYear(), currentDate.getMonth());
+            currentDate.setDate(lastDay);
+            
+            // Go backward until we find the right day
+            while (currentDate.getDay() !== day) {
+              currentDate.setDate(currentDate.getDate() - 1);
+            }
+          }
+        }
+      }
+      
+      occurrences++;
+      
+      // Safety check to avoid infinite loops
+      if (occurrences > 100) break;
+    }
+    
+    // Add date elements to preview
+    dates.forEach(date => {
+      const dateElement = document.createElement('div');
+      dateElement.className = 'preview-date';
+      dateElement.textContent = date.toLocaleDateString(undefined, { 
+        weekday: 'short',
+        month: 'short', 
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric'
+      });
+      previewContainer.appendChild(dateElement);
+    });
+    
+    // Show message if no dates generated
+    if (dates.length === 0) {
+      const noDateElement = document.createElement('div');
+      noDateElement.className = 'text-muted fst-italic';
+      noDateElement.textContent = 'No upcoming occurrences based on current settings';
+      previewContainer.appendChild(noDateElement);
+    }
+  }
+  
+  // Handle form submission
+  function handleFormSubmit() {
+    // Get basic form data
+    const editingId = document.getElementById('editingEventId').value;
+    const datetime = document.getElementById('eventDate').value;
+    const deviceEl = document.querySelector('input[name="device"]:checked');
+    
+    // Validate form
+    if (!datetime || !deviceEl) {
+      showToast("Please fill in all required fields", true);
+      return;
+    }
+    
+    const device = deviceEl.value;
+    
+    // Get content info
+    const contentType = document.querySelector('input[name="contentType"]:checked').value;
+    let filename;
+    
+    if (contentType === 'image') {
+      filename = document.getElementById('selectedImage').value;
+    } else {
+      filename = document.getElementById('selectedScreenshot').value;
+    }
+    
+    if (!filename) {
+      showToast("Please select an image or screenshot", true);
+      
+      // Switch to content tab to highlight the issue
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('content-tab')).show();
+      return;
+    }
+    
+    // Get recurrence data
+    const recurrence = document.getElementById('recurrencePattern').value;
+    
+    // Build request data
+    const requestData = {
+      datetime: datetime,
+      device: device,
+      filename: filename,
+      recurrence: recurrence
+    };
+    // Add recurrence details if applicable
+    if (recurrence !== 'none') {
+      requestData.recurrence_details = {};
+      
+      // Add start_from parameter to ensure recurrence only begins from today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Start of today
+      requestData.recurrence_details.start_from = today.toISOString();
+      
+      if (recurrence === 'daily') {
+        requestData.recurrence_details.interval = parseInt(document.getElementById('dailyInterval').value) || 1;
+        
+        // Add daily weekday constraints if any selected
+        const selectedDailyDays = Array.from(document.querySelectorAll('input[name="dailyWeekdays"]:checked'))
+          .map(input => parseInt(input.value));
+          
+        if (selectedDailyDays.length > 0) {
+          requestData.recurrence_details.weekdays = selectedDailyDays;
+        }
+      } else if (recurrence === 'weekly') {
+      } else if (recurrence === 'weekly') {
+        requestData.recurrence_details.interval = parseInt(document.getElementById('weeklyInterval').value) || 1;
+        requestData.recurrence_details.weekdays = Array.from(document.querySelectorAll('input[name="weekdays"]:checked'))
+          .map(input => parseInt(input.value));
+      } else if (recurrence === 'monthly') {
+        requestData.recurrence_details.interval = parseInt(document.getElementById('monthlyInterval').value) || 1;
+        requestData.recurrence_details.type = document.querySelector('input[name="monthlyType"]:checked').value;
+        
+        if (requestData.recurrence_details.type === 'position') {
+          requestData.recurrence_details.position = parseInt(document.getElementById('monthlyPosition').value);
+          requestData.recurrence_details.day = parseInt(document.getElementById('monthlyDay').value);
+        }
+      }
+      
+      // Add end condition
+      requestData.recurrence_details.end_type = document.querySelector('input[name="endType"]:checked').value;
+      
+      if (requestData.recurrence_details.end_type === 'count') {
+        requestData.recurrence_details.end_count = parseInt(document.getElementById('endCount').value);
+      } else if (requestData.recurrence_details.end_type === 'until') {
+        requestData.recurrence_details.end_until = document.getElementById('endUntil').value;
+      }
+    }
+    
+    // Add refresh screenshot option if applicable
+    if (contentType === 'screenshot') {
+      requestData.refresh_screenshot = document.getElementById('refreshScreenshot').checked;
+    }
+    
+    // If editing, add event ID
+    if (editingId) {
+      requestData.event_id = editingId;
+    }
+    
+    // Show feedback and close modal
+    eventModal.hide();
+    showToast("Saving event...");
+    
+    // Send request to the server
+    const url = editingId ? "/schedule/update" : "/schedule/add";
+    
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        showToast("Event saved successfully!");
+        refreshEvents();
+      } else {
+        showToast("Error: " + data.message, true);
+      }
+    })
+    .catch(err => {
+      console.error("Error saving event:", err);
+      showToast("Error saving event. Please try again.", true);
+    });
+  }
+  
+  // Handle deleting a single occurrence
+  function handleDeleteOccurrence() {
+    if (!currentDeleteEventId) return;
+    
+    fetch("/schedule/skip/" + currentDeleteEventId, { method: "POST" })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        showToast("Event occurrence deleted successfully");
+        refreshEvents();
+      } else {
+        showToast("Error deleting event: " + data.message, true);
+      }
+    })
+    .catch(err => {
+      console.error("Error deleting occurrence:", err);
+      showToast("Error deleting event", true);
+    })
+    .finally(() => {
+      deleteModal.hide();
+      currentDeleteEventId = null;
+    });
+  }
+  
+  // Handle deleting entire series
+  function handleDeleteSeries() {
+    if (!currentDeleteEventId) return;
+    
+    deleteEvent(currentDeleteEventId);
+  }
+  
+  // Delete an event
+  function deleteEvent(eventId) {
+    fetch("/schedule/remove/" + eventId, { method: "POST" })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === "success") {
+        showToast("Event deleted successfully");
+        refreshEvents();
+      } else {
+        showToast("Error deleting event: " + data.message, true);
+      }
+    })
+    .catch(err => {
+      console.error("Error deleting event:", err);
+      showToast("Error deleting event", true);
+    })
+    .finally(() => {
+      deleteModal.hide();
+      currentDeleteEventId = null;
+    });
+  }
+  
+  // Initialize image/screenshot galleries
+  function initializeGalleries() {
+    // Image gallery click handlers
+    const galleryItems = document.querySelectorAll('#galleryContainer .gallery-item');
+    galleryItems.forEach(item => {
+      item.addEventListener('click', function() {
+        // Remove selected class from all items
+        galleryItems.forEach(i => i.classList.remove('selected'));
+        
+        // Add selected class to clicked item
+        this.classList.add('selected');
+        
+        // Store selected item
+        selectedGalleryItem = this;
+        
+        // Enable select button
+        document.getElementById('selectImageBtn').disabled = false;
       });
     });
     
-  </script>
+    // Screenshot gallery click handlers
+    const screenshotItems = document.querySelectorAll('#screenshotGalleryContainer .gallery-item');
+    screenshotItems.forEach(item => {
+      item.addEventListener('click', function() {
+        // Remove selected class from all items
+        screenshotItems.forEach(i => i.classList.remove('selected'));
+        
+        // Add selected class to clicked item
+        this.classList.add('selected');
+        
+        // Store selected item
+        selectedScreenshotItem = this;
+        
+        // Enable select button
+        document.getElementById('selectScreenshotBtn').disabled = false;
+      });
+    });
+    
+    // Image search handler
+    document.getElementById('imageSearch').addEventListener('input', function() {
+      filterGalleryItems(this.value, '#galleryContainer .gallery-item', ['data-tags', 'data-filename']);
+    });
+    
+    // Screenshot search handler
+    document.getElementById('screenshotSearch').addEventListener('input', function() {
+      filterGalleryItems(this.value, '#screenshotGalleryContainer .gallery-item', ['data-name']);
+    });
+    
+    // Select image button
+    document.getElementById('selectImageBtn').addEventListener('click', function() {
+      if (!selectedGalleryItem) return;
+      
+      const filename = selectedGalleryItem.dataset.filename;
+      const img = selectedGalleryItem.querySelector('img');
+      let src = img.src;
+      
+      // If using placeholder, get the data-src
+      if (src.startsWith('data:')) {
+        src = img.dataset.src;
+      }
+      
+      // Select the image
+      document.getElementById('contentTypeImage').checked = true;
+      setImagePreview(filename, src);
+      
+      // Close modal
+      imageGalleryModal.hide();
+    });
+    
+    // Select screenshot button
+    document.getElementById('selectScreenshotBtn').addEventListener('click', function() {
+      if (!selectedScreenshotItem) return;
+      
+      const id = selectedScreenshotItem.dataset.id;
+      const filename = selectedScreenshotItem.dataset.filename;
+      const name = selectedScreenshotItem.querySelector('.image-tags').textContent;
+      const img = selectedScreenshotItem.querySelector('img');
+      let src = img.src;
+      
+      // If using placeholder, get the data-src
+      if (src.startsWith('data:')) {
+        src = img.dataset.src;
+      }
+      
+      // Select the screenshot
+      document.getElementById('contentTypeScreenshot').checked = true;
+      document.getElementById('refreshScreenshotContainer').style.display = 'block';
+      
+      // Store screenshot info
+      currentScreenshotId = id;
+      currentScreenshotName = name;
+      
+      // Set the preview
+      setScreenshotPreview(filename, name, src);
+      
+      // Close modal
+      screenshotGalleryModal.hide();
+    });
+    
+    // Initialize lazy loading for gallery images
+    initializeLazyLoading();
+  }
+  
+  // Filter gallery items based on search text
+  function filterGalleryItems(searchText, selector, dataAttrs) {
+    searchText = searchText.toLowerCase();
+    const items = document.querySelectorAll(selector);
+    
+    items.forEach(item => {
+      let match = false;
+      
+      if (searchText === '') {
+        match = true;
+      } else {
+        // Check all specified data attributes for matches
+        dataAttrs.forEach(attr => {
+          const value = item.getAttribute(attr) || '';
+          if (value.toLowerCase().includes(searchText)) {
+            match = true;
+          }
+        });
+      }
+      
+      item.style.display = match ? '' : 'none';
+    });
+  }
+  
+  // Initialize lazy loading for images
+  function initializeLazyLoading() {
+    if ('IntersectionObserver' in window) {
+      const lazyImageObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const lazyImage = entry.target;
+            if (lazyImage.dataset.src) {
+              lazyImage.src = lazyImage.dataset.src;
+              lazyImage.classList.add('loaded');
+              observer.unobserve(lazyImage);
+            }
+          }
+        });
+      });
+      
+      document.querySelectorAll('img.lazy').forEach(img => {
+        lazyImageObserver.observe(img);
+      });
+    } else {
+      // Fallback for browsers that don't support IntersectionObserver
+      document.querySelectorAll('img.lazy').forEach(img => {
+        if (img.dataset.src) {
+          img.src = img.dataset.src;
+        }
+      });
+    }
+  }
+  
+  // Set image preview in form
+  function setImagePreview(filename, src) {
+    document.getElementById('selectedImage').value = filename;
+    document.getElementById('selectedScreenshot').value = '';
+    
+    const preview = document.getElementById('imagePreview');
+    preview.src = src;
+    document.getElementById('selectedImageName').textContent = filename;
+    document.getElementById('imagePreviewContainer').classList.remove('d-none');
+    document.getElementById('screenshotPreviewContainer').classList.add('d-none');
+    
+    // Update content options
+    updateContentOptions();
+  }
+  
+  // Set screenshot preview in form
+  function setScreenshotPreview(filename, name, src) {
+    document.getElementById('selectedImage').value = '';
+    document.getElementById('selectedScreenshot').value = filename;
+    
+    const preview = document.getElementById('screenshotPreview');
+    preview.src = src;
+    document.getElementById('selectedScreenshotName').textContent = name;
+    document.getElementById('imagePreviewContainer').classList.add('d-none');
+    document.getElementById('screenshotPreviewContainer').classList.remove('d-none');
+    
+    // Update content options
+    updateContentOptions();
+  }
+  
+  // Show toast notification
+  function showToast(message, isError = false) {
+    const toastContainer = document.createElement('div');
+    toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+    toastContainer.style.zIndex = '1100';
+    
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast align-items-center ${isError ? 'text-white bg-danger' : 'text-white bg-success'}`;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('aria-live', 'assertive');
+    toastEl.setAttribute('aria-atomic', 'true');
+    
+    toastEl.innerHTML = `
+      <div class="d-flex">
+        <div class="toast-body">
+          ${isError ? '<i class="bi bi-exclamation-triangle-fill me-2"></i>' : '<i class="bi bi-check-circle-fill me-2"></i>'}
+          ${message}
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    `;
+    
+    toastContainer.appendChild(toastEl);
+    document.body.appendChild(toastContainer);
+    
+    const toast = new bootstrap.Toast(toastEl, {
+      autohide: true,
+      delay: 3000
+    });
+    
+    toast.show();
+    
+    // Remove container after toast is hidden
+    toastEl.addEventListener('hidden.bs.toast', function() {
+      if (toastContainer.parentNode) {
+        toastContainer.parentNode.removeChild(toastContainer);
+      }
+    });
+  }
+</script>
 {% endblock %}

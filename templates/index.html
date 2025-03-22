@@ -1275,6 +1275,14 @@ function initializeCropper(deviceOrientation, deviceResolution) {
                   // Force crop mode
                   this.cropper.setDragMode('crop');
                   
+                  // Define directCropData at the start so it's available in all branches
+                  let directCropData = {
+                    left: scaledX + canvasLeft,
+                    top: scaledY + canvasTop,
+                    width: scaledWidth,
+                    height: scaledHeight
+                  };
+                  
                   // Check if this is a full-width/full-height crop
                   const isFullWidth = data.crop_info.width >= originalImageWidth - 10; // Allow 10px margin for rounding
                   const isFullHeight = data.crop_info.height >= originalImageHeight - 10;
@@ -1317,17 +1325,13 @@ function initializeCropper(deviceOrientation, deviceResolution) {
                       height: maxHeight
                     };
                     
+                    // Update directCropData to use the max crop data
+                    directCropData = maxCropData;
+                    
                     console.log("Using maximum crop size:", maxCropData);
                     this.cropper.setCropBoxData(maxCropData);
                   } else {
                     // Normal case - use the scaled crop data
-                    const directCropData = {
-                      left: scaledX + canvasLeft,
-                      top: scaledY + canvasTop,
-                      width: scaledWidth,
-                      height: scaledHeight
-                    };
-                    
                     console.log("Setting crop box directly with:", directCropData);
                     
                     // Apply the crop box position directly
