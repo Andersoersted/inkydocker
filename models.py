@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import json
 
 db = SQLAlchemy()
 
@@ -84,10 +85,28 @@ class ScheduleEvent(db.Model):
     datetime_str = db.Column(db.String(32))
     sent = db.Column(db.Boolean, default=False)
     recurrence = db.Column(db.String(20), default="none")  # Recurrence type
+    recurrence_details = db.Column(db.Text, nullable=True)  # JSON field for recurrence details
     refresh_screenshot = db.Column(db.Boolean, default=False)  # Whether to refresh screenshot before sending
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)  # When the event was created
 
     def __repr__(self):
         return f"<ScheduleEvent {self.filename} on {self.device}>"
+    
+    def get_recurrence_details(self):
+        """Parse and return the recurrence details as a dictionary"""
+        if not self.recurrence_details:
+            return {}
+        try:
+            return json.loads(self.recurrence_details)
+        except:
+            return {}
+    
+    def set_recurrence_details(self, details):
+        """Set recurrence details from a dictionary"""
+        if details:
+            self.recurrence_details = json.dumps(details)
+        else:
+            self.recurrence_details = None
 
 class UserConfig(db.Model):
     __tablename__ = 'user_config'
@@ -95,18 +114,13 @@ class UserConfig(db.Model):
     location = db.Column(db.String(256))
     
     # CLIP model settings (kept for screenshot processing)
-    clip_model = db.Column(db.String(64), default="ViT-B-32")  # Column for chosen CLIP model (using consistent format with tasks.py)
-    min_tags = db.Column(db.Integer, default=5)  # Maximum number of tags to generate for images (with similarity threshold)
-    custom_model = db.Column(db.String(256), nullable=True)  # Custom model name (e.g., "openai/clip-vit-base-patch32")
-    custom_model_enabled = db.Column(db.Boolean, default=False)  # Whether to use the custom model
-    similarity_threshold = db.Column(db.String(20), default="medium")  # Similarity threshold level (very_high, high, medium, low, very_low)
+    clip_model = db.Column(db.String(64), default="ViT-B-32")  # Column for chosen CLIP model
+    min_tags = db.Column(db.Integer, default=5)  # Maximum number of tags to generate for images
+    custom_model = db.Column(db.String(256), nullable=True)  # Custom model name
+    similarity_threshold = db.Column(db.Float, default=0.2)  # Similarity threshold for tag selection
     
-    # Zero-shot model settings (for image tagging)
-    zero_shot_enabled = db.Column(db.Boolean, default=True)  # Whether to use zero-shot for image tagging (default to True)
-    zero_shot_model = db.Column(db.String(64), default="base")  # Selected zero-shot model (base or large)
-    zero_shot_min_confidence = db.Column(db.Float, default=0.1)  # Minimum confidence threshold for zero-shot tags
-
-    def __repr__(self):
-        return f"<UserConfig {self.id} - Location: {self.location}>"
-
-# DeviceMetrics model removed - we only track online status now
+    # Zero Shot settings
+    zero_shot_enabled = db.Column(db.Boolean, default=True)  # Enable zero shot tagging
+    zero_shot_model = db.Column(db.String(256), default="facebook/bart-large-mnli")  # Zero shot model name
+    zero_shot_min_confidence = db.Column(db.Float, default=0.5)  # Confidence threshold for zero shot classification
+    ram_model = db.Column(db.String(256), default="facebook/ram-14b")  # RAM model name

@@ -1,28 +1,44 @@
+// Import FullCalendar components
 import { Calendar } from '@fullcalendar/core';
+import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
-import '@fullcalendar/core/main.css';
-import '@fullcalendar/timegrid/main.css';
+import interactionPlugin from '@fullcalendar/interaction';
 
+// Make FullCalendar available globally
+window.FullCalendarBundle = {
+  Calendar,
+  plugins: {
+    dayGrid: dayGridPlugin,
+    timeGrid: timeGridPlugin,
+    interaction: interactionPlugin
+  }
+};
+
+// Initialize calendar if the element exists
 document.addEventListener('DOMContentLoaded', function() {
-  var calendarEl = document.getElementById('calendar');
-  var calendar = new Calendar(calendarEl, {
-    plugins: [ timeGridPlugin ],
-    initialView: 'timeGridWeek',
-    firstDay: 1, // Week starts on Monday
-    nowIndicator: true,
-    headerToolbar: {
-      left: 'prev,next today',
-      center: 'title',
-      right: 'timeGridWeek,timeGridDay'
-    },
-    events: '/schedule/events',
-    dateClick: function(info) {
-      // Open your custom modal with pre-filled date/time (similar to your current code)
-      var dtLocal = new Date(info.date);
-      var isoStr = dtLocal.toISOString().substring(0,16);
-      document.getElementById('eventDate').value = isoStr;
-      openEventModal();
-    }
-  });
-  calendar.render();
+  const calendarEl = document.getElementById('calendar');
+  if (calendarEl) {
+    const calendar = new Calendar(calendarEl, {
+      plugins: [
+        dayGridPlugin,
+        timeGridPlugin,
+        interactionPlugin
+      ],
+      initialView: 'dayGridMonth',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,timeGridDay'
+      },
+      firstDay: 1, // Monday
+      timeZone: 'local',
+      editable: true,
+      selectable: true
+    });
+    
+    calendar.render();
+    
+    // Make available globally
+    window.calendar = calendar;
+  }
 });

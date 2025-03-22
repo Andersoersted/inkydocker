@@ -641,47 +641,7 @@
     );
   }
 
-  // Function to populate the CLIP model dropdown with downloaded models
-  function populateDownloadedModels() {
-    fetch("{{ url_for('settings.list_custom_models') }}")
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-        if (data.status === "success") {
-          var modelsGroup = document.getElementById('downloaded_models_group');
-          
-          // Check if the element exists
-          if (!modelsGroup) {
-            console.log("Element 'downloaded_models_group' not found, skipping model population");
-            return;
-          }
-          
-          // Clear existing options
-          modelsGroup.innerHTML = '';
-          
-          if (data.models.length === 0) {
-            var option = document.createElement('option');
-            option.disabled = true;
-            option.text = "No downloaded models";
-            modelsGroup.appendChild(option);
-          } else {
-            // Add each model to the dropdown
-            data.models.forEach(function(model) {
-              var option = document.createElement('option');
-              option.value = model.name;
-              option.text = model.name;
-              // Check if this model is currently selected
-              if ("{{ config.clip_model if config and config.clip_model }}" === model.name) {
-                option.selected = true;
-              }
-              modelsGroup.appendChild(option);
-            });
-          }
-        }
-      })
-      .catch(function(error) {
-        console.error("Error loading downloaded models:", error);
-      });
-  }
+  // Function placeholder for document event listeners
 
   document.addEventListener('DOMContentLoaded', function() {
       // Keep the dropdown menu functionality for backward compatibility
@@ -747,8 +707,7 @@
         console.error("Error initializing tabs:", e);
       }
       
-      // Populate downloaded models on page load
-      populateDownloadedModels();
+      // Model population removed - models are now included in the Docker image
     
     var addNewDisplayBtn = document.getElementById('addNewDisplayBtn');
     if (addNewDisplayBtn) {
@@ -1460,13 +1419,9 @@
                   // Show success message
                   showOverlayMessage("Model deleted successfully");
                   
-                  // If there are still models, show the list
-                  if (modelData.models.length > 0) {
-                    listCustomModels();
-                  }
+                  // Model listing removed - models are now included in the Docker image
                   
-                  // Refresh the dropdown
-                  populateDownloadedModels();
+                  // Model refresh removed - models are now included in the Docker image
                 }
               });
           } else {
@@ -1481,44 +1436,9 @@
     );
   }
 
-  function listCustomModels() {
-    fetch("{{ url_for('settings.list_custom_models') }}")
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-        if (data.status === "success") {
-          if (data.models.length === 0) {
-            showOverlayMessage("No custom models have been downloaded yet.");
-            return;
-          }
-          
-          var modelList = "<h4>Downloaded Models</h4><div class='list-group'>";
-          data.models.forEach(function(model) {
-            var downloadDate = new Date(model.download_date).toLocaleString();
-            var pretrained = model.pretrained_tag ? ` (Tag: ${model.pretrained_tag})` : '';
-            var variation = model.model_variation && model.model_variation !== model.name ? ` (Variation: ${model.model_variation})` : '';
-            
-            modelList += `
-              <div class="list-group-item d-flex justify-content-between align-items-center">
-                <div>
-                  <strong>${model.name}</strong>
-                  <small class="d-block text-muted">Downloaded: ${downloadDate}${pretrained}${variation}</small>
-                </div>
-                <button class="btn btn-sm btn-danger" onclick="deleteModel('${model.name}')">Delete</button>
-              </div>
-            `;
-          });
-          modelList += "</div>";
-          
-          showOverlayMessage(modelList);
-        } else {
-          showOverlayMessage("Error listing custom models: " + data.message);
-        }
-      })
-      .catch(function(error) {
-        console.error("Error:", error);
-        showOverlayMessage("An error occurred while listing custom models.");
-      });
-  }
+  // The listCustomModels function has been removed - models are now included in the Docker image
+  
+  // Models are now included in the Docker image, so custom model functions have been removed
   
   function rerunAllTagging() {
     showConfirmOverlay(

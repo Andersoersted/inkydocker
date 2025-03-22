@@ -776,155 +776,14 @@ def send_scheduled_image(event_id):
                     except Exception as e:
                         current_app.logger.error(f"Error refreshing screenshot: {e}")
     
-            image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
-            data_folder = current_app.config.get("DATA_FOLDER", "./data")
-            screenshots_folder = os.path.join(data_folder, 'screenshots')
-            
-            # Check if the file is a screenshot or a regular image
-            filepath = os.path.join(screenshots_folder, event.filename)
-            if not os.path.exists(filepath):
-                # Try in the regular images folder
-                filepath = os.path.join(image_folder, event.filename)
-                if not os.path.exists(filepath):
-                    current_app.logger.error("Image file not found: %s", filepath)
-                    return
-    
-            addr = device_obj.address
-            if not (addr.startswith("http://") or addr.startswith("https://")):
-                addr = "http://" + addr
-    
-            with Image.open(filepath) as orig_img:
-                orig_w, orig_h = orig_img.size
-                parts = device_obj.resolution.split("x")
-                dev_width = int(parts[0])
-                dev_height = int(parts[1])
-                
-                # Check if device is in portrait orientation
-                is_portrait = device_obj.orientation.lower() == 'portrait'
-                current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
-                
-                # Calculate aspect ratio based on device orientation
-                # This ratio is used for cropping to ensure the image fits the display correctly
-                if is_portrait:
-                    # For portrait displays, use height/width (taller than wide)
-                    device_ratio = dev_height / dev_width
-                    current_app.logger.info(f"Portrait display: using height/width ratio = {device_ratio}")
-                else:
-                    # For landscape displays, use width/height (wider than tall)
-                    device_ratio = dev_width / dev_height
-                    current_app.logger.info(f"Landscape display: using width/height ratio = {device_ratio}")
-                
-                # Log the original image dimensions and device info
-                current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
-                    
-                # First check for ScreenshotCropInfo for screenshots
-                from models import ScreenshotCropInfo
-                screenshot_crop = None
-                if event.filename.startswith("screenshot_"):
-                    screenshot_crop = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
-                    if screenshot_crop:
-                        current_app.logger.info(f"Found ScreenshotCropInfo for {event.filename}")
-                
-                # If screenshot crop info exists, use it
-                if screenshot_crop:
-                    x = screenshot_crop.x
-                    y = screenshot_crop.y
-                    w = screenshot_crop.width
-                    h = screenshot_crop.height
-                    current_app.logger.info(f"Using screenshot crop data: x={x}, y={y}, w={w}, h={h}")
-                    cropped = orig_img.crop((x, y, x + w, y + h))
-                else:
-                    # Otherwise check for regular CropInfo
-                    cdata = load_crop_info_from_db(event.filename)
-                    if cdata:
-                        x = cdata.get("x", 0)
-                        y = cdata.get("y", 0)
-                        w = cdata.get("width", orig_w)
-                        h = cdata.get("height", orig_h)
-                        current_app.logger.info(f"Using regular crop data: x={x}, y={y}, w={w}, h={h}")
-                        cropped = orig_img.crop((x, y, x + w, y + h))
-                    else:
-                        # If no crop data, create an auto-centered crop
-                        current_app.logger.info("No crop data found, using auto-centered crop")
-                        orig_ratio = orig_w / orig_h
-                        
-                        # Log the ratios for debugging
-                        current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
-                        
-                        if orig_ratio > device_ratio:
-                            # Image is wider than device ratio, use full height
-                            new_width = int(orig_h * device_ratio)
-                            left = (orig_w - new_width) // 2
-                            crop_box = (left, 0, left + new_width, orig_h)
-                        else:
-                            # Image is taller than device ratio, use full width
-                            new_height = int(orig_w / device_ratio)
-                            top = (orig_h - new_height) // 2
-                            crop_box = (0, top, orig_w, top + new_height)
-                        
-                        current_app.logger.info(f"Auto crop box: {crop_box}")
-                        cropped = orig_img.crop(crop_box)
-                        current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
-                
-                # Step 2: Resize and rotate the cropped image to match the target resolution and orientation
-                current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
-                
-                # IMPORTANT: The rotation is applied based on the device orientation in the database
-                # If the eInk display itself is also rotating the image, this might cause double rotation
-                
-                # If portrait, rotate the image 90 degrees clockwise
-                if is_portrait:
-                    current_app.logger.info(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
-                    cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                    current_app.logger.info(f"After rotation size: {cropped.size}")
-                    
-                    # For portrait displays, we swap width and height in the final resize
-                    # This is because the physical display is rotated, but the native resolution
-                    # is still reported as if it were in landscape
-                    current_app.logger.info(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
-                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)
-                    current_app.logger.info(f"Final image size after portrait resize: {final_img.size}")
-                else:
-                    current_app.logger.info(f"Device is in LANDSCAPE mode, no rotation needed")
-                    # For landscape displays, we use the normal dimensions
-                    final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
-                    current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
-                
-                current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
-                temp_dir = os.path.join(data_folder, "temp")
-                if not os.path.exists(temp_dir):
-                    os.makedirs(temp_dir)
-                # Create a unique temporary filename to avoid any caching issues
-                import uuid
-                unique_id = uuid.uuid4().hex[:8]
-                temp_filename = os.path.join(temp_dir, f"temp_{unique_id}_{event.filename}")
-                
-                # Save the final image with high quality
-                final_img.save(temp_filename, format="JPEG", quality=95)
-                current_app.logger.info(f"Original image path: {filepath}")
-                current_app.logger.info(f"Saved temporary file: {temp_filename}")
-                current_app.logger.info(f"Final image dimensions being sent: {final_img.size}")
-            
-            # Verify the temporary file exists and has the correct dimensions
-            try:
-                with Image.open(temp_filename) as verify_img:
-                    current_app.logger.info(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
-            except Exception as e:
-                current_app.logger.error(f"Error verifying temporary file: {e}")
-            
-            # Send the temporary file to the device using httpx
+            # Simply call the server's send_image endpoint which already handles all the cropping and resizing
             # Create a unique identifier for this scheduled send
             import uuid
             import httpx
             send_id = uuid.uuid4().hex[:8]
             
-            # Log the image details before sending
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Sending image {event.filename} to device {device_obj.friendly_name} at {addr}")
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file path: {temp_filename}")
-            
-            # URL for the send_image endpoint
-            url = f"{addr}/send_image"
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Sending request to: {url}")
+            # Log the scheduled image send
+            current_app.logger.info(f"[SCHEDULED-{send_id}] Sending image {event.filename} to device {device_obj.friendly_name}")
             
             try:
                 # Use curl to send the image as it's proven to work reliably with e-ink displays
@@ -948,8 +807,13 @@ def send_scheduled_image(event_id):
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Image verification failed: {e}")
                     return f"Error with processed image: {e}", 500
                     
-                # Execute the exact curl command that we know works
-                curl_cmd = ["curl", "-v", "-F", f"file=@{temp_filename}", base_url]
+                # Instead of directly sending to the device, let's use the server's '/send_image' endpoint
+                # This ensures proper cropping and resizing is applied consistently
+                server_url = "http://localhost/send_image"  # Use the Flask app's own endpoint
+                
+                # Use the same approach as the index page - just send filename and device ID
+                # This will trigger all the same cropping and resizing logic as the "Send" button
+                curl_cmd = ["curl", "-v", "-F", f"filename={event.filename}", "-F", f"device={device_obj.address}", server_url]
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Executing curl command: {' '.join(curl_cmd)}")
                 
                 try:

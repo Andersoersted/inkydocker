@@ -37,31 +37,16 @@ WORKDIR /build
 # Upgrade pip to latest version
 RUN pip install --upgrade pip
 
-# Split requirements into base and model-specific for better caching
-# Create base requirements file
-RUN echo "Flask\n\
-Flask-SQLAlchemy==3.1.1\n\
-cryptography\n\
-requests>=2.31.0\n\
-pyppeteer>=1.0.2\n\
-Flask-Migrate\n\
-httpx\n\
-APScheduler>=3.9.0\n\
-celery\n\
-redis\n\
-tqdm>=4.66.1\n\
-gunicorn\n\
-gevent\n\
-psutil>=5.9.0\n\
-pytz>=2024.1\n\
-Pillow>=11.0.0\n\
-pillow-heif>=0.13.0" > base_requirements.txt
+# Copy requirements from the host for better maintainability
+COPY requirements.txt .
 
-# Create model-specific requirements file
-RUN echo "scikit-learn>=1.4.1.post1\n\
-open_clip_torch>=2.20.0\n\
-torch>=2.2.1\n\
-torchvision>=0.17.1" > model_requirements.txt
+# Split requirements for better caching
+RUN grep -v "scikit-learn\|torch\|torchvision\|open_clip" requirements.txt > base_requirements.txt && \
+    grep -E "scikit-learn|torch|torchvision|open_clip" requirements.txt > model_requirements.txt && \
+    echo "open_clip_torch>=2.20.0" >> model_requirements.txt && \
+    echo "gevent" >> base_requirements.txt && \
+    echo "cryptography" >> base_requirements.txt && \
+    echo "tqdm>=4.66.1" >> base_requirements.txt
 
 # Install base requirements first (these change less frequently)
 RUN pip install --upgrade pip && pip install --no-cache-dir -r base_requirements.txt
@@ -89,6 +74,8 @@ RUN if [ "$USE_GPU" = "false" ]; then \
 
 # Create model cache directory
 RUN mkdir -p /build/model_cache
+
+# Frontend assets are loaded from CDN, no Node.js required
 
 # Pre-download OpenCLIP models in a separate layer for better caching
 # Set higher recursion limit to avoid "maximum recursion depth exceeded" errors
