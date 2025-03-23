@@ -23,11 +23,20 @@ class Screenshot(db.Model):
 class ScreenshotCropInfo(db.Model):
     __tablename__ = 'screenshot_crop_info'
     filename = db.Column(db.String(256), primary_key=True)
+    device_address = db.Column(db.String(256), primary_key=True)  # Part of composite primary key
     x = db.Column(db.Float, default=0)
     y = db.Column(db.Float, default=0)
     width = db.Column(db.Float)
     height = db.Column(db.Float)
     resolution = db.Column(db.String(32))  # Store the display resolution (e.g., "1024x768")
+    natural_width = db.Column(db.Integer)  # Store the original image width
+    natural_height = db.Column(db.Integer)  # Store the original image height
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(),
+                          onupdate=db.func.current_timestamp())
+    
+    def __repr__(self):
+        return f"<ScreenshotCropInfo {self.filename} for device {self.device_address}>"
 
 class Device(db.Model):
     __tablename__ = 'devices'
@@ -58,6 +67,7 @@ class ImageDB(db.Model):
 class CropInfo(db.Model):
     __tablename__ = 'crop_info'
     filename = db.Column(db.String(256), primary_key=True)
+    device_address = db.Column(db.String(256), primary_key=True)  # Part of composite primary key
     x = db.Column(db.Float, default=0)
     y = db.Column(db.Float, default=0)
     width = db.Column(db.Float)
@@ -66,7 +76,7 @@ class CropInfo(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f"<CropInfo {self.filename}>"
+        return f"<CropInfo {self.filename} for device {self.device_address}>"
 
 class SendLog(db.Model):
     __tablename__ = 'send_log'

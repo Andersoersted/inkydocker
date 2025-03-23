@@ -1,11 +1,11 @@
 from flask import Blueprint, request, render_template, jsonify, current_app, abort, send_from_directory
+import sqlalchemy as sa
 from models import db, BrowserlessConfig, Screenshot, ScreenshotCropInfo, Device
 import os
 from datetime import datetime
 import requests
 from PIL import Image
 from io import BytesIO
-from utils.crop_helpers import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry
 import subprocess
 import httpx
 import base64
@@ -17,6 +17,7 @@ import open_clip
 from PIL import Image
 import io
 
+# Create blueprint
 browserless_bp = Blueprint('browserless', __name__)
 
 # Create screenshots folder when the blueprint is registered
@@ -94,12 +95,15 @@ def take_screenshot():
     # Use asyncio to run the pyppeteer code
     try:
         # Run the screenshot function in an asyncio event loop
-        screenshot_data = asyncio.run(take_screenshot_with_puppeteer(
+        screenshot_taken = asyncio.run(take_screenshot_with_puppeteer(
             url=data['url'],
             config=config,
             filepath=filepath
         ))
         
+        if not screenshot_taken:
+            return jsonify({"status": "error", "message": "Failed to take screenshot"}), 500
+            
         # Create or update screenshot record
         existing_screenshot = Screenshot.query.filter_by(name=data['name']).first()
         
@@ -224,44 +228,33 @@ async def take_screenshot_with_puppeteer(url, config, filepath):
             # Try to proceed anyway - we might still be able to take a screenshot
             current_app.logger.info("Attempting to continue despite navigation error")
         
-        # First, take an initial screenshot to analyze for cookie banners
-        current_app.logger.info("Taking initial screenshot to analyze for cookie banners")
-        initial_screenshot = await page.screenshot({'type': 'jpeg', 'quality': 80})
+        # First take a screenshot of the page with potential cookie banners
+        current_app.logger.info("Taking initial screenshot")
+        initial_screenshot_path = os.path.join(os.path.dirname(filepath), f"initial_{os.path.basename(filepath)}")
+        await page.screenshot({'path': initial_screenshot_path, 'type': 'jpeg', 'quality': 80})
         
-        # Use OpenCLIP to detect if a cookie banner is present
-        current_app.logger.info("Using OpenCLIP to detect cookie banners")
-        has_banner, similarity_score, matched_prompt = await detect_cookie_banner_with_clip(page)
+        # Use DOM-based approach to handle cookie consent - simpler and more reliable
+        current_app.logger.info("Attempting to handle cookie consent using DOM approach")
+        consent_handled = await handle_cookie_consent_dom(page)
         
-        if has_banner:
-            current_app.logger.info(f"Cookie banner detected with {similarity_score:.2f} similarity to '{matched_prompt}'")
-            # Handle cookie consent using pyppeteer's native methods
-            current_app.logger.info("Handling cookie consent with pyppeteer")
-            await handle_cookie_consent(page)
+        if consent_handled:
+            current_app.logger.info("Cookie consent handled, waiting for page to stabilize...")
+            # Crucial: Wait long enough for the cookie banner to disappear and page to rerender
+            await page.waitFor(5000)  # 5 seconds wait after successful consent handling
             
-            # Wait a moment for any animations to complete
-            await page.waitFor(2000)
-            
-            # Check if the banner is still detected after handling
-            has_banner_after, similarity_after, _ = await detect_cookie_banner_with_clip(page)
-            if has_banner_after:
-                current_app.logger.info(f"Cookie banner still detected after handling (similarity: {similarity_after:.2f}). Trying again.")
-                await handle_cookie_consent(page)
-                await page.waitFor(2000)  # Wait again after second attempt
-            else:
-                current_app.logger.info("Cookie banner successfully handled")
-                
-            # Reload the page to ensure we get a clean view without cookie banners
-            current_app.logger.info("Reloading page to get clean view")
+            # Reload the page to ensure clean view without cookie banners
+            current_app.logger.info("Reloading page to get clean view after handling cookie popup")
             try:
                 await page.reload({'waitUntil': 'domcontentloaded', 'timeout': 60000})
-                await page.waitFor(3000)  # Wait for page to stabilize
+                # Another critical wait after reload
+                await page.waitFor(5000)
             except Exception as e:
                 current_app.logger.warning(f"Error reloading page: {str(e)}, continuing anyway")
         else:
-            current_app.logger.info("No cookie banner detected, proceeding with screenshot")
+            current_app.logger.info("No cookie consent handling was needed or possible")
         
-        # Take the screenshot with additional error handling
-        current_app.logger.info(f"Taking screenshot and saving to {filepath}")
+        # Take the final screenshot with additional error handling
+        current_app.logger.info(f"Taking final clean screenshot and saving to {filepath}")
         try:
             await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': True})
         except Exception as e:
@@ -269,6 +262,26 @@ async def take_screenshot_with_puppeteer(url, config, filepath):
             # Try with fullPage=False as a fallback
             current_app.logger.info("Trying fallback screenshot method without fullPage option")
             await page.screenshot({'path': filepath, 'type': 'jpeg', 'quality': 90, 'fullPage': False})
+        
+        # Compare before and after images if there was consent handling
+        if consent_handled and os.path.exists(initial_screenshot_path) and os.path.exists(filepath):
+            current_app.logger.info("Comparing initial and final screenshots to verify cookie banner removal")
+            try:
+                # Simple check - images shouldn't be identical if banner was removed
+                from PIL import Image, ImageChops
+                
+                with Image.open(initial_screenshot_path) as img1, Image.open(filepath) as img2:
+                    # Check if images are different
+                    diff = ImageChops.difference(img1, img2)
+                    if diff.getbbox():
+                        current_app.logger.info("Screenshots are different - cookie banner likely removed successfully")
+                    else:
+                        current_app.logger.warning("Screenshots are identical - cookie banner may not have been removed")
+                
+                # Cleanup initial screenshot
+                os.remove(initial_screenshot_path)
+            except Exception as e:
+                current_app.logger.error(f"Error comparing screenshots: {str(e)}")
         
         # Close the browser connection
         await browser.close()
@@ -278,6 +291,332 @@ async def take_screenshot_with_puppeteer(url, config, filepath):
     except Exception as e:
         current_app.logger.error(f"Error in pyppeteer: {str(e)}")
         raise e
+
+# Function to handle cookie consent using DOM-based approach
+async def handle_cookie_consent_dom(page):
+    """A simplified DOM-based approach to handle cookie consent popups"""
+    current_app.logger.info("Starting DOM-based cookie consent handling")
+    
+    # Track if we successfully handled consent
+    handled = False
+    
+    try:
+        # First ensure the page has had plenty of time to fully render
+        current_app.logger.info("Waiting for page to fully render before handling cookie popups (15 seconds)...")
+        await page.waitFor(15000)  # Extended initial wait to ensure all JS has loaded and banners have appeared
+        
+        # Sometimes cookie banners appear after additional time or user interaction
+        try:
+            # Simulate scroll which often triggers cookie banners
+            await page.evaluate('''
+                () => {
+                    window.scrollBy(0, 100);
+                    window.scrollBy(0, -100);
+                    
+                    // Force additional delay to ensure everything is loaded
+                    return new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            ''')
+            current_app.logger.info("Scrolled page to trigger any lazy-loaded cookie banners")
+        except Exception as e:
+            current_app.logger.warning(f"Failed to scroll page: {str(e)}")
+        
+        current_app.logger.info("Page should be fully rendered now, proceeding with cookie consent handling")
+        
+        # 1. First try direct JavaScript click on consent buttons
+        consent_handled = await page.evaluate('''
+            () => {
+                // These are button texts that would indicate a cookie acceptance button
+                const acceptTexts = [
+                    // English
+                    'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'ok', 'got it', 'agree',
+                    // Danish
+                    'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 
+                    // German
+                    'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
+                    // French
+                    'accepter', 'tout accepter', 'jaccepte',
+                    // Spanish
+                    'aceptar', 'aceptar todo', 'permitir'
+                ];
+                
+                const buttonSelectors = [
+                    // Most common selectors
+                    'button', 'a.button', 'a.btn', 'input[type="button"]', 'input[type="submit"]', 
+                    '[role="button"]', '.btn', '[tabindex="0"]'
+                ];
+                
+                // Try to find any visible button with text containing any of our acceptance terms
+                let clickedSomething = false;
+                
+                // Function to check if a text contains any acceptance term
+                const hasAcceptText = (text) => {
+                    if (!text) return false;
+                    text = text.toLowerCase().trim();
+                    return acceptTexts.some(term => text.includes(term));
+                };
+                
+                // Function to click one element and remember we did it
+                const trySingleClick = (element, reason) => {
+                    try {
+                        console.log(`Cookie consent: clicking ${reason}`);
+                        element.click();
+                        clickedSomething = true;
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                };
+                
+                // 1. First try most common framework-specific selectors
+                const commonSelectors = [
+                    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+                    '#onetrust-accept-btn-handler',
+                    '.cc-accept', '.cc-allow', '.cc-dismiss',
+                    '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
+                    '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
+                    '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies'
+                ];
+                
+                for (const selector of commonSelectors) {
+                    const element = document.querySelector(selector);
+                    if (element && element.offsetParent !== null) { // Check if visible
+                        if (trySingleClick(element, `framework selector: ${selector}`)) return true;
+                    }
+                }
+                
+                // 2. Look through all potential buttons
+                for (const selector of buttonSelectors) {
+                    const buttons = document.querySelectorAll(selector);
+                    for (const button of buttons) {
+                        // Skip invisible elements
+                        if (!button || !button.offsetParent) continue;
+                        
+                        // Check button text
+                        const text = button.textContent || button.innerText || button.value || '';
+                        if (hasAcceptText(text)) {
+                            if (trySingleClick(button, `text match: ${text}`)) return true;
+                        }
+                        
+                        // Check aria-label
+                        const ariaLabel = button.getAttribute('aria-label');
+                        if (hasAcceptText(ariaLabel)) {
+                            if (trySingleClick(button, `aria-label: ${ariaLabel}`)) return true;
+                        }
+                        
+                        // Check for certain class names or attributes that might indicate cookie consent
+                        const classList = button.classList ? Array.from(button.classList) : [];
+                        const hasCookieClass = classList.some(cls => cls.toLowerCase().includes('cookie') || cls.toLowerCase().includes('consent'));
+                        
+                        if (hasCookieClass) {
+                            if (trySingleClick(button, `cookie-related class`)) return true;
+                        }
+                    }
+                }
+                
+                // 3. Handle fixed banners common in cookie consent UIs by looking at position
+                const fixedElements = document.querySelectorAll('div[style*="position: fixed"]');
+                for (const el of fixedElements) {
+                    if (!el || !el.offsetParent) continue;
+                    
+                    // Check if this fixed element contains any buttons
+                    const buttonsInFixed = el.querySelectorAll('button, a, [role="button"]');
+                    for (const btn of buttonsInFixed) {
+                        const text = btn.textContent || btn.innerText || '';
+                        if (hasAcceptText(text)) {
+                            if (trySingleClick(btn, `button in fixed element: ${text}`)) return true;
+                        }
+                    }
+                }
+                
+                // 4. If we've clicked something, report success
+                return clickedSomething;
+            }
+        ''')
+        
+        if consent_handled:
+            current_app.logger.info("Successfully clicked cookie consent button via JavaScript")
+            handled = True
+            # Critical wait time after clicking
+            await page.waitFor(3000)
+        else:
+            current_app.logger.info("No cookie consent button clicked via JavaScript approach")
+            
+            # 2. Try direct selectors with Puppeteer's click method
+            common_selectors = [
+                '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+                '#onetrust-accept-btn-handler',
+                '.cc-accept', '.cc-allow', '.cc-dismiss',
+                '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
+                '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
+                '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies'
+            ]
+            
+            for selector in common_selectors:
+                try:
+                    # Check if element exists and is visible
+                    visible = await page.evaluate('''
+                        (selector) => {
+                            const el = document.querySelector(selector);
+                            return el && el.offsetParent !== null;
+                        }
+                    ''', selector)
+                    
+                    if visible:
+                        current_app.logger.info(f"Found visible cookie consent button: {selector}")
+                        await page.click(selector, {'timeout': 2000})
+                        current_app.logger.info(f"Clicked cookie consent button: {selector}")
+                        handled = True
+                        # Wait longer after clicking
+                        await page.waitFor(3000)
+                        break
+                except Exception as e:
+                    current_app.logger.debug(f"Error clicking selector {selector}: {str(e)}")
+        
+        # 3. If still not handled, try DOM removal of banners
+        if not handled:
+            current_app.logger.info("Attempting to remove cookie banners via DOM manipulation")
+            
+            removed = await page.evaluate('''
+                () => {
+                    // Selectors for common cookie banners
+                    const bannerSelectors = [
+                        '[class*="cookie-banner"]', '[id*="cookie-banner"]',
+                        '[class*="cookie-consent"]', '[id*="cookie-consent"]',
+                        '[class*="cookie-notice"]', '[id*="cookie-notice"]',
+                        '.cc-window', '.cc-banner', '#cookie-law-info-bar',
+                        'div[style*="position: fixed"][style*="bottom"]',
+                        'div[style*="position: fixed"][style*="top"]',
+                        '[class*="gdpr"]', '[id*="gdpr"]'
+                    ];
+                    
+                    let removed = 0;
+                    
+                    // Find and remove banner elements
+                    for (const selector of bannerSelectors) {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            if (el && el.offsetParent !== null) {
+                                // Hide element with CSS
+                                el.style.display = 'none !important';
+                                el.style.visibility = 'hidden !important';
+                                el.style.opacity = '0 !important';
+                                el.style.pointerEvents = 'none !important';
+                                
+                                // Attempt to remove from DOM
+                                try {
+                                    if (el.parentNode) {
+                                        el.parentNode.removeChild(el);
+                                    } else {
+                                        el.remove();
+                                    }
+                                    removed++;
+                                } catch (e) {
+                                    // If removal fails, at least we've hidden it
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Add CSS to force page to be scrollable and hide other banners
+                    const style = document.createElement('style');
+                    style.innerHTML = `
+                        body { 
+                            overflow: auto !important; 
+                            height: auto !important; 
+                        }
+                        
+                        /* Hide cookie banners */
+                        [class*="cookie-banner"], [id*="cookie-banner"],
+                        [class*="cookie-consent"], [id*="cookie-consent"],
+                        [class*="cookie-notice"], [id*="cookie-notice"],
+                        .cc-window, .cc-banner, #cookie-law-info-bar,
+                        div[style*="position: fixed"][style*="bottom"],
+                        div[style*="position: fixed"][style*="top"],
+                        [class*="gdpr"], [id*="gdpr"] {
+                            display: none !important;
+                            visibility: hidden !important;
+                            opacity: 0 !important;
+                            height: 0 !important;
+                            pointer-events: none !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                    
+                    return removed;
+                }
+            ''')
+            
+            if removed > 0:
+                current_app.logger.info(f"Removed {removed} cookie banner elements")
+                handled = True
+                # Wait after DOM manipulation
+                await page.waitFor(3000)
+        
+        # 4. Try checking iframes as a last resort
+        if not handled:
+            current_app.logger.info("Checking for cookie consent buttons in iframes")
+            
+            iframe_handled = await page.evaluate('''
+                () => {
+                    // Try to find and access all iframes
+                    const iframes = document.querySelectorAll('iframe');
+                    let clicked = false;
+                    
+                    // Function to check if a text contains acceptance terms
+                    const hasAcceptText = (text) => {
+                        if (!text) return false;
+                        text = text.toLowerCase().trim();
+                        const terms = ['accept', 'agree', 'allow', 'ok', 'got it', 'accepter', 'accepte', 'akzeptieren', 'aceptar'];
+                        return terms.some(term => text.includes(term));
+                    };
+                    
+                    // Try to access each iframe
+                    for (const iframe of iframes) {
+                        try {
+                            // Skip invisible iframes
+                            if (!iframe || !iframe.offsetParent) continue;
+                            
+                            // Try to access the iframe's content
+                            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            
+                            // Look for buttons in the iframe
+                            const buttons = iframeDoc.querySelectorAll('button, a, [role="button"]');
+                            
+                            for (const btn of buttons) {
+                                if (!btn || !btn.offsetParent) continue;
+                                
+                                const text = btn.textContent || btn.innerText || '';
+                                if (hasAcceptText(text)) {
+                                    console.log(`Clicking button in iframe: ${text}`);
+                                    btn.click();
+                                    clicked = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (clicked) break;
+                        } catch (e) {
+                            // Security restrictions may prevent accessing iframe content
+                            // Just continue to the next iframe
+                        }
+                    }
+                    
+                    return clicked;
+                }
+            ''')
+            
+            if iframe_handled:
+                current_app.logger.info("Successfully clicked button in iframe")
+                handled = True
+                # Wait after iframe handling
+                await page.waitFor(3000)
+        
+        return handled
+            
+    except Exception as e:
+        current_app.logger.error(f"Error in handle_cookie_consent_dom: {str(e)}")
+        return False
 
 # Helper function to set consent cookies
 async def set_consent_cookies(page, domain):
@@ -317,442 +656,6 @@ async def set_consent_cookies(page, domain):
         'domain': domain,
         'path': '/'
     })
-
-# Function to detect cookie banners using OpenCLIP
-async def detect_cookie_banner_with_clip(page):
-    """
-    Use OpenCLIP to detect if a cookie banner is present on the page.
-    Returns True if a cookie banner is detected, False otherwise.
-    """
-    current_app.logger.info("Using OpenCLIP to detect cookie banners")
-    
-    try:
-        # Take a screenshot of the current page
-        screenshot_bytes = await page.screenshot({'type': 'jpeg', 'quality': 80})
-        
-        # Import the get_clip_model function from tasks
-        from tasks import get_clip_model, clip_models, clip_preprocessors
-        
-        # Always use the small model (ViT-B-32) for cookie detection
-        model_name = 'ViT-B-32'  # Small model
-        
-        # Check if the small model is already loaded in cache
-        if model_name in clip_models:
-            model = clip_models[model_name]
-            preprocess = clip_preprocessors[model_name]
-        else:
-            # Load the small model directly
-            # Use the get_clip_model function but override the result to always use ViT-B-32
-            model_name, model, preprocess = get_clip_model()
-            # If the returned model is not ViT-B-32, force loading it
-            if model_name != 'ViT-B-32':
-                current_app.logger.info(f"Forcing small model (ViT-B-32) for cookie detection instead of {model_name}")
-                cache_dir = "/app/data/model_cache"
-                if not os.path.exists(cache_dir):
-                    # Try data folder if app folder doesn't exist
-                    data_folder = current_app.config.get("DATA_FOLDER", "./data")
-                    cache_dir = os.path.join(data_folder, "models")
-                
-                model, _, preprocess = open_clip.create_model_and_transforms(
-                    'ViT-B-32',
-                    pretrained='openai',
-                    jit=False,
-                    force_quick_gelu=True,  # Enable QuickGELU to match pretrained weights
-                    cache_dir=cache_dir
-                )
-                # Set device based on availability first
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                
-                model.to(device)
-                model.eval()
-                model_name = 'ViT-B-32'
-                
-                # Store in cache for future use
-                clip_models[model_name] = model
-                clip_preprocessors[model_name] = preprocess
-                
-        current_app.logger.info(f"Using small CLIP model (ViT-B-32) for cookie detection")
-        
-        # Set device based on availability
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # Load and preprocess the screenshot
-        image = Image.open(io.BytesIO(screenshot_bytes))
-        image_input = preprocess(image).unsqueeze(0).to(device)
-        
-        # Prepare text prompts for cookie banners in multiple languages - expanded for better detection
-        prompts = [
-            # English prompts
-            "a cookie consent banner",
-            "accept cookies button",
-            "cookie policy notification",
-            "GDPR consent dialog",
-            "privacy settings popup",
-            "cookie preferences",
-            "cookie banner with accept button",
-            "website cookie acceptance dialog",
-            "privacy consent banner",
-            "cookie notice with buttons",
-            "website privacy notice overlay",
-            "cookie compliance banner",
-            
-            # Danish prompts
-            "accepter cookies",
-            "accepter alle cookies",
-            "cookie samtykke banner",
-            "privatlivspolitik popup",
-            "godkend cookies knap",
-            
-            # German prompts
-            "akzeptieren cookies",
-            "cookie einstellungen",
-            "datenschutz-banner",
-            "cookie-zustimmungsdialog",
-            "alle cookies akzeptieren",
-            
-            # French prompts
-            "accepter les cookies",
-            "bannière de consentement aux cookies",
-            "paramètres de confidentialité",
-            "consentement RGPD",
-            
-            # Spanish prompts
-            "aceptar cookies",
-            "banner de consentimiento de cookies",
-            "política de privacidad",
-            "configuración de cookies"
-        ]
-        
-        # Always use the tokenizer for ViT-B-32 for consistency
-        tokenizer = open_clip.get_tokenizer('ViT-B-32')
-        text_tokens = tokenizer(prompts)
-        
-        # Get image and text features
-        with torch.no_grad():
-            image_features = model.encode_image(image_input)
-            text_features = model.encode_text(text_tokens)
-            
-            # Normalize the features
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-            text_features /= text_features.norm(dim=-1, keepdim=True)
-            
-            # Compute similarity scores
-            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-            
-            # Get the highest similarity score
-            max_similarity = similarity.max().item()
-            max_index = similarity.argmax().item()
-            
-            current_app.logger.info(f"Cookie banner detection: highest similarity {max_similarity:.2f} for '{prompts[max_index]}'")
-            
-            # Lower threshold for detection to increase sensitivity (may need calibration)
-            threshold = 0.25
-            return max_similarity > threshold, max_similarity, prompts[max_index]
-    
-    except Exception as e:
-        current_app.logger.error(f"Error in OpenCLIP cookie banner detection: {str(e)}")
-        return False, 0.0, None
-
-# Function to handle cookie consent using pyppeteer's native methods
-async def handle_cookie_consent(page):
-    current_app.logger.info("Starting cookie consent handling with pyppeteer")
-    
-    # Common selectors for cookie consent buttons
-    selectors = [
-        # ID-based selectors
-        '#accept-cookies', '#acceptCookies', '#cookie-accept', '#accept-all-cookies',
-        '#acceptAllCookies', '#cookies-accept-all', '#cookie-accept-all', '#gdpr-accept',
-        '#accept', '#accept_all', '#acceptAll', '#cookie_accept', '#cookie-consent-accept',
-        '#cookieConsent', '#cookieAccept', '#btn-cookie-accept', '#gdpr-consent-accept',
-        '#cookie-banner-accept', '#cookieConsentAcceptAllButton', '#accept-cookie-policy',
-        
-        # Class-based selectors
-        '.cookie-accept', '.accept-cookies', '.accept-all-cookies', '.acceptAllCookies',
-        '.cookie-consent-accept', '.cookie-banner__accept', '.cookie-notice__accept',
-        '.gdpr-accept', '.accept-button', '.cookie-accept-button', '.consent-accept',
-        '.cookie-accept-all', '.cookie-banner-accept', '.cookie-consent-button',
-        '.cookie-notice-accept', '.gdpr-banner-accept', '.privacy-accept-button',
-        
-        # Framework-specific selectors
-        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-        '#onetrust-accept-btn-handler',
-        '.cc-accept', '.cc-allow', '.cc-dismiss',
-        '.js-cookie-banner-accept', '.js-accept-cookie-policy',
-        
-        # Attribute-based selectors
-        '[data-action="accept-cookies"]', '[data-role="accept-cookies"]',
-        '[data-consent="accept"]', '[data-cookie-accept="all"]',
-        '[aria-label*="accept cookies"]', '[aria-label*="Accept all"]',
-        '[data-element-id*="cookie-accept"]', '[data-element-id*="cookie-banner"]',
-        '[data-testid*="cookie-accept"]', '[data-testid*="cookie-banner-accept"]',
-        
-        # Additional compound selectors
-        'button[class*="cookie"][class*="accept"]',
-        'button[class*="gdpr"][class*="accept"]',
-        'button[class*="cookie"][class*="allow"]',
-        'button[id*="cookie"][id*="accept"]',
-        'a[class*="cookie"][class*="accept"]',
-        'div[role="button"][class*="cookie"]'
-    ]
-    
-    # Try clicking each selector
-    for selector in selectors:
-        try:
-            # Check if the element exists and is visible
-            visible = await page.evaluate('''
-                (selector) => {
-                    const el = document.querySelector(selector);
-                    return el && el.offsetParent !== null;
-                }
-            ''', selector)
-            
-            if visible:
-                current_app.logger.info(f"Found visible cookie consent button: {selector}")
-                await page.click(selector, {'timeout': 1000})
-                current_app.logger.info(f"Clicked cookie consent button: {selector}")
-                await page.waitFor(500)  # Short wait after clicking
-        except Exception as e:
-            # Ignore errors for individual selectors
-            pass
-    
-    # Try to find and click buttons by text content - expanded to include more variations
-    text_patterns = [
-        # English
-        'accept', 'accept all', 'accept cookies', 'allow', 'allow all', 'i agree', 'ok', 'got it',
-        'agree', 'agree to all', 'continue', 'understood', 'consent', 'confirm', 'save', 'close',
-        'agree and close', 'accept and continue', 'accept and proceed', 'accept all cookies',
-        'i understand', 'yes', 'agree to cookies', 'accept & continue',
-        
-        # Danish
-        'accepter', 'acceptér', 'tillad', 'tillad alle', 'ja tak', 'accepter alle',
-        'forstået', 'fortsæt', 'godkend', 'acceptér alle cookies', 'luk',
-        
-        # German
-        'akzeptieren', 'alle akzeptieren', 'zustimmen', 'einverstanden',
-        'ich stimme zu', 'verstanden', 'alle cookies akzeptieren', 'cookies zulassen',
-        'erlauben', 'weiter', 'fortfahren', 'bestätigen', 'speichern', 'schließen',
-        
-        # French
-        'accepter', 'tout accepter', 'j\'accepte', 'accepter tous les cookies',
-        'continuer', 'compris', 'je comprends', 'consentir', 'fermer',
-        'accepter et continuer', 'accepter et fermer',
-        
-        # Spanish
-        'aceptar', 'aceptar todo', 'permitir', 'aceptar cookies',
-        'entendido', 'acepto', 'continuar', 'estoy de acuerdo', 'cerrar',
-        'aceptar todas', 'aceptar y continuar'
-    ]
-    
-    # Also try with uppercase first letter or all caps
-    capitalized_patterns = []
-    for pattern in text_patterns:
-        capitalized_patterns.append(pattern.capitalize())
-        capitalized_patterns.append(pattern.upper())
-    
-    text_patterns.extend(capitalized_patterns)
-    
-    for pattern in text_patterns:
-        try:
-            # Find elements containing the text
-            elements = await page.evaluate('''
-                (pattern) => {
-                    const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"]'));
-                    return elements
-                        .filter(el => {
-                            if (!el || !el.offsetParent) return false; // Skip invisible elements
-                            const text = (el.textContent || el.innerText || '').toLowerCase();
-                            return text.includes(pattern);
-                        })
-                        .map(el => {
-                            const rect = el.getBoundingClientRect();
-                            return {
-                                x: rect.left + rect.width / 2,
-                                y: rect.top + rect.height / 2
-                            };
-                        });
-                }
-            ''', pattern)
-            
-            # Click each element at its center coordinates
-            for element in elements:
-                current_app.logger.info(f"Found element with text '{pattern}' at coordinates: {element}")
-                await page.mouse.click(element['x'], element['y'])
-                current_app.logger.info(f"Clicked element with text: {pattern}")
-                await page.waitFor(500)  # Short wait after clicking
-        except Exception as e:
-            # Ignore errors for individual text patterns
-            pass
-    
-    # Try to handle iframes
-    try:
-        # Get all iframes
-        iframes = await page.querySelectorAll('iframe')
-        
-        for i, iframe in enumerate(iframes):
-            try:
-                # Try to access the iframe's content
-                frame = page.frames[i + 1]  # +1 because the first frame is the main page
-                
-                if frame:
-                    # Try to click accept buttons in the iframe
-                    for selector in selectors:
-                        try:
-                            visible = await frame.evaluate('''
-                                (selector) => {
-                                    const el = document.querySelector(selector);
-                                    return el && el.offsetParent !== null;
-                                }
-                            ''', selector)
-                            
-                            if visible:
-                                current_app.logger.info(f"Found visible cookie consent button in iframe: {selector}")
-                                await frame.click(selector, {'timeout': 1000})
-                                current_app.logger.info(f"Clicked cookie consent button in iframe: {selector}")
-                        except Exception:
-                            # Ignore errors for individual selectors in iframes
-                            pass
-            except Exception:
-                # Ignore errors for individual iframes
-                pass
-    except Exception as e:
-        current_app.logger.info(f"Error handling iframes: {str(e)}")
-    
-    # Wait a bit for any animations to complete
-    await page.waitFor(2000)  # pyppeteer uses waitFor instead of waitForTimeout
-    
-    # Try to hide any remaining cookie banners - enhanced with more comprehensive selectors
-    banner_selectors = [
-        # Cookie-specific selectors
-        '[class*="cookie-banner"]', '[id*="cookie-banner"]',
-        '[class*="cookie-consent"]', '[id*="cookie-consent"]',
-        '[class*="cookie-notice"]', '[id*="cookie-notice"]',
-        '[class*="cookie-popup"]', '[id*="cookie-popup"]',
-        '[class*="cookie-alert"]', '[id*="cookie-alert"]',
-        '[class*="cookie-modal"]', '[id*="cookie-modal"]',
-        '[class*="cookie-message"]', '[id*="cookie-message"]',
-        
-        # GDPR-specific selectors
-        '[class*="gdpr-banner"]', '[id*="gdpr-banner"]',
-        '[class*="gdpr-consent"]', '[id*="gdpr-consent"]',
-        '[class*="gdpr-notice"]', '[id*="gdpr-notice"]',
-        '[class*="gdpr-popup"]', '[id*="gdpr-popup"]',
-        
-        # Privacy-specific selectors
-        '[class*="privacy-banner"]', '[id*="privacy-banner"]',
-        '[class*="privacy-consent"]', '[id*="privacy-consent"]',
-        '[class*="privacy-notice"]', '[id*="privacy-notice"]',
-        '[class*="privacy-popup"]', '[id*="privacy-popup"]',
-        
-        # Framework-specific selectors
-        '.cc-window', '.cc-banner', '#cookie-law-info-bar',
-        '#cookiebanner', '#cookieConsent', '#cookie-consent',
-        '#CybotCookiebotDialog', '#onetrust-banner-sdk',
-        '.js-cookie-banner', '.js-cookie-consent'
-    ]
-    
-    # First try direct clicks on any remaining accept buttons
-    try:
-        current_app.logger.info("Executing JavaScript to directly click any remaining cookie acceptance buttons")
-        await page.evaluate('''
-            () => {
-                function containsAcceptText(text) {
-                    text = text.toLowerCase();
-                    const acceptTerms = ['accept', 'accept all', 'agree', 'allow', 'continue', 'ok',
-                                        'yes', 'consent', 'got it', 'understand', 'accepter', 'akzeptieren',
-                                        'tillad', 'aceptar'];
-                    return acceptTerms.some(term => text.includes(term));
-                }
-                
-                // Find all buttons, links, and clickable elements
-                const elements = Array.from(document.querySelectorAll('button, a, div[role="button"], [tabindex="0"], input[type="button"], input[type="submit"]'));
-                
-                // Try to click any that contain acceptance text and are visible
-                elements.forEach(el => {
-                    if (el && el.offsetParent !== null) {
-                        const text = (el.textContent || el.innerText || el.value || '').trim();
-                        if (containsAcceptText(text)) {
-                            console.log("Directly clicking element with text: " + text);
-                            try { el.click(); } catch (e) { /* ignore */ }
-                        }
-                    }
-                });
-            }
-        ''')
-        await page.waitFor(1000)  # Wait for click actions to process
-    except Exception as e:
-        current_app.logger.info(f"JavaScript direct click failed: {str(e)}")
-    
-    # Then try to hide all cookie banners with multiple techniques
-    for selector in banner_selectors:
-        try:
-            await page.evaluate('''
-                (selector) => {
-                    const elements = document.querySelectorAll(selector);
-                    elements.forEach(el => {
-                        if (el && el.offsetParent !== null) {
-                            // Try multiple methods to hide the element
-                            el.style.display = 'none';
-                            el.style.visibility = 'hidden';
-                            el.style.opacity = '0';
-                            el.style.pointerEvents = 'none';
-                            el.style.height = '0px';
-                            el.style.maxHeight = '0px';
-                            el.style.overflow = 'hidden';
-                            el.setAttribute('aria-hidden', 'true');
-                            
-                            // If possible, remove it entirely
-                            try { el.remove(); } catch (e) { /* ignore */ }
-                            
-                            // If it has a parent, try to remove from parent
-                            if (el.parentNode) {
-                                try { el.parentNode.removeChild(el); } catch (e) { /* ignore */ }
-                            }
-                        }
-                    });
-                }
-            ''', selector)
-        except Exception:
-            # Ignore errors for individual banner selectors
-            pass
-    
-    # Finally, inject CSS to hide common patterns
-    try:
-        await page.evaluate('''
-            () => {
-                // Add a style tag to hide common cookie banner patterns
-                const style = document.createElement('style');
-                style.innerHTML = `
-                    /* Hide common cookie banners */
-                    div[class*="cookie-banner"], div[id*="cookie-banner"],
-                    div[class*="cookie-consent"], div[id*="cookie-consent"],
-                    div[class*="cookie-notice"], div[id*="cookie-notice"],
-                    div[class*="cookie-popup"], div[id*="cookie-popup"],
-                    div[class*="gdpr"], div[id*="gdpr"],
-                    .cc-window, .cc-banner, #cookie-law-info-bar,
-                    div[class*="fixed"][class*="bottom"],
-                    div[style*="position: fixed"][style*="bottom"],
-                    div[style*="position: fixed"][style*="top"] {
-                        display: none !important;
-                        visibility: hidden !important;
-                        opacity: 0 !important;
-                        height: 0 !important;
-                        max-height: 0 !important;
-                        overflow: hidden !important;
-                        pointer-events: none !important;
-                    }
-                    
-                    /* Force body to be scrollable */
-                    body {
-                        overflow: auto !important;
-                        height: auto !important;
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-        ''')
-    except Exception as e:
-        current_app.logger.info(f"Could not inject CSS to hide cookie banners: {str(e)}")
-
 @browserless_bp.route('/screenshots/<filename>')
 def get_screenshot(filename):
     screenshots_folder = os.path.join(current_app.config['DATA_FOLDER'], 'screenshots')
@@ -760,30 +663,57 @@ def get_screenshot(filename):
     # Check if we should return the cropped version
     show_cropped = request.args.get('cropped', 'false').lower() == 'true'
     
+    # Get device address if provided
+    device_address = request.args.get('device', None)
+    
     if show_cropped:
-        # Check if crop info exists for this screenshot
-        crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+        # Query for crop info for this screenshot with the specific device if provided
+        query = ScreenshotCropInfo.query.filter_by(filename=filename)
+        if device_address:
+            crop_info = query.filter_by(device_address=device_address).first()
+            if not crop_info:
+                # If not found for this device, try the default device
+                crop_info = query.filter_by(device_address='default_device').first()
+        else:
+            # If no device specified, get the first crop info (could be any device)
+            crop_info = query.first()
         
         if crop_info and all(getattr(crop_info, attr, None) is not None for attr in ['x', 'y', 'width', 'height']):
             try:
                 # Create a temporary cropped version
                 filepath = os.path.join(screenshots_folder, filename)
                 with Image.open(filepath) as img:
-                    # Crop the image
-                    cropped = img.crop((
-                        crop_info.x,
-                        crop_info.y,
-                        crop_info.x + crop_info.width,
-                        crop_info.y + crop_info.height
-                    ))
+                    # Log the crop dimensions for debugging
+                    current_app.logger.info(f"Cropping image with dimensions: x={crop_info.x}, y={crop_info.y}, w={crop_info.width}, h={crop_info.height}, device={crop_info.device_address}")
+                    
+                    # Get original image size
+                    orig_width, orig_height = img.size
+                    current_app.logger.info(f"Original image dimensions: {orig_width}x{orig_height}")
+                    
+                    # Ensure crop coordinates are within the image bounds
+                    x1 = max(0, int(crop_info.x))
+                    y1 = max(0, int(crop_info.y))
+                    x2 = min(orig_width, int(crop_info.x + crop_info.width))
+                    y2 = min(orig_height, int(crop_info.y + crop_info.height))
+                    
+                    # Log the adjusted crop box
+                    current_app.logger.info(f"Adjusted crop box for device {crop_info.device_address}: ({x1}, {y1}, {x2}, {y2})")
+                    
+                    # Perform the crop with exact pixel coordinates
+                    cropped = img.crop((x1, y1, x2, y2))
+                    cropped = img.crop((x1, y1, x2, y2))
                     
                     # Create a temporary file
                     temp_dir = os.path.join(current_app.config['DATA_FOLDER'], "temp")
                     if not os.path.exists(temp_dir):
                         os.makedirs(temp_dir)
                     
+                    # Save with maximum quality and no compression to preserve detail
                     temp_filename = os.path.join(temp_dir, f"cropped_{filename}")
-                    cropped.save(temp_filename, format="JPEG", quality=95)
+                    cropped.save(temp_filename, format="JPEG", quality=100, optimize=True, subsampling=0)
+                    
+                    # Log the final cropped dimensions
+                    current_app.logger.info(f"Final cropped image dimensions: {cropped.width}x{cropped.height}")
                     
                     # Use Flask's send_file instead of send_from_directory
                     from flask import send_file, after_this_request
@@ -808,27 +738,75 @@ def get_screenshot(filename):
 @browserless_bp.route('/api/get_screenshot_crop_info/<filename>', methods=['GET'])
 def get_screenshot_crop_info(filename):
     """Get crop information for a screenshot."""
-    # Check if crop info exists for this filename
-    crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
-    
-    if crop_info:
-        # Return the crop info as JSON
-        return jsonify({
-            "status": "success",
-            "crop_info": {
-                "x": crop_info.x,
-                "y": crop_info.y,
-                "width": crop_info.width,
-                "height": crop_info.height,
-                "resolution": crop_info.resolution
-            }
-        }), 200
-    else:
-        # No crop info found
+    try:
+        # Check if a specific device is requested
+        device_address = request.args.get('device', None)
+        
+        # First get a list of all available devices for this screenshot
+        devices = []
+        with db.engine.connect() as conn:
+            device_result = conn.execute(sa.text("""
+                SELECT DISTINCT device_address
+                FROM screenshot_crop_info
+                WHERE filename = :filename
+            """), {"filename": filename})
+            
+            for device_row in device_result:
+                devices.append({"address": device_row[0]})
+        
+        # Check if crop info exists using raw SQL to avoid ORM issues
+        with db.engine.connect() as conn:
+            query_params = {"filename": filename}
+            sql_query = """
+                SELECT filename, device_address, x, y, width, height, resolution
+                FROM screenshot_crop_info
+                WHERE filename = :filename
+            """
+            
+            # Add device filter if specified
+            if device_address:
+                sql_query += " AND device_address = :device_address"
+                query_params["device_address"] = device_address
+            else:
+                # If no device specified, get the first entry (or filter for default device if needed)
+                sql_query += " LIMIT 1"
+            
+            result = conn.execute(sa.text(sql_query), query_params)
+            row = result.fetchone()
+            
+            if row:
+                # Return the crop info as JSON with basic data
+                response_data = {
+                    "status": "success",
+                    "crop_info": {
+                        "x": float(row[2]) if row[2] is not None else 0,          # x is now the 3rd column
+                        "y": float(row[3]) if row[3] is not None else 0,          # y is now the 4th column
+                        "width": float(row[4]) if row[4] is not None else 0,      # width is now the 5th column
+                        "height": float(row[5]) if row[5] is not None else 0,     # height is now the 6th column
+                        "resolution": row[6],                                     # resolution is now the 7th column
+                        "device_address": row[1]                                  # device_address is the 2nd column
+                    },
+                    "available_devices": devices
+                }
+                
+                current_app.logger.info(f"Retrieved crop info for {filename} with device {row[1]} using raw SQL")
+                return jsonify(response_data), 200
+            else:
+                # No crop info found
+                current_app.logger.info(f"No crop info found for {filename}" +
+                                        (f" with device {device_address}" if device_address else ""))
+                return jsonify({
+                    "status": "success",
+                    "message": "No crop information found for this screenshot",
+                    "crop_info": None,
+                    "available_devices": devices
+                }), 200  # Return 200 with empty crop_info instead of 404
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving crop info: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": "No crop information found for this screenshot"
-        }), 404
+            "message": f"Error retrieving crop information: {str(e)}"
+        }), 500
 
 @browserless_bp.route('/api/browserless/delete/<int:screenshot_id>', methods=['POST'])
 def delete_screenshot(screenshot_id):
@@ -864,32 +842,64 @@ def save_screenshot_crop_info(filename):
         if field not in crop_data or not isinstance(crop_data[field], (int, float)) or crop_data[field] < 0:
             return jsonify({"status": "error", "message": f"Invalid crop data: {field} is missing or invalid"}), 400
     
-    # Get the selected device resolution if provided
+    # Get device address - either directly provided or from the device
+    device_addr = None
     if "device" in crop_data:
         device_addr = crop_data.get("device")
         device_obj = Device.query.filter_by(address=device_addr).first()
         if device_obj and device_obj.resolution:
             crop_data["resolution"] = device_obj.resolution
-            current_app.logger.info(f"Saving crop with resolution: {device_obj.resolution}")
+            current_app.logger.info(f"Saving crop with device: {device_addr}, resolution: {device_obj.resolution}")
         else:
             current_app.logger.warning(f"Device not found or missing resolution: {device_addr}")
-    else:
-        current_app.logger.warning("No device provided for crop data")
     
-    # Save crop info
-    crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
-    if not crop_info:
-        crop_info = ScreenshotCropInfo(filename=filename)
-        db.session.add(crop_info)
+    # If no device address is provided, use a default
+    if not device_addr:
+        device_addr = "default_device"
+        current_app.logger.warning(f"No device provided for crop data, using default_device")
     
-    crop_info.x = crop_data.get("x", 0)
-    crop_info.y = crop_data.get("y", 0)
-    crop_info.width = crop_data.get("width", 0)
-    crop_info.height = crop_data.get("height", 0)
-    if "resolution" in crop_data:
-        crop_info.resolution = crop_data.get("resolution")
+    # Log the received crop data
+    current_app.logger.info(f"Saving crop data for {filename} with device {device_addr}: {crop_data}")
     
-    db.session.commit()
+    try:
+        # Use a direct raw SQL approach that only uses the columns we know exist
+        conn = db.engine.connect()
+        
+        # Delete only this specific device's crop info, not all crops for this filename
+        conn.execute(sa.text("""
+            DELETE FROM screenshot_crop_info
+            WHERE filename = :filename AND device_address = :device_address
+        """), {
+            "filename": filename,
+            "device_address": device_addr
+        })
+        
+        # Insert using all required columns including device_address
+        conn.execute(sa.text("""
+            INSERT INTO screenshot_crop_info (filename, device_address, x, y, width, height, resolution)
+            VALUES (:filename, :device_address, :x, :y, :width, :height, :resolution)
+        """), {
+            "filename": filename,
+            "device_address": device_addr,
+            "x": crop_data.get("x", 0),
+            "y": crop_data.get("y", 0),
+            "width": crop_data.get("width", 0),
+            "height": crop_data.get("height", 0),
+            "resolution": crop_data.get("resolution", "")
+        })
+        
+        # Make sure to commit the transaction
+        db.session.commit()
+        
+        current_app.logger.info(f"Crop data saved successfully for {filename} with device {device_addr} using direct SQL")
+        return jsonify({"status": "success", "device_address": device_addr}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error saving crop info (using RAW SQL) for {filename} with device {device_addr}: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
+    current_app.logger.info(f"Crop info successfully saved for {filename}")
     
     return jsonify({"status": "success"}), 200
 
@@ -944,9 +954,26 @@ def send_screenshot(filename):
                 
             # Log the original image dimensions and target ratio
             current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, target ratio: {target_ratio}")
+            # Step 1: Apply crop if available, preferring device-specific crop info
+            # First try to get crop info specific to this device
+            crop_info = ScreenshotCropInfo.query.filter_by(
+                filename=filename,
+                device_address=device_addr
+            ).first()
             
-            # Step 1: Apply crop if available
-            crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+            # If not found, try to fall back to default device crop
+            if not crop_info:
+                current_app.logger.info(f"No crop info found for {filename} with device {device_addr}, trying default")
+                crop_info = ScreenshotCropInfo.query.filter_by(
+                    filename=filename,
+                    device_address='default_device'
+                ).first()
+            
+            # If still not found, try any crop info for this screenshot
+            if not crop_info:
+                current_app.logger.info(f"No default crop info found for {filename}, using first available crop")
+                crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
+            
             cdata = None
             
             if crop_info:
@@ -955,8 +982,10 @@ def send_screenshot(filename):
                     "y": crop_info.y,
                     "width": crop_info.width,
                     "height": crop_info.height,
-                    "resolution": crop_info.resolution
+                    "resolution": crop_info.resolution,
+                    "device_address": crop_info.device_address
                 }
+                current_app.logger.info(f"Using crop info for {filename} with device {crop_info.device_address}")
             
             if cdata and all(key in cdata for key in ["x", "y", "width", "height"]):
                 x = cdata.get("x", 0)
@@ -1024,9 +1053,9 @@ def send_screenshot(filename):
                 current_app.logger.info("Rotating image for portrait orientation")
                 cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
                 current_app.logger.info(f"After rotation size: {cropped.size}")
-                final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
+                final_img = cropped.resize((dev_height, dev_width), Image.Resampling.LANCZOS)  # Note swapped dimensions
             else:
-                final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
+                final_img = cropped.resize((dev_width, dev_height), Image.Resampling.LANCZOS)
             
             current_app.logger.info(f"Final image size: {final_img.size}")
             

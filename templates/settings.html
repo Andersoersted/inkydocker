@@ -4,74 +4,323 @@
 {% block content %}
 <div class="container py-4">
   <!-- Page Header -->
-  <header class="pb-3 mb-4 border-bottom">
-    <h1 class="display-5 fw-bold">Settings</h1>
-    <p class="lead">Manage your eInk displays and AI settings.</p>
-  </header>
-
-  <!-- Tagging Settings Button -->
-  <div class="card mb-4 shadow-sm">
-    <div class="card-body text-center">
-      <h5 class="card-title">Image Tagging Settings</h5>
-      <p class="card-text">Configure tagging settings and test image tagging</p>
-      <button id="openClipSettingsBtn" class="btn btn-primary" onclick="document.getElementById('clipSettingsModal').style.display = 'block';">
-        <i class="bi bi-gear-fill"></i> Open Tagging Settings
-      </button>
+  <div class="row mb-4">
+    <div class="col-12">
+      <h1 class="h2 border-bottom pb-2">Settings</h1>
+      <p class="lead">Manage your eInk displays and AI settings.</p>
     </div>
   </div>
 
-  <!-- Tagging Settings Modal -->
-  <div id="clipSettingsModal" class="custom-modal">
-    <div class="custom-modal-content">
+  <!-- Devices Section -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h2 class="h5 mb-0">Registered Devices</h2>
+          <button id="addNewDisplayBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDisplayModal">
+            <i class="bi bi-plus-lg me-1"></i> Add Device
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped table-hover">
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Color</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Orientation</th>
+                  <th scope="col">Address</th>
+                  <th scope="col">Display Name</th>
+                  <th scope="col">Resolution</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for device in devices %}
+                <tr data-index="{{ loop.index0 }}" data-address="{{ device.address }}">
+                  <td>{{ loop.index }}</td>
+                  <td>
+                    <div class="rounded-circle device-color-indicator" style="background-color: {{ device.color|default('#CCCCCC') }};" data-color="{{ device.color|default('#CCCCCC') }}"></div>
+                  </td>
+                  <td>{{ device.friendly_name }}</td>
+                  <td><span class="badge bg-secondary">{{ device.orientation }}</span></td>
+                  <td>{{ device.address }}</td>
+                  <td>{{ device.display_name }}</td>
+                  <td>{{ device.resolution }}</td>
+                  <td>
+                    {% if device.online %}
+                      <span class="badge bg-success">Online</span>
+                    {% else %}
+                      <span class="badge bg-danger">Offline</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="d-flex gap-2">
+                      <button type="button" class="btn btn-sm btn-outline-primary" onclick="openEditModal('{{ loop.index0 }}', '{{ device.friendly_name }}', '{{ device.orientation }}', '{{ device.address }}')">
+                        <i class="bi bi-pencil me-1"></i> Edit
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="(function() {
+                        const titleElement = document.getElementById('advancedDeviceTitle');
+                        if (titleElement) titleElement.textContent = 'Advanced Actions for {{ device.friendly_name }}';
+                        
+                        const modal = document.getElementById('advancedActionsModal');
+                        if (modal) {
+                          modal.setAttribute('data-device-index', '{{ loop.index0 }}');
+                          const bsModal = new bootstrap.Modal(modal);
+                          bsModal.show();
+                        }
+                      })();">
+                        <i class="bi bi-gear me-1"></i> Advanced
+                      </button>
+                      <form method="POST" action="{{ url_for('settings.delete_device', device_index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this device?');">
+                        <button type="submit" class="btn btn-sm btn-danger">
+                          <i class="bi bi-trash me-1"></i> Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- AI Settings Section -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <h2 class="h5 mb-0">Image Tagging Settings</h2>
+        </div>
+        <div class="card-body">
+          <p class="card-text mb-4">Configure image tagging parameters and test the tagging system.</p>
+          <div class="d-grid gap-2 col-lg-4 col-md-6 mx-auto">
+            <button id="openClipSettingsBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#clipSettingsModal">
+              <i class="bi bi-gear-fill me-2"></i> Manage Tagging Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add New Display Modal -->
+<div class="modal fade" id="addDisplayModal" tabindex="-1" aria-labelledby="addDisplayModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title">Image Tagging Settings</h2>
-        <button type="button" class="btn-close" id="closeClipSettingsModal" aria-label="Close"></button>
+        <h5 class="modal-title" id="addDisplayModalLabel">Add New Display</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="addDisplayForm" method="POST" action="{{ url_for('settings.settings') }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="newAddress" class="form-label">Device Address</label>
+            <input type="text" class="form-control" name="address" id="newAddress" placeholder="e.g., 192.168.1.100" required>
+            <div class="form-text">IP address of the eInk display device</div>
+          </div>
+          <div class="mb-3">
+            <label for="newOrientation" class="form-label">Orientation</label>
+            <select name="orientation" id="newOrientation" class="form-select" required>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="newFriendlyName" class="form-label">Friendly Name</label>
+            <input type="text" class="form-control" name="friendly_name" id="newFriendlyName" placeholder="e.g., Kitchen Display" required>
+            <div class="form-text">A name to help you identify this display</div>
+          </div>
+          <div class="mb-3">
+            <label for="newColor" class="form-label">Display Color</label>
+            <select name="color" id="newColor" class="form-select" required>
+              <option value="#FF5733" style="background-color: #FF5733; color: white;">Red-Orange</option>
+              <option value="#33FF57" style="background-color: #33FF57; color: black;">Green</option>
+              <option value="#3357FF" style="background-color: #3357FF; color: white;">Blue</option>
+              <option value="#F39C12" style="background-color: #F39C12; color: black;">Amber</option>
+              <option value="#8E44AD" style="background-color: #8E44AD; color: white;">Purple</option>
+              <option value="#2ECC71" style="background-color: #2ECC71; color: black;">Emerald</option>
+              <option value="#E74C3C" style="background-color: #E74C3C; color: white;">Red</option>
+              <option value="#3498DB" style="background-color: #3498DB; color: white;">Sky Blue</option>
+              <option value="#1ABC9C" style="background-color: #1ABC9C; color: white;">Turquoise</option>
+              <option value="#9B59B6" style="background-color: #9B59B6; color: white;">Amethyst</option>
+            </select>
+            <div class="form-text">Color used to identify this display in schedules</div>
+          </div>
+          <!-- Hidden fields for display info -->
+          <input type="hidden" name="display_name" id="newDisplayName">
+          <input type="hidden" name="resolution" id="newResolution">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Display Modal -->
+<div class="modal fade" id="editDisplayModal" tabindex="-1" aria-labelledby="editDisplayModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editDisplayModalLabel">Edit Display</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="editDisplayForm" method="POST" action="{{ url_for('settings.edit_device') }}">
+        <div class="modal-body">
+          <input type="hidden" name="device_index" id="editDeviceIndex">
+          <div class="mb-3">
+            <label for="editFriendlyName" class="form-label">Friendly Name</label>
+            <input type="text" class="form-control" name="friendly_name" id="editFriendlyName" required>
+          </div>
+          <div class="mb-3">
+            <label for="editOrientation" class="form-label">Orientation</label>
+            <select name="orientation" id="editOrientation" class="form-select" required>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="editAddress" class="form-label">Device Address</label>
+            <input type="text" class="form-control" name="address" id="editAddress" required>
+          </div>
+          <div class="mb-3">
+            <label for="editColor" class="form-label">Display Color</label>
+            <select name="color" id="editColor" class="form-select" required>
+              <option value="#FF5733" style="background-color: #FF5733; color: white;">Red-Orange</option>
+              <option value="#33FF57" style="background-color: #33FF57; color: black;">Green</option>
+              <option value="#3357FF" style="background-color: #3357FF; color: white;">Blue</option>
+              <option value="#F39C12" style="background-color: #F39C12; color: black;">Amber</option>
+              <option value="#8E44AD" style="background-color: #8E44AD; color: white;">Purple</option>
+              <option value="#2ECC71" style="background-color: #2ECC71; color: black;">Emerald</option>
+              <option value="#E74C3C" style="background-color: #E74C3C; color: white;">Red</option>
+              <option value="#3498DB" style="background-color: #3498DB; color: white;">Sky Blue</option>
+              <option value="#1ABC9C" style="background-color: #1ABC9C; color: white;">Turquoise</option>
+              <option value="#9B59B6" style="background-color: #9B59B6; color: white;">Amethyst</option>
+            </select>
+            <div class="form-text">Color used to identify this display in schedules</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Advanced Actions Modal -->
+<div class="modal fade" id="advancedActionsModal" tabindex="-1" aria-labelledby="advancedActionsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="advancedActionsModalLabel">Advanced Actions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <h6 id="advancedDeviceTitle" class="mb-3 fw-bold text-center"></h6>
+        
+        <div class="alert alert-info mb-4">
+          <i class="bi bi-info-circle me-2"></i> These advanced actions help you manage your eInk display device.
+        </div>
+        
+        <div class="d-grid gap-4">
+          <div class="card">
+            <div class="card-body text-center">
+              <h5 class="card-title mb-3"><i class="bi bi-arrow-repeat me-2"></i>System Update & Reboot</h5>
+              <p class="text-muted mb-3">Updates the operating system on the eInk display and reboots the device.</p>
+              <button type="button" class="btn btn-primary btn-lg" onclick="triggerSystemUpdate()">
+                <i class="bi bi-arrow-repeat me-2"></i>Run System Update
+              </button>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body text-center">
+              <h5 class="card-title mb-3"><i class="bi bi-cloud-arrow-down me-2"></i>Update Application</h5>
+              <p class="text-muted mb-3">Updates the application software on the eInk display.</p>
+              <button type="button" class="btn btn-warning btn-lg" onclick="triggerAppUpdate()">
+                <i class="bi bi-cloud-arrow-down me-2"></i>Update Application
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tagging Settings Modal -->
+<div class="modal fade" id="clipSettingsModal" tabindex="-1" aria-labelledby="clipSettingsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="clipSettingsModalLabel">Image Tagging Settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <form id="clipSettingsForm">
+          <!-- Model Download Progress -->
+          <div id="modelDownloadContainer" class="mb-4 alert alert-info" style="display: none;">
+            <h6 class="mb-2">Downloading: <span id="modelDownloadName" class="fw-bold"></span></h6>
+            <div class="progress" style="height: 25px;">
+              <div id="modelDownloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
+                  role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                  style="width: 0%;">0%</div>
+            </div>
+            <p id="modelDownloadStatus" class="text-muted mt-2 small"></p>
+          </div>
+
           <!-- Main tabs for organization -->
-          <ul class="nav nav-tabs mb-4" id="clipSettingsTabs" role="tablist">
+          <ul class="nav nav-tabs nav-fill mb-4" id="clipSettingsTabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="tagging-settings-tab" data-bs-toggle="tab" data-bs-target="#tagging-settings" type="button" role="tab" aria-controls="tagging-settings" aria-selected="true">Tagging Settings</button>
+              <button class="nav-link active" id="tagging-settings-tab" data-bs-toggle="tab" data-bs-target="#tagging-settings" type="button" role="tab" aria-controls="tagging-settings" aria-selected="true">
+                <i class="bi bi-gear me-2"></i>Tagging Settings
+              </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" id="test-model-tab" data-bs-toggle="tab" data-bs-target="#test-model" type="button" role="tab" aria-controls="test-model" aria-selected="false">Test Tagging</button>
+              <button class="nav-link" id="test-model-tab" data-bs-toggle="tab" data-bs-target="#test-model" type="button" role="tab" aria-controls="test-model" aria-selected="false">
+                <i class="bi bi-check2-circle me-2"></i>Test Tagging
+              </button>
             </li>
           </ul>
           
+          <!-- Hidden input for confidence value -->
+          <input type="hidden" id="confidence_value" value="0.1">
+
           <div class="tab-content" id="clipSettingsTabContent">
-            <!-- Hidden inputs for tagging settings -->
-            <input type="hidden" id="confidence_value"
-                   value="0.1">
-            
-            <!-- Model Download Progress -->
-            <div id="modelDownloadContainer" class="mb-4" style="display: none;">
-              <h6 class="mb-2">Downloading: <span id="modelDownloadName" class="fw-bold"></span></h6>
-              <div class="progress" style="height: 25px;">
-                <div id="modelDownloadProgress" class="progress-bar progress-bar-striped progress-bar-animated"
-                     role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
-                     style="width: 0%;">0%</div>
-              </div>
-              <p id="modelDownloadStatus" class="text-muted mt-2 small"></p>
-            </div>
-            
             <!-- Tagging Settings Tab -->
             <div class="tab-pane fade show active" id="tagging-settings" role="tabpanel" aria-labelledby="tagging-settings-tab">
               <div class="row">
                 <div class="col-md-6">
-                  <div class="card mb-4">
+                  <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-light">
+                      <h5 class="card-title mb-0">Maximum Tags per Image</h5>
+                    </div>
                     <div class="card-body">
-                      <h5 class="card-title">Maximum Tags per Image</h5>
                       <div class="mb-3">
                         <label for="min_tags" class="form-label">Number of tags (1-20):</label>
                         <input type="number" id="min_tags" name="min_tags" min="1" max="20"
-                               value="{{ config.min_tags if config and config.min_tags else 5 }}"
-                               class="form-control form-control-lg">
+                              value="{{ config.min_tags if config and config.min_tags else 5 }}"
+                              class="form-control form-control-lg">
                         <div class="form-text">Set the maximum number of tags to generate for each image.</div>
                       </div>
                       <div class="d-grid">
                         <button type="button" class="btn btn-success" onclick="saveMinTags()">
-                          <i class="bi bi-check-circle"></i> Save Setting
+                          <i class="bi bi-check-circle me-2"></i> Save Setting
                         </button>
                       </div>
                     </div>
@@ -79,19 +328,21 @@
                 </div>
                 
                 <div class="col-md-6">
-                  <div class="card mb-4">
+                  <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-light">
+                      <h5 class="card-title mb-0">Tag Confidence Threshold</h5>
+                    </div>
                     <div class="card-body">
-                      <h5 class="card-title">Tag Confidence Threshold</h5>
                       <div class="mb-3">
-                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global">{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}</span></label>
+                        <label for="confidence_threshold" class="form-label">Minimum Confidence: <span id="confidence_value_global" class="badge bg-primary">{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}</span></label>
                         <input type="range" class="form-range" id="confidence_threshold" min="0.1" max="0.9" step="0.05"
-                               value="{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}"
-                               oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').value = this.value;">
+                              value="{{ config.zero_shot_min_confidence if config and config.zero_shot_min_confidence else 0.1 }}"
+                              oninput="document.getElementById('confidence_value_global').textContent = this.value; document.getElementById('confidence_value').value = this.value;">
                         <div class="form-text">Higher values mean fewer but more accurate tags.</div>
                       </div>
                       <div class="d-grid">
                         <button type="button" class="btn btn-success" onclick="saveConfidenceThreshold()">
-                          <i class="bi bi-check-circle"></i> Save Setting
+                          <i class="bi bi-check-circle me-2"></i> Save Setting
                         </button>
                       </div>
                     </div>
@@ -100,9 +351,11 @@
               </div>
 
               <!-- Unified Model Selection Card -->
-              <div class="card mb-4">
+              <div class="card mb-4 shadow-sm">
+                <div class="card-header bg-light">
+                  <h5 class="card-title mb-0">Image Tagging Model Selection</h5>
+                </div>
                 <div class="card-body">
-                  <h5 class="card-title">Image Tagging Model Selection</h5>
                   <div class="mb-3">
                     <label for="zero_shot_model" class="form-label">Choose Model Size:</label>
                     <select id="zero_shot_model" class="form-select form-select-lg">
@@ -110,32 +363,38 @@
                       <option value="medium" {% if config and config.zero_shot_model == 'medium' %}selected{% endif %}>Medium Model (Balanced)</option>
                       <option value="large" {% if config and config.zero_shot_model == 'large' %}selected{% endif %}>Large Model (Most Accurate)</option>
                     </select>
-                    <div class="form-text">
-                      <ul>
-                        <li><strong>Small Model:</strong> Fastest processing, suitable for most systems</li>
-                        <li><strong>Medium Model:</strong> Balanced performance between speed and accuracy</li>
-                        <li><strong>Large Model:</strong> Most accurate tagging, requires more system resources</li>
-                      </ul>
+                    <div class="form-text mt-3">
+                      <div class="card bg-light">
+                        <div class="card-body py-2">
+                          <ul class="mb-0">
+                            <li><strong>Small Model:</strong> Fastest processing, suitable for most systems</li>
+                            <li><strong>Medium Model:</strong> Balanced performance between speed and accuracy</li>
+                            <li><strong>Large Model:</strong> Most accurate tagging, requires more system resources</li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div class="d-grid">
                     <button type="button" class="btn btn-success" onclick="saveZeroShotModel()">
-                      <i class="bi bi-check-circle"></i> Save Model Selection
+                      <i class="bi bi-check-circle me-2"></i> Save Model Selection
                     </button>
                   </div>
                 </div>
               </div>
               
               <!-- Rerun Tagging Button -->
-              <div class="card">
+              <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                  <h5 class="card-title mb-0">Rerun Tagging</h5>
+                </div>
                 <div class="card-body text-center">
-                  <h5 class="card-title">Rerun Tagging on All Images</h5>
-                  <p class="card-text text-danger">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    Warning: This will remove all existing tags and replace them with new ones.
+                  <p class="card-text mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Warning:</strong> This will remove all existing tags and replace them with new ones.
                   </p>
                   <button type="button" class="btn btn-danger btn-lg" onclick="rerunAllTagging()">
-                    <i class="bi bi-arrow-repeat"></i> Rerun Tagging on All Images
+                    <i class="bi bi-arrow-repeat me-2"></i> Rerun Tagging on All Images
                   </button>
                 </div>
               </div>
@@ -143,9 +402,11 @@
             
             <!-- Test Model Tab -->
             <div class="tab-pane fade" id="test-model" role="tabpanel" aria-labelledby="test-model-tab">
-              <div class="card">
+              <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                  <h5 class="card-title mb-0">Test Image Tagging</h5>
+                </div>
                 <div class="card-body">
-                  <h5 class="card-title">Test Image Tagging</h5>
                   <p class="card-text">Upload a test image to verify the tagging system is working correctly and see the generated tags.</p>
                   
                   <div class="row">
@@ -171,12 +432,12 @@
                   
                   <div class="d-grid">
                     <button type="button" class="btn btn-primary btn-lg" onclick="testTagging()">
-                      <i class="bi bi-tag"></i> Test Image Tagging
+                      <i class="bi bi-tag me-2"></i> Test Image Tagging
                     </button>
                   </div>
                   
                   <div id="testTaggingResult" class="mt-4" style="display: none;">
-                    <h6 class="fw-bold">Test Results:</h6>
+                    <h6 class="fw-bold border-bottom pb-2">Test Results:</h6>
                     <div id="testTaggingContent" class="p-3 bg-light rounded"></div>
                   </div>
                 </div>
@@ -185,320 +446,261 @@
           </div>
         </form>
       </div>
-    </div>
-  </div>
-        
-  </div>
-
-  <!-- Add New Display Button -->
-  <div class="card mb-4 shadow-sm">
-    <div class="card-body text-center">
-      <button id="addNewDisplayBtn" class="primary-btn" style="width: 100%; padding: 12px;">Add New Display</button>
-    </div>
-  </div>
-
-  <!-- Add New Display Modal -->
-  <div id="addDisplayModal" class="custom-modal">
-    <div class="custom-modal-content">
-      <span class="close" id="closeAddDisplayModal">&times;</span>
-      <h2>Add New Display</h2>
-      <form id="addDisplayForm" method="POST" action="{{ url_for('settings.settings') }}">
-        <input type="text" name="address" id="newAddress" placeholder="Device Address (e.g., 192.168.1.100)" required>
-        <select name="orientation" id="newOrientation" required>
-          <option value="portrait">Portrait</option>
-          <option value="landscape">Landscape</option>
-        </select>
-        <input type="text" name="friendly_name" id="newFriendlyName" placeholder="Friendly Name" required>
-        <!-- Hidden fields populated by Fetch Display Info -->
-        <input type="hidden" name="display_name" id="newDisplayName">
-        <input type="hidden" name="resolution" id="newResolution">
-        <input type="hidden" name="color" id="newColor">
-        <div style="margin-top: 10px;">
-          <button type="button" class="primary-btn" onclick="fetchDisplayInfo('new')">Fetch Display Info</button>
-        </div>
-        <div style="margin-top: 10px;">
-          <button type="submit" class="primary-btn">Save</button>
-          <button type="button" class="primary-btn" onclick="closeAddDisplayModal()">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Edit Display Modal -->
-  <div id="editDisplayModal" class="custom-modal">
-    <div class="custom-modal-content">
-      <span class="close" id="closeEditDisplayModal">&times;</span>
-      <h2>Edit Display</h2>
-      <form id="editDisplayForm" method="POST" action="{{ url_for('settings.edit_device') }}">
-        <input type="hidden" name="device_index" id="editDeviceIndex">
-        <label for="editFriendlyName">Friendly Name:</label>
-        <input type="text" name="friendly_name" id="editFriendlyName" placeholder="Friendly Name" required>
-        <label for="editOrientation">Orientation:</label>
-        <select name="orientation" id="editOrientation" required>
-          <option value="portrait">Portrait</option>
-          <option value="landscape">Landscape</option>
-        </select>
-        <label for="editAddress">Device Address:</label>
-        <input type="text" name="address" id="editAddress" placeholder="Device Address" required>
-        <div style="margin-top: 10px;">
-          <button type="submit" class="primary-btn">Save Changes</button>
-          <button type="button" class="primary-btn" onclick="closeEditDisplayModal()">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Advanced Actions Modal -->
-  <div id="advancedActionsModal" class="custom-modal">
-    <div class="custom-modal-content">
-      <span class="close" id="closeAdvancedActionsModal">&times;</span>
-      <h2>Advanced Actions</h2>
-      <p id="advancedDeviceTitle" style="font-weight:bold;"></p>
-      <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
-        <button type="button" class="primary-btn" onclick="triggerSystemUpdate()">System Update & Reboot</button>
-        <button type="button" class="primary-btn" onclick="triggerBackup()">Create Backup</button>
-        <button type="button" class="primary-btn" onclick="triggerAppUpdate()">Update Application</button>
-      </div>
-      <div style="margin-top: 15px; text-align: center;">
-        <button type="button" class="primary-btn" onclick="closeAdvancedActionsModal()">Close</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Existing Devices Card -->
-  <div class="card">
-    <h2>Existing Devices</h2>
-    <table class="device-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Color</th>
-          <th>Friendly Name</th>
-          <th>Orientation</th>
-          <th>Address</th>
-          <th>Display Name</th>
-          <th>Resolution</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for device in devices %}
-        <tr data-index="{{ loop.index0 }}" data-address="{{ device.address }}">
-          <td>{{ loop.index }}</td>
-          <td>
-            <div class="color-indicator" {% if device.color %}style="background-color:{{ device.color }};"{% endif %}></div>
-          </td>
-          <td>{{ device.friendly_name }}</td>
-          <td>{{ device.orientation }}</td>
-          <td>{{ device.address }}</td>
-          <td>{{ device.display_name }}</td>
-          <td>{{ device.resolution }}</td>
-          <td>
-            {% if device.online %}
-              <span style="color:green;">&#9679;</span>
-            {% else %}
-              <span style="color:red;">&#9679;</span>
-            {% endif %}
-          </td>
-          <td>
-            <form method="POST" action="{{ url_for('settings.delete_device', device_index=loop.index0) }}" style="display:inline;">
-              <input type="submit" value="Delete">
-            </form>
-            <button type="button" class="edit-button" onclick="openEditModal('{{ loop.index0 }}', '{{ device.friendly_name }}', '{{ device.orientation }}', '{{ device.address }}')">
-              Edit
-            </button>
-            <button type="button" class="advanced-button" onclick="openAdvancedModal('{{ loop.index0 }}', '{{ device.friendly_name }}')">
-              Advanced
-            </button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- Toast Container for Messages -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="confirmationMessage">
+        Are you sure you want to proceed?
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+        <button type="button" class="btn btn-primary" id="confirmYesBtn">Yes</button>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
-
 {% block head %}
 <!-- Bootstrap Icons -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<!-- Define global functions -->
+<script>
+  // Make sure openAdvancedModal is globally available
+  window.openAdvancedModal = function(index, friendlyName) {
+    const titleElement = document.getElementById('advancedDeviceTitle');
+    const modal = document.getElementById('advancedActionsModal');
+    
+    if (titleElement) {
+      titleElement.textContent = "Advanced Actions for " + friendlyName;
+    }
+    
+    if (modal) {
+      modal.setAttribute('data-device-index', index);
+      // Show the modal
+      const modalInstance = new bootstrap.Modal(modal);
+      modalInstance.show();
+    }
+  };
+</script>
 <style>
-  .custom-modal {
-    display: none;
-    position: fixed;
-    z-index: 3000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
-  .custom-modal-content {
-    background-color: #fff;
-    margin: 3% auto;
-    padding: 0;
-    border-radius: 8px;
-    max-width: 800px;
-    position: relative;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  /* Additional custom styles */
+  .device-status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 5px;
   }
   
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #dee2e6;
+  /* Animation for toast notifications */
+  @keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
   }
   
-  .modal-body {
-    padding: 1.5rem;
+  .toast {
+    animation: slideInRight 0.3s ease-out;
   }
   
-  /* Special styling for the CLIP settings modal */
-  #clipSettingsModal .custom-modal-content {
-    max-width: 1000px;
-    max-height: 90vh;
-    overflow-y: auto;
+  /* Progress bar animation enhancement */
+  .progress-bar-animated {
+    animation: progress-bar-stripes 1s linear infinite;
   }
-  .close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-  }
-  .close:hover,
-  .close:focus {
-    color: #000;
-  }
-  .overlay-popup {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 5000;
-  }
-  .overlay-content {
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 5px;
-    max-width: 400px;
-    text-align: center;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  }
-  .overlay-buttons {
-    margin-top: 15px;
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-  }
-  .cancel-btn {
-    background: #6c757d;
-    border: none;
-    color: #fff;
-    padding: 8px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  .cancel-btn:hover {
-    background: #5a6268;
-  }
-  .progress-container {
-    margin: 10px 0;
-    background-color: #f1f1f1;
-    border-radius: 5px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    height: 20px;
-    background-color: #4CAF50;
-    text-align: center;
-    line-height: 20px;
-    color: white;
-    transition: width 0.3s ease;
-  }
-  .color-indicator {
+  
+  /* Device color indicator styles */
+  .device-color-indicator {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background-color: #CCCCCC; /* Default color */
+    display: inline-block;
   }
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Global modal closing functions
-  window.closeAddDisplayModal = function() {
-    document.getElementById('addDisplayModal').style.display = 'none';
-  };
-  window.closeEditDisplayModal = function() {
-    document.getElementById('editDisplayModal').style.display = 'none';
-  };
-  window.closeAdvancedActionsModal = function() {
-    document.getElementById('advancedActionsModal').style.display = 'none';
-  };
-  window.closeClipSettingsModal = function() {
-    document.getElementById('clipSettingsModal').style.display = 'none';
+  // Global variables
+  let toastCounter = 0;
+  const confirmationCallback = {
+    callback: null
   };
   
-  // Overlay message functions
-  function showOverlayMessage(message, duration) {
-    var overlay = document.createElement('div');
-    overlay.className = 'overlay-popup';
-    overlay.innerHTML = `
-      <div class="overlay-content">
-        <p>${message}</p>
-        <button class="primary-btn" onclick="this.parentNode.parentNode.remove()">OK</button>
-      </div>
-    `;
-    document.body.appendChild(overlay);
+  // DOM Ready function
+  document.addEventListener('DOMContentLoaded', function() {
+    // Convert old modals to Bootstrap 5 modals
+    initializeBootstrapModals();
     
-    if (duration) {
-      setTimeout(function() {
-        if (overlay.parentNode) {
-          overlay.parentNode.removeChild(overlay);
-        }
-      }, duration);
-    }
+    // Initialize status checking
+    setInterval(checkDeviceStatus, 5000);
+    checkDeviceStatus();
+    
+    // Event listeners for form submissions
+    initializeEventListeners();
+  });
+
+  // Initialize Bootstrap 5 modals and replace old custom modals
+  function initializeBootstrapModals() {
+    // Legacy event handlers for backward compatibility
+    window.closeAddDisplayModal = function() {
+      bootstrap.Modal.getInstance(document.getElementById('addDisplayModal')).hide();
+    };
+    
+    window.closeEditDisplayModal = function() {
+      bootstrap.Modal.getInstance(document.getElementById('editDisplayModal')).hide();
+    };
+    
+    window.closeAdvancedActionsModal = function() {
+      bootstrap.Modal.getInstance(document.getElementById('advancedActionsModal')).hide();
+    };
+    
+    window.closeClipSettingsModal = function() {
+      bootstrap.Modal.getInstance(document.getElementById('clipSettingsModal')).hide();
+    };
   }
-  
-  function showConfirmOverlay(message, confirmCallback) {
-    var overlay = document.createElement('div');
-    overlay.className = 'overlay-popup';
-    overlay.innerHTML = `
-      <div class="overlay-content">
-        <p>${message}</p>
-        <div class="overlay-buttons">
-          <button class="primary-btn" id="confirmYes">Yes</button>
-          <button class="cancel-btn" id="confirmNo">No</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    
-    document.getElementById('confirmYes').addEventListener('click', function() {
-      overlay.parentNode.removeChild(overlay);
-      if (typeof confirmCallback === 'function') {
-        confirmCallback();
+
+  // Initialize event listeners for forms and buttons
+  function initializeEventListeners() {
+    // Add Display Form submission
+    const addDisplayForm = document.getElementById('addDisplayForm');
+    if (addDisplayForm) {
+      addDisplayForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Automatically fetch display info before submitting
+        const addressInput = document.getElementById('newAddress');
+        const address = addressInput.value.trim();
+        
+        if (address) {
+          try {
+            // Show loading indicator
+            showToast("Fetching display information...", "info", 2000);
+            
+            // Try to fetch the display info
+            await fetchDisplayInfo('new');
+          } catch (error) {
+            // If fetching fails, we'll continue with default values
+            console.error("Error fetching display info:", error);
+          }
+        }
+        
+        // Check if color field is populated
+        const colorField = document.getElementById('newColor');
+        if (!colorField.value) {
+          // If color is not set, set a default color
+          const availableColors = ['#FF5733', '#33FF57', '#3357FF', '#F39C12', '#8E44AD', '#2ECC71', '#E74C3C'];
+          const randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+          colorField.value = randomColor;
+        }
+        
+        // Check if display name and resolution are populated
+        const displayNameField = document.getElementById('newDisplayName');
+        const resolutionField = document.getElementById('newResolution');
+        
+        if (!displayNameField.value) {
+          displayNameField.value = "DefaultDisplay";
+        }
+        
+        if (!resolutionField.value) {
+          resolutionField.value = "800x600";
+        }
+        
+        // Now submit the form
+        addDisplayForm.submit();
+      });
+      
+      // Auto-fetch display info when address field loses focus
+      // This gives a better user experience by automatically retrieving display information
+      // as soon as the user enters an address, without requiring an extra button click
+      const addressInput = document.getElementById('newAddress');
+      if (addressInput) {
+        addressInput.addEventListener('blur', function() {
+          const address = this.value.trim();
+          if (address) {
+            fetchDisplayInfo('new').catch(error => {
+              console.error("Error fetching display info on blur:", error);
+            });
+          }
+        });
       }
-    });
+    }
     
-    document.getElementById('confirmNo').addEventListener('click', function() {
-      overlay.parentNode.removeChild(overlay);
+    // Set up confirm button event handler
+    document.getElementById('confirmYesBtn').addEventListener('click', function() {
+      if (confirmationCallback.callback) {
+        confirmationCallback.callback();
+        confirmationCallback.callback = null;
+      }
+      bootstrap.Modal.getInstance(document.getElementById('confirmationModal')).hide();
     });
   }
 
-  // Device status checking
-  
+  // Show toast message
+  function showToast(message, type = 'info', duration = 5000) {
+    const toastId = `toast-${toastCounter++}`;
+    const toastContainer = document.querySelector('.toast-container');
+    
+    const toastHtml = `
+      <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="${duration}">
+        <div class="toast-header bg-${type} text-white">
+          <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+          ${message}
+        </div>
+      </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    // Remove toast element after it's hidden
+    toastElement.addEventListener('hidden.bs.toast', function() {
+      toastElement.remove();
+    });
+  }
+
+  // Show confirmation dialog
+  function showConfirmationDialog(message, callback) {
+    const confirmationModal = document.getElementById('confirmationModal');
+    const confirmationMessage = document.getElementById('confirmationMessage');
+    
+    confirmationMessage.innerHTML = message;
+    confirmationCallback.callback = callback;
+    
+    const modal = new bootstrap.Modal(confirmationModal);
+    modal.show();
+  }
+
+  // Legacy overlay message function for backward compatibility
+  function showOverlayMessage(message, duration) {
+    // Convert old overlay messages to toasts
+    showToast(message, 'info', duration || 5000);
+  }
+
+  // Legacy confirm overlay function for backward compatibility
+  function showConfirmOverlay(message, callback) {
+    showConfirmationDialog(message, callback);
+  }
+
+  // Function to check device status
   function checkDeviceStatus() {
     fetch("/devices/status")
       .then(response => response.json())
@@ -509,9 +711,9 @@
             if (row) {
               var statusCell = row.querySelector('td:nth-child(8)');
               if(device.online) {
-                statusCell.innerHTML = '<span style="color:green;">&#9679;</span>';
+                statusCell.innerHTML = '<span class="badge bg-success rounded-pill">Online</span>';
               } else {
-                statusCell.innerHTML = '<span style="color:red;">&#9679;</span>';
+                statusCell.innerHTML = '<span class="badge bg-danger rounded-pill">Offline</span>';
               }
             }
           });
@@ -521,38 +723,56 @@
         console.error("Error checking device status:", error);
       });
   }
-  setInterval(checkDeviceStatus, 5000);
-  checkDeviceStatus();
 
-  // Modal functions for editing and advanced actions
+  // Function to open edit modal
   function openEditModal(index, friendlyName, orientation, address) {
-    document.getElementById('editDisplayModal').style.display = 'block';
     document.getElementById('editDeviceIndex').value = index;
     document.getElementById('editFriendlyName').value = friendlyName;
     document.getElementById('editOrientation').value = orientation;
     document.getElementById('editAddress').value = address;
+    
+    // Get the device's color from the color indicator
+    const deviceRow = document.querySelector('tr[data-index="' + index + '"]');
+    const colorIndicator = deviceRow.querySelector('.device-color-indicator');
+    const deviceColor = colorIndicator.getAttribute('data-color') || '#FF5733';
+    
+    // Set the color in the dropdown
+    const colorSelect = document.getElementById('editColor');
+    for (let i = 0; i < colorSelect.options.length; i++) {
+      if (colorSelect.options[i].value === deviceColor) {
+        colorSelect.selectedIndex = i;
+        break;
+      }
+    }
+    
+    const modal = new bootstrap.Modal(document.getElementById('editDisplayModal'));
+    modal.show();
   }
 
-  function openAdvancedModal(index, friendlyName) {
-    document.getElementById('advancedActionsModal').style.display = 'block';
-    document.getElementById('advancedDeviceTitle').textContent = "Advanced Actions for " + friendlyName;
-    document.getElementById('advancedActionsModal').setAttribute('data-device-index', index);
-  }
-  
-  // Device API functions: triggerSystemUpdate, triggerBackup, triggerAppUpdate remain unchanged
+  // Function to open advanced modal - Implementation moved to settings.js
+  // to fix JavaScript error: "Cannot set properties of null (setting 'textContent')"
+
+  // System update function
   function triggerSystemUpdate() {
     var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
     var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
-    var deviceAddress = deviceRow.getAttribute('data-address');
-    if (!deviceAddress) {
-      showOverlayMessage("Error: Device address not found");
+    
+    if (!deviceRow) {
+      showToast("Error: Device not found", "danger");
       return;
     }
-    showConfirmOverlay(
+    
+    var deviceAddress = deviceRow.getAttribute('data-address');
+    if (!deviceAddress) {
+      showToast("Error: Device address not found", "danger");
+      return;
+    }
+    
+    showConfirmationDialog(
       "This will trigger a system update and reboot the device. Continue?",
       function() {
         // Show a brief message and close the modal immediately
-        showOverlayMessage("System update command sent. The device will update and reboot automatically.", 2000);
+        showToast("System update command sent. The device will update and reboot automatically.", "info", 2000);
         closeAdvancedActionsModal();
         
         // Send the update request in the background
@@ -572,20 +792,22 @@
       }
     );
   }
-  
+
+  // Backup function
   function triggerBackup() {
     var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
     var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
     var deviceAddress = deviceRow.getAttribute('data-address');
     if (!deviceAddress) {
-      showOverlayMessage("Error: Device address not found");
+      showToast("Error: Device address not found", "danger");
       return;
     }
-    showConfirmOverlay(
+    
+    showConfirmationDialog(
       "This will create a backup of the device. This may take several minutes. Continue?",
       function() {
         // Show a brief message and close the modal immediately
-        showOverlayMessage("Backup command sent. The download will start automatically.", 2000);
+        showToast("Backup command sent. The download will start automatically.", "info", 2000);
         closeAdvancedActionsModal();
         
         // Prepare the download URL
@@ -607,20 +829,22 @@
       }
     );
   }
-  
+
+  // App update function
   function triggerAppUpdate() {
     var deviceIndex = document.getElementById('advancedActionsModal').getAttribute('data-device-index');
     var deviceRow = document.querySelector('tr[data-index="' + deviceIndex + '"]');
     var deviceAddress = deviceRow.getAttribute('data-address');
     if (!deviceAddress) {
-      showOverlayMessage("Error: Device address not found");
+      showToast("Error: Device address not found", "danger");
       return;
     }
-    showConfirmOverlay(
+    
+    showConfirmationDialog(
       "This will update the application on the device and reboot it. Continue?",
       function() {
         // Show a brief message and close the modal immediately
-        showOverlayMessage("Update command sent. The device will update and reboot automatically.", 2000);
+        showToast("Update command sent. The device will update and reboot automatically.", "info", 2000);
         closeAdvancedActionsModal();
         
         // Send the update request in the background
@@ -641,172 +865,89 @@
     );
   }
 
-  // Function placeholder for document event listeners
-
-  document.addEventListener('DOMContentLoaded', function() {
-      // Keep the dropdown menu functionality for backward compatibility
-      const settingsNavItem = document.querySelector('.navbar-nav .nav-item:last-child');
-      if (settingsNavItem) {
-        // Create dropdown menu
-        settingsNavItem.classList.add('dropdown');
-        const settingsLink = settingsNavItem.querySelector('.nav-link');
-        settingsLink.classList.add('dropdown-toggle');
-        settingsLink.setAttribute('data-bs-toggle', 'dropdown');
-        settingsLink.setAttribute('aria-expanded', 'false');
+  // Fetch display info function
+  function fetchDisplayInfo(mode) {
+    return new Promise(function(resolve, reject) {
+      if (mode === 'new') {
+        var addressInput = document.getElementById('newAddress');
+        var address = addressInput.value.trim();
+        if (!address) {
+          showToast("Please enter the device address.", "warning");
+          reject("No address provided");
+          return;
+        }
         
-        // Create dropdown menu
-        const dropdownMenu = document.createElement('ul');
-        dropdownMenu.className = 'dropdown-menu dropdown-menu-end';
+        // Show loading indicator
+        showToast("Fetching display information...", "info", 2000);
         
-        // Add Settings link
-        const settingsItem = document.createElement('li');
-        const settingsItemLink = document.createElement('a');
-        settingsItemLink.className = 'dropdown-item';
-        settingsItemLink.href = "{{ url_for('settings.settings') }}";
-        settingsItemLink.textContent = 'Device Settings';
-        settingsItem.appendChild(settingsItemLink);
-        dropdownMenu.appendChild(settingsItem);
+        // Create an AbortController for timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         
-        // Add Tagging Settings link
-        const clipItem = document.createElement('li');
-        const clipItemLink = document.createElement('a');
-        clipItemLink.className = 'dropdown-item';
-        clipItemLink.href = '#';
-        clipItemLink.textContent = 'Tagging Settings';
-        clipItemLink.addEventListener('click', function(e) {
-          e.preventDefault();
-          document.getElementById('clipSettingsModal').style.display = 'block';
-        });
-        clipItem.appendChild(clipItemLink);
-        dropdownMenu.appendChild(clipItem);
-        
-        // Add dropdown menu to navbar
-        settingsNavItem.appendChild(dropdownMenu);
-      }
-  
-      // Make sure the direct button also works
-      const openClipSettingsBtn = document.getElementById('openClipSettingsBtn');
-      if (openClipSettingsBtn) {
-        openClipSettingsBtn.addEventListener('click', function() {
-          document.getElementById('clipSettingsModal').style.display = 'block';
-        });
-      }
-      
-      // Initialize Bootstrap tabs
-      try {
-        const triggerTabList = document.querySelectorAll('#clipSettingsTabs button');
-        triggerTabList.forEach(triggerEl => {
-          const tabTrigger = new bootstrap.Tab(triggerEl);
-          
-          triggerEl.addEventListener('click', event => {
-            event.preventDefault();
-            tabTrigger.show();
+        fetch("/device_info?address=" + encodeURIComponent(address), {
+          signal: controller.signal
+        })
+          .then(function(response) {
+            if (!response.ok) {
+              throw new Error("HTTP error " + response.status);
+            }
+            return response.json();
+          })
+          .then(function(data) {
+            if (data.status === "ok") {
+              document.getElementById('newDisplayName').value = data.info.display_name;
+              document.getElementById('newResolution').value = data.info.resolution;
+              // Let user choose color - don't auto-assign a random one
+              // The color dropdown already has a default selected
+              
+              showToast("Display information retrieved successfully.", "success");
+              resolve();
+            } else {
+              document.getElementById('newDisplayName').value = "DefaultDisplay";
+              document.getElementById('newResolution').value = "800x600";
+              document.getElementById('newColor').value = "#FF5733";
+              
+              showToast("Error fetching display info: " + data.message + "; using default values.", "warning");
+              resolve();
+            }
+          })
+          .catch(function(error) {
+            console.error("Error fetching display info:", error);
+            let errorMessage = "Error fetching display info";
+            
+            if (error.name === 'AbortError') {
+              errorMessage += ": Request timed out";
+            }
+            
+            document.getElementById('newDisplayName').value = "DefaultDisplay";
+            document.getElementById('newResolution').value = "800x600";
+            document.getElementById('newColor').value = "#FF5733";
+            
+            showToast(errorMessage + "; using default values.", "warning");
+            resolve();
+          })
+          .finally(() => {
+            // Clear the timeout to prevent memory leaks
+            clearTimeout(timeoutId);
           });
-        });
-      } catch (e) {
-        console.error("Error initializing tabs:", e);
+      } else if (mode === 'edit') {
+        showToast("Fetch Display Info for edit is not implemented yet.", "info");
+        resolve();
       }
-      
-      // Model population removed - models are now included in the Docker image
-    
-    var addNewDisplayBtn = document.getElementById('addNewDisplayBtn');
-    if (addNewDisplayBtn) {
-      addNewDisplayBtn.addEventListener('click', function() {
-        document.getElementById('addDisplayModal').style.display = 'block';
-      });
-    }
-    var addDisplayForm = document.getElementById('addDisplayForm');
-    addDisplayForm.addEventListener('submit', function(e) {
-      e.preventDefault();
-      
-      // Check if color field is populated
-      var colorField = document.getElementById('newColor');
-      if (!colorField.value) {
-        // If color is not set, set a default color
-        var availableColors = ['#FF5733', '#33FF57', '#3357FF', '#F39C12', '#8E44AD', '#2ECC71', '#E74C3C'];
-        var randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
-        colorField.value = randomColor;
-      }
-      
-      // Check if display name and resolution are populated
-      var displayNameField = document.getElementById('newDisplayName');
-      var resolutionField = document.getElementById('newResolution');
-      
-      if (!displayNameField.value) {
-        displayNameField.value = "DefaultDisplay";
-      }
-      
-      if (!resolutionField.value) {
-        resolutionField.value = "800x600";
-      }
-      
-      // Now submit the form
-      addDisplayForm.submit();
-    });
-    document.getElementById('closeAddDisplayModal').addEventListener('click', function() {
-      closeAddDisplayModal();
-    });
-    document.getElementById('closeEditDisplayModal').addEventListener('click', function() {
-      closeEditDisplayModal();
-    });
-    document.getElementById('closeAdvancedActionsModal').addEventListener('click', function() {
-      closeAdvancedActionsModal();
-    });
-    var clipSettingsBtn = document.getElementById('clipSettingsBtn');
-    var clipSettingsModal = document.getElementById('clipSettingsModal');
-    var closeClipSettingsModal = document.getElementById('closeClipSettingsModal');
-    if (clipSettingsBtn) {
-      clipSettingsBtn.addEventListener('click', function() {
-        clipSettingsModal.style.display = 'block';
-      });
-    }
-    if (closeClipSettingsModal) {
-      closeClipSettingsModal.addEventListener('click', function() {
-        window.closeClipSettingsModal();
-      });
-    }
-    window.addEventListener('click', function(e) {
-      if (e.target == clipSettingsModal) {
-        window.closeClipSettingsModal();
-      }
-    });
-  });
-
-  // Removed saveClipModel function as we now use a unified model selector
-
-  function verifyClipModel() {
-    fetch("{{ url_for('settings.verify_clip_model') }}")
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        showOverlayMessage(
-          `<strong>Current CLIP Model:</strong> ${data.model_name}<br>` +
-          `<span class="text-muted">This is the model that will be used for image tagging.</span><br><br>` +
-          `<strong>Model Details:</strong><br>` +
-          `• Small: ViT-B-32 (laion400m_e32) - Fastest, less accurate<br>` +
-          `• Medium: ViT-L-14 (openai) - Balanced performance<br>` +
-          `• Large: ViT-H-14 (laion2b_s32b_b79k) - Most accurate`
-        );
-      } else {
-        showOverlayMessage("Error verifying CLIP model: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      showOverlayMessage("An error occurred while verifying CLIP model.");
     });
   }
 
+  // Save min tags function
   function saveMinTags() {
     var maxTags = document.getElementById('min_tags').value;
     if (!maxTags || isNaN(maxTags) || maxTags < 1) {
-      showOverlayMessage("Please enter a valid number (minimum 1)");
+      showToast("Please enter a valid number (minimum 1)", "warning");
       return;
     }
     var payload = {
       min_tags: parseInt(maxTags)
     };
-    showOverlayMessage("Updating maximum tags setting...", 1500);
+    showToast("Updating maximum tags setting...", "info", 1500);
     fetch("{{ url_for('settings.update_clip_model') }}", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -815,55 +956,121 @@
     .then(function(response) { return response.json(); })
     .then(function(data) {
       if (data.status === "success") {
-        showOverlayMessage("Maximum tags setting updated successfully to " + maxTags);
+        showToast("Maximum tags setting updated successfully to " + maxTags, "success");
       } else {
-        showOverlayMessage("Error updating maximum tags setting: " + data.message);
+        showToast("Error updating maximum tags setting: " + data.message, "danger");
       }
     })
     .catch(function(error) {
       console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating maximum tags setting.");
-    });
-  }
-  
-  function saveSimilarityThreshold() {
-    var threshold = document.getElementById('similarity_threshold').value;
-    if (!threshold) {
-      showOverlayMessage("Please select a relevance level");
-      return;
-    }
-    
-    var thresholdText = document.getElementById('similarity_threshold').options[document.getElementById('similarity_threshold').selectedIndex].text;
-    thresholdText = thresholdText.split(' - ')[0]; // Get just the level name
-    
-    var payload = {
-      similarity_threshold: threshold
-    };
-    
-    showOverlayMessage("Updating tag relevance level...", 1500);
-    fetch("{{ url_for('settings.update_clip_model') }}", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        showOverlayMessage("Tag relevance level updated successfully to " + thresholdText);
-      } else {
-        showOverlayMessage("Error updating tag relevance level: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating tag relevance level.");
+      showToast("An error occurred while updating maximum tags setting.", "danger");
     });
   }
 
+  // Save confidence threshold function
+  function saveConfidenceThreshold() {
+    var confidenceThreshold;
+    
+    // Get confidence value from the global slider
+    if (document.getElementById('confidence_threshold')) {
+      confidenceThreshold = parseFloat(document.getElementById('confidence_threshold').value);
+      // Update the hidden field to keep them in sync
+      document.getElementById('confidence_value').textContent = confidenceThreshold;
+    } else {
+      confidenceThreshold = parseFloat(document.getElementById('confidence_value').textContent);
+    }
+    
+    var payload = {
+      zero_shot_min_confidence: confidenceThreshold
+    };
+    
+    showToast("Updating confidence threshold...", "info", 1500);
+    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        showToast("Confidence threshold updated successfully to " + confidenceThreshold, "success");
+      } else {
+        showToast("Error updating confidence threshold: " + data.message, "danger");
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showToast("An error occurred while updating confidence threshold.", "danger");
+    });
+  }
+
+  // Save zero shot model function
+  function saveZeroShotModel() {
+    var modelSize = document.getElementById('zero_shot_model').value;
+    
+    // Create a payload that updates both zero-shot and CLIP models
+    var payload = {
+      zero_shot_model: modelSize
+    };
+    
+    // Map the zero-shot model size to the corresponding CLIP model
+    var clipModelMap = {
+      "small": "ViT-B-32",
+      "medium": "ViT-L-14",
+      "large": "ViT-H-14"
+    };
+    
+    // Add the CLIP model to the payload
+    var clipModel = clipModelMap[modelSize] || "ViT-B-32";
+    
+    showToast("Updating model selection...", "info", 1500);
+    
+    // First update the zero-shot model
+    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        // Now update the CLIP model to keep them in sync
+        return fetch("{{ url_for('settings.update_clip_model') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clip_model: clipModel })
+        });
+      } else {
+        throw new Error("Error updating zero-shot model: " + data.message);
+      }
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.status === "success") {
+        // Get a user-friendly model name
+        var modelNames = {
+          "small": "Small Model (Fastest)",
+          "medium": "Medium Model (Balanced)",
+          "large": "Large Model (Most Accurate)"
+        };
+        var modelName = modelNames[modelSize] || modelSize;
+        
+        showToast("Model selection updated successfully to " + modelName, "success");
+      } else {
+        showToast("Error updating CLIP model: " + data.message, "danger");
+      }
+    })
+    .catch(function(error) {
+      console.error("Error:", error);
+      showToast("An error occurred while updating model selection: " + error.message, "danger");
+    });
+  }
+
+  // Test tagging function
   function testTagging() {
     const fileInput = document.getElementById('testImageFile');
     if (!fileInput.files || fileInput.files.length === 0) {
-      showOverlayMessage("Please select an image file to test");
+      showToast("Please select an image file to test", "warning");
       return;
     }
     
@@ -1027,422 +1234,10 @@
     });
   }
 
-  function downloadCustomModel() {
-    var modelName = document.getElementById('custom_model_name').value.trim();
-    if (!modelName) {
-      showOverlayMessage("Please enter a model name");
-      return;
-    }
-    
-    // Show the download progress container
-    var progressContainer = document.getElementById('modelDownloadContainer');
-    var progressBar = document.getElementById('modelDownloadProgress');
-    var modelNameSpan = document.getElementById('modelDownloadName');
-    
-    progressContainer.style.display = 'block';
-    progressBar.style.width = '0%';
-    progressBar.textContent = '0%';
-    modelNameSpan.textContent = modelName;
-    
-    // Start the download
-    fetch("{{ url_for('settings.download_model') }}", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_name: modelName })
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        // Start polling for progress
-        var taskId = data.task_id;
-        var progressInterval = setInterval(function() {
-          checkDownloadProgress(taskId, progressBar, progressInterval);
-        }, 1000);
-      } else {
-        progressContainer.style.display = 'none';
-        showOverlayMessage("Error starting download: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      progressContainer.style.display = 'none';
-      showOverlayMessage("An error occurred while starting the download.");
-    });
-  }
-  
-  function checkDownloadProgress(taskId, progressBar, interval) {
-    fetch("{{ url_for('settings.download_progress', task_id='') }}" + taskId)
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-        if (data.status === "success") {
-          var progress = data.progress;
-          var percent = progress.progress;
-          var status = progress.status;
-          
-          // Update the progress bar
-          progressBar.style.width = percent + '%';
-          progressBar.textContent = percent + '%';
-          progressBar.setAttribute('aria-valuenow', percent);
-          
-          // Update status text with more details
-          var statusText = "";
-          if (status === "downloading") {
-            statusText = `Downloading (${percent}%)`;
-            if (progress.current_attempt) {
-              statusText += `: ${progress.current_attempt}`;
-            }
-          } else if (status === "finalizing") {
-            statusText = `Finalizing (${percent}%)`;
-          } else if (status === "starting") {
-            statusText = "Preparing download...";
-          }
-          
-          // Show current attempt info if available
-          document.getElementById('modelDownloadStatus').textContent = statusText;
-          
-          // If completed or error, stop polling
-          if (status === "completed") {
-            clearInterval(interval);
-            // Update progress bar to success style
-            progressBar.classList.remove('progress-bar-animated');
-            progressBar.classList.add('bg-success');
-            progressBar.textContent = "Download Complete!";
-            
-            // Show success message
-            document.getElementById('modelDownloadStatus').innerHTML =
-              '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Model downloaded successfully!</span>';
-            
-            // Update the custom model info
-            document.getElementById('custom_model_info').innerHTML =
-              '<p class="mb-0"><strong>Current custom model:</strong> ' + progress.model_name + '</p>';
-            
-            // Refresh the dropdown to include the new model
-            populateDownloadedModels();
-            
-            // Hide progress after a delay
-            setTimeout(function() {
-              document.getElementById('modelDownloadContainer').style.display = 'none';
-            }, 3000);
-            
-            // Show a success message
-            showOverlayMessage(`<div class="text-center">
-              <i class="bi bi-check-circle-fill text-success fs-1"></i>
-              <h5 class="mt-2">Model Downloaded Successfully!</h5>
-              <p>The model "${progress.model_name}" is now available for use.</p>
-            </div>`);
-          } else if (status === "error") {
-            clearInterval(interval);
-            // Update progress bar to error style
-            progressBar.classList.remove('progress-bar-animated');
-            progressBar.classList.add('bg-danger');
-            
-            // Show error in status
-            document.getElementById('modelDownloadStatus').innerHTML =
-              '<span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> ' +
-              (progress.error || "Unknown error") + '</span>';
-            
-            // Hide progress after a delay
-            setTimeout(function() {
-              document.getElementById('modelDownloadContainer').style.display = 'none';
-            }, 5000);
-            
-            // Show error message
-            showOverlayMessage(`<div class="text-center">
-              <i class="bi bi-exclamation-triangle-fill text-danger fs-1"></i>
-              <h5 class="mt-2">Download Failed</h5>
-              <p>${progress.error || "Unknown error"}</p>
-              <p class="text-muted small">Try a different model or check the logs for more details.</p>
-            </div>`);
-          }
-        } else {
-          // If task not found, it might have completed and been removed
-          clearInterval(interval);
-          document.getElementById('modelDownloadContainer').style.display = 'none';
-        }
-      })
-      .catch(function(error) {
-        console.error("Error checking progress:", error);
-        // Don't clear the interval on network errors, keep trying
-      });
-  }
-  
-  function saveConfidenceThreshold() {
-    var confidenceThreshold;
-    
-    // Get confidence value from the global slider
-    if (document.getElementById('confidence_threshold')) {
-      confidenceThreshold = parseFloat(document.getElementById('confidence_threshold').value);
-      // Update the hidden field to keep them in sync
-      document.getElementById('confidence_value').textContent = confidenceThreshold;
-    } else {
-      confidenceThreshold = parseFloat(document.getElementById('confidence_value').textContent);
-    }
-    
-    var payload = {
-      zero_shot_min_confidence: confidenceThreshold
-    };
-    
-    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        showOverlayMessage("Confidence threshold updated successfully");
-      } else {
-        showOverlayMessage("Error updating confidence threshold: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating confidence threshold.");
-    });
-  }
-  
-  function saveZeroShotModel() {
-    var modelSize = document.getElementById('zero_shot_model').value;
-    
-    // Create a payload that updates both zero-shot and CLIP models
-    var payload = {
-      zero_shot_model: modelSize
-    };
-    
-    // Map the zero-shot model size to the corresponding CLIP model
-    var clipModelMap = {
-      "small": "ViT-B-32",
-      "medium": "ViT-L-14",
-      "large": "ViT-H-14"
-    };
-    
-    // Add the CLIP model to the payload
-    var clipModel = clipModelMap[modelSize] || "ViT-B-32";
-    
-    showOverlayMessage("Updating model selection...", 1500);
-    
-    // First update the zero-shot model
-    fetch("{{ url_for('zero_shot.update_zero_shot_settings') }}", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        // Now update the CLIP model to keep them in sync
-        return fetch("{{ url_for('settings.update_clip_model') }}", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clip_model: clipModel })
-        });
-      } else {
-        throw new Error("Error updating zero-shot model: " + data.message);
-      }
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.status === "success") {
-        // Get a user-friendly model name
-        var modelNames = {
-          "small": "Small Model (Fastest)",
-          "medium": "Medium Model (Balanced)",
-          "large": "Large Model (Most Accurate)"
-        };
-        var modelName = modelNames[modelSize] || modelSize;
-        
-        showOverlayMessage("Model selection updated successfully to " + modelName);
-      } else {
-        showOverlayMessage("Error updating CLIP model: " + data.message);
-      }
-    })
-    .catch(function(error) {
-      console.error("Error:", error);
-      showOverlayMessage("An error occurred while updating model selection: " + error.message);
-    });
-  }
-  
-  // RAM model download function has been removed
-  
-  // Function to filter models in the available models list
-  function filterModels() {
-    var input = document.getElementById('modelSearchInput');
-    var filter = input.value.toUpperCase();
-    var badges = document.querySelectorAll('.model-badge');
-    var groups = document.querySelectorAll('.model-group');
-    
-    badges.forEach(function(badge) {
-      var model = badge.getAttribute('data-model');
-      if (model.toUpperCase().indexOf(filter) > -1) {
-        badge.style.display = "";
-      } else {
-        badge.style.display = "none";
-      }
-    });
-    
-    // Show/hide groups based on whether they have any visible badges
-    groups.forEach(function(group) {
-      var visibleBadges = group.querySelectorAll('.model-badge[style="display: none;"]');
-      var totalBadges = group.querySelectorAll('.model-badge');
-      if (visibleBadges.length < totalBadges.length) {
-        group.style.display = "";
-      } else {
-        group.style.display = "none";
-      }
-    });
-  }
-  
-  function showAvailableModels() {
-    fetch("{{ url_for('settings.list_available_models') }}")
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-        if (data.status === "success") {
-          var modelList = "<h4>Available Models</h4><p>These are the models that can be downloaded. Click on a model to select it.</p>";
-          
-          // Group models by type for better organization
-          var modelGroups = {};
-          data.models.forEach(function(model) {
-            var prefix = model.split('-')[0];
-            if (!modelGroups[prefix]) {
-              modelGroups[prefix] = [];
-            }
-            modelGroups[prefix].push(model);
-          });
-          
-          // Create a list with collapsible sections and search
-          modelList += `
-            <div class="mb-3">
-              <input type="text" id="modelSearchInput" class="form-control" placeholder="Search models..." onkeyup="filterModels()">
-            </div>
-            <div id="modelListContainer" style='max-height: 500px; overflow-y: auto;'>
-          `;
-          
-          // Sort prefixes alphabetically
-          var sortedPrefixes = Object.keys(modelGroups).sort();
-          
-          for (var i = 0; i < sortedPrefixes.length; i++) {
-            var prefix = sortedPrefixes[i];
-            var models = modelGroups[prefix].sort(); // Sort models alphabetically
-            
-            modelList += `
-              <div class="card mb-3 model-group" data-prefix="${prefix}">
-                <div class="card-header" id="heading${prefix}">
-                  <h5 class="mb-0">
-                    <button class="btn btn-link" type="button" data-toggle="collapse" data-target="#collapse${prefix}" aria-expanded="true" aria-controls="collapse${prefix}">
-                      ${prefix} Models (${models.length})
-                    </button>
-                  </h5>
-                </div>
-                <div id="collapse${prefix}" class="collapse show" aria-labelledby="heading${prefix}">
-                  <div class="card-body">
-                    <div class="d-flex flex-wrap">
-            `;
-            
-            models.forEach(function(model) {
-              modelList += `<span class="badge bg-primary model-badge" style="cursor: pointer; margin: 5px; padding: 8px;" onclick="selectModel('${model}')" data-model="${model}">${model}</span>`;
-            });
-            
-            modelList += `
-                    </div>
-                  </div>
-                </div>
-              </div>
-            `;
-          }
-          
-          modelList += "</div>";
-          
-          modelList += `
-            <p class='text-muted mt-3'>
-              <strong>Note:</strong> Not all models may be compatible. If a model fails to download, try another one.<br>
-              Recommended models: ViT-B-32, ViT-B-16, RN50
-            </p>
-          `;
-          
-          showOverlayMessage(modelList);
-          
-          // Initialize collapse functionality
-          var collapseBtns = document.querySelectorAll('[data-toggle="collapse"]');
-          collapseBtns.forEach(function(btn) {
-            btn.addEventListener('click', function() {
-              var target = document.querySelector(btn.getAttribute('data-target'));
-              if (target.classList.contains('show')) {
-                target.classList.remove('show');
-              } else {
-                target.classList.add('show');
-              }
-            });
-          });
-          
-        } else {
-          showOverlayMessage("Error listing available models: " + data.message);
-        }
-      })
-      .catch(function(error) {
-        console.error("Error:", error);
-        showOverlayMessage("An error occurred while listing available models.");
-      });
-  }
-  
-  function selectModel(model) {
-    document.getElementById('custom_model_name').value = model;
-    // Close any open overlay
-    var overlays = document.getElementsByClassName('overlay-popup');
-    if (overlays.length > 0) {
-      overlays[0].remove();
-    }
-  }
-  
-  function deleteModel(modelName) {
-    showConfirmOverlay(
-      `Are you sure you want to delete the model "${modelName}"?`,
-      function() {
-        fetch("{{ url_for('settings.delete_model') }}", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: modelName })
-        })
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          if (data.status === "success") {
-            // Check if this was the last model
-            fetch("{{ url_for('settings.list_custom_models') }}")
-              .then(function(response) { return response.json(); })
-              .then(function(modelData) {
-                if (modelData.status === "success") {
-                  // Close any open overlays
-                  var overlays = document.getElementsByClassName('overlay-popup');
-                  for (var i = overlays.length - 1; i >= 0; i--) {
-                    overlays[i].remove();
-                  }
-                  
-                  // Show success message
-                  showOverlayMessage("Model deleted successfully");
-                  
-                  // Model listing removed - models are now included in the Docker image
-                  
-                  // Model refresh removed - models are now included in the Docker image
-                }
-              });
-          } else {
-            showOverlayMessage("Error deleting model: " + data.message);
-          }
-        })
-        .catch(function(error) {
-          console.error("Error:", error);
-          showOverlayMessage("An error occurred while deleting the model.");
-        });
-      }
-    );
-  }
-
-  // The listCustomModels function has been removed - models are now included in the Docker image
-  
-  // Models are now included in the Docker image, so custom model functions have been removed
-  
+  // Rerun all tagging function
   function rerunAllTagging() {
-    showConfirmOverlay(
-      "<strong>Warning:</strong> This will rerun tagging on all images and will <span style='color: red;'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",
+    showConfirmationDialog(
+      "<strong>Warning:</strong> This will rerun tagging on all images and will <span class='text-danger'>remove all existing tags</span>. The system will generate new tags based on your current settings.<br><br>This may take some time depending on the number of images. Continue?",
       function() {
         fetch("{{ url_for('settings.rerun_all_tagging') }}", {
           method: 'POST'
@@ -1450,82 +1245,57 @@
         .then(function(response) { return response.json(); })
         .then(function(data) {
           if (data.status === "success") {
-            showOverlayMessage("Tagging process started! This will run in the background.");
-            document.getElementById('clipSettingsModal').style.display = 'none';
+            showToast("Tagging process started! This will run in the background.", "success");
+            bootstrap.Modal.getInstance(document.getElementById('clipSettingsModal')).hide();
           } else {
-            showOverlayMessage("Error starting tagging process: " + data.message);
+            showToast("Error starting tagging process: " + data.message, "danger");
           }
         })
         .catch(function(error) {
           console.error("Error:", error);
-          showOverlayMessage("An error occurred while starting the tagging process.");
+          showToast("An error occurred while starting the tagging process.", "danger");
         });
       }
     );
   }
+</script>
+{% endblock %}
 
-  function fetchDisplayInfo(mode) {
-    return new Promise(function(resolve, reject) {
-      if (mode === 'new') {
-        var addressInput = document.getElementById('newAddress');
-        var address = addressInput.value.trim();
-        if (!address) {
-          alert("Please enter the device address.");
-          reject("No address provided");
-          return;
-        }
-        // Create an AbortController for timeout handling
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        fetch("/device_info?address=" + encodeURIComponent(address), {
-          signal: controller.signal
-        })
-          .then(function(response) {
-            if (!response.ok) {
-              throw new Error("HTTP error " + response.status);
-            }
-            return response.json();
-          })
-          .then(function(data) {
-            if (data.status === "ok") {
-              document.getElementById('newDisplayName').value = data.info.display_name;
-              document.getElementById('newResolution').value = data.info.resolution;
-              var availableColors = ['#FF5733', '#33FF57', '#3357FF', '#F39C12', '#8E44AD', '#2ECC71', '#E74C3C'];
-              var randomColor = availableColors[Math.floor(Math.random() * availableColors.length)];
-              document.getElementById('newColor').value = randomColor;
-              resolve();
-            } else {
-              alert("Error fetching display info: " + data.message + "; using default values.");
-              document.getElementById('newDisplayName').value = "DefaultDisplay";
-              document.getElementById('newResolution').value = "800x600";
-              document.getElementById('newColor').value = "#FF5733";
-              resolve();
-            }
-          })
-          .catch(function(error) {
-            console.error("Error fetching display info:", error);
-            let errorMessage = "Error fetching display info";
-            
-            if (error.name === 'AbortError') {
-              errorMessage += ": Request timed out";
-            }
-            
-            alert(errorMessage + "; using default values.");
-            document.getElementById('newDisplayName').value = "DefaultDisplay";
-            document.getElementById('newResolution').value = "800x600";
-            document.getElementById('newColor').value = "#FF5733";
-            resolve();
-          })
-          .finally(() => {
-            // Clear the timeout to prevent memory leaks
-            clearTimeout(timeoutId);
-          });
-      } else if (mode === 'edit') {
-        alert("Fetch Display Info for edit is not implemented yet.");
-        resolve();
+<!-- JavaScript for the settings page -->
+<script>
+  // Apply colors to the device color indicators - using inline style now for reliability
+  function applyDeviceColors() {
+    const colorIndicators = document.querySelectorAll('.device-color-indicator');
+    colorIndicators.forEach(indicator => {
+      const color = indicator.getAttribute('data-color');
+      if (color) {
+        indicator.style.backgroundColor = color;
       }
     });
   }
+
+  // Initial application of colors
+  document.addEventListener('DOMContentLoaded', function() {
+    applyDeviceColors();
+    // Also apply colors after table updates
+    setInterval(applyDeviceColors, 2000);
+  });
+  
+  // Function to open advanced modal - Defined directly in the page for reliability
+  function openAdvancedModal(index, friendlyName) {
+    const titleElement = document.getElementById('advancedDeviceTitle');
+    const modal = document.getElementById('advancedActionsModal');
+    
+    if (titleElement) {
+      titleElement.textContent = "Advanced Actions for " + friendlyName;
+    }
+    
+    if (modal) {
+      modal.setAttribute('data-device-index', index);
+      
+      // Show the modal
+      const modalInstance = new bootstrap.Modal(modal);
+      modalInstance.show();
+    }
+  }
 </script>
-{% endblock %}

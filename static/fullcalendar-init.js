@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   if (typeof FullCalendar !== 'undefined') {
     const calendar = new FullCalendar.Calendar(calendarEl, {
-      initialView: 'dayGridMonth',
+      initialView: 'timeGridWeek',
       firstDay: 1,  // Monday
       headerToolbar: {
         left: '',
@@ -26,7 +26,13 @@ document.addEventListener('DOMContentLoaded', function() {
       dateClick: handleDateClick,
       eventDrop: handleEventDrop,
       select: handleDateSelect,
-      events: '/schedule/events'
+      events: '/schedule/events',
+      // Set time grid to start at 6:00 AM
+      slotMinTime: '06:00:00',
+      scrollTime: '06:00:00',
+      // Allow scrolling to earlier times if needed
+      slotLabelInterval: '01:00:00',
+      allDaySlot: true
     });
     
     calendar.render();

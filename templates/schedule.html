@@ -600,6 +600,34 @@
   </div>
 </div>
 
+<!-- Move Recurring Event Modal -->
+<div class="modal fade" id="moveRecurringModal" tabindex="-1" aria-labelledby="moveRecurringModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="moveRecurringModalLabel">Move Recurring Event</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>This is a recurring event. Would you like to:</p>
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-outline-primary" id="moveOccurrenceBtn">
+            <i class="bi bi-calendar-event me-2"></i>
+            Move this occurrence only
+          </button>
+          <button type="button" class="btn btn-primary" id="moveSeriesBtn">
+            <i class="bi bi-calendar2-event me-2"></i>
+            Move the entire series
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="cancelMoveBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Image Gallery Modal -->
 <div class="modal fade" id="imageGalleryModal" tabindex="-1" aria-labelledby="imageGalleryModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl">
@@ -665,15 +693,17 @@
     // Initialize Modals
     const eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
     const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    const moveRecurringModal = new bootstrap.Modal(document.getElementById('moveRecurringModal'));
     const imageGalleryModal = new bootstrap.Modal(document.getElementById('imageGalleryModal'));
     const screenshotGalleryModal = new bootstrap.Modal(document.getElementById('screenshotGalleryModal'));
     
-    // Track current event being deleted
+    // Track current event being deleted or moved
     let currentDeleteEventId = null;
+    let currentMoveEventInfo = null;
     // Initialize the calendar
     const calendarEl = document.getElementById('calendar');
     const calendar = new FullCalendar.Calendar(calendarEl, {
-      initialView: 'dayGridMonth',
+      initialView: 'timeGridWeek',
       firstDay: 1,  // Monday
       headerToolbar: {
         left: '',
@@ -695,7 +725,13 @@
       dateClick: handleDateClick,
       eventDrop: handleEventDrop,
       select: handleDateSelect,
-      events: '/schedule/events'
+      events: '/schedule/events',
+      // Set time grid to start at 6:00 AM
+      slotMinTime: '06:00:00',
+      scrollTime: '06:00:00',
+      // Allow scrolling to earlier times if needed
+      slotLabelInterval: '01:00:00',
+      allDaySlot: true
     });
     
     calendar.render();
@@ -718,11 +754,11 @@
     });
     
     document.getElementById('weekButton').addEventListener('click', function() {
-      calendar.changeView('dayGridWeek');
+      calendar.changeView('timeGridWeek');
     });
     
     document.getElementById('dayButton').addEventListener('click', function() {
-      calendar.changeView('dayGridDay');
+      calendar.changeView('timeGridDay');
     });
     
     // Add event button handler
@@ -773,23 +809,128 @@
       const newDate = info.event.start;
       const isoString = newDate.toISOString();
       
-      // Get the actual event ID (parent ID for recurring events)
+      // Check if this is a recurring event
+      const isRecurring = info.event.extendedProps.isRecurring || (info.event.extendedProps.recurrence && info.event.extendedProps.recurrence !== 'none');
       const eventId = info.event.extendedProps.parentEventId || info.event.id;
+      const originalEventId = info.event.id; // Keep track of the specific occurrence ID for recurring events
+      
+      // If it's a recurring event, prompt user for move options
+      if (isRecurring) {
+        // Store event info for the modal handlers
+        currentMoveEventInfo = {
+          eventId: eventId,
+          originalEventId: originalEventId,
+          newDate: isoString,
+          info: info // Keep the original info object to revert if needed
+        };
+        
+        // Show the move recurring modal
+        moveRecurringModal.show();
+      } else {
+        // For non-recurring events, update directly
+        updateEvent(eventId, isoString, null, info);
+      }
+    }
+    
+    // Handle moving a single occurrence of a recurring event
+    function handleMoveOccurrence() {
+      if (!currentMoveEventInfo) return;
+      
+      // For a single occurrence, we create a new event at the new time
+      // and mark the original occurrence as skipped in the recurring pattern
+      fetch("/schedule/skip/" + currentMoveEventInfo.originalEventId, { method: "POST" })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === "success") {
+          // Now create a new non-recurring event at the new time
+          const eventData = calendar.getEventById(currentMoveEventInfo.originalEventId);
+          if (eventData) {
+            // Create a single-occurrence copy at the new time
+            fetch("/schedule/add", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                datetime: currentMoveEventInfo.newDate,
+                device: eventData.extendedProps.device || eventData.extendedProps.deviceName,
+                filename: eventData.extendedProps.currentFilename || eventData.extendedProps.filename,
+                recurrence: "none", // Make it a one-time event
+                refresh_screenshot: eventData.extendedProps.refreshScreenshot
+              })
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.status === "success") {
+                showToast("Event occurrence moved successfully");
+                refreshEvents();
+              } else {
+                showToast("Error creating new event: " + data.message, true);
+                currentMoveEventInfo.info.revert();
+              }
+            })
+            .catch(err => {
+              console.error("Error creating new event:", err);
+              showToast("Error moving occurrence", true);
+              currentMoveEventInfo.info.revert();
+            });
+          } else {
+            showToast("Error: Could not find event data", true);
+            currentMoveEventInfo.info.revert();
+          }
+        } else {
+          showToast("Error skipping original occurrence: " + data.message, true);
+          currentMoveEventInfo.info.revert();
+        }
+        moveRecurringModal.hide();
+      })
+      .catch(err => {
+        console.error("Error skipping occurrence:", err);
+        showToast("Error moving occurrence", true);
+        currentMoveEventInfo.info.revert();
+        moveRecurringModal.hide();
+      });
+    }
+    
+    // Handle moving the entire recurring series
+    function handleMoveSeries() {
+      if (!currentMoveEventInfo) return;
+      
+      // Move the entire series by updating the parent event
+      updateEvent(currentMoveEventInfo.eventId, currentMoveEventInfo.newDate, null, currentMoveEventInfo.info);
+      moveRecurringModal.hide();
+    }
+    
+    // Cancel move and revert to original position
+    function handleCancelMove() {
+      if (currentMoveEventInfo && currentMoveEventInfo.info) {
+        currentMoveEventInfo.info.revert();
+      }
+      moveRecurringModal.hide();
+    }
+    
+    // Common event update function
+    function updateEvent(eventId, newDate, additionalData, infoForRevert) {
+      // Create request data
+      const requestData = {
+        event_id: eventId,
+        datetime: newDate
+      };
+      
+      // Add any additional data if provided
+      if (additionalData) {
+        Object.assign(requestData, additionalData);
+      }
       
       // Update event on the server
       fetch("/schedule/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_id: eventId,
-          datetime: isoString
-        })
+        body: JSON.stringify(requestData)
       })
       .then(response => response.json())
       .then(data => {
         if (data.status !== "success") {
           showToast("Error updating event: " + data.message, true);
-          info.revert();
+          if (infoForRevert) infoForRevert.revert();
         } else {
           showToast("Event updated successfully");
           refreshEvents();
@@ -798,7 +939,7 @@
       .catch(err => {
         console.error("Error updating event:", err);
         showToast("Error updating event", true);
-        info.revert();
+        if (infoForRevert) infoForRevert.revert();
       });
     }
     
@@ -1116,6 +1257,11 @@
       // Delete event handlers
       document.getElementById('deleteOccurrenceBtn').addEventListener('click', handleDeleteOccurrence);
       document.getElementById('deleteSeriesBtn').addEventListener('click', handleDeleteSeries);
+      
+      // Move recurring event handlers
+      document.getElementById('moveOccurrenceBtn').addEventListener('click', handleMoveOccurrence);
+      document.getElementById('moveSeriesBtn').addEventListener('click', handleMoveSeries);
+      document.getElementById('cancelMoveBtn').addEventListener('click', handleCancelMove);
       
       // Recurrence pattern change handler
       document.getElementById('recurrencePattern').addEventListener('change', updateRecurrenceOptions);

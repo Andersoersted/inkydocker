@@ -744,24 +744,40 @@ def send_scheduled_image(event_id):
                             ))
                             
                             current_app.logger.info(f"Screenshot refreshed successfully: {filepath}")
-                            
-                            # Copy crop info from old screenshot to new one
+                            # Copy crop info from old screenshot to new one for all devices
                             from models import ScreenshotCropInfo
-                            old_crop_info = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
-                            if old_crop_info:
-                                current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename}")
-                                # Check if crop info already exists for the new filename
-                                new_crop_info = ScreenshotCropInfo.query.filter_by(filename=new_filename).first()
-                                if not new_crop_info:
-                                    new_crop_info = ScreenshotCropInfo(filename=new_filename)
-                                    db.session.add(new_crop_info)
+                            old_crop_infos = ScreenshotCropInfo.query.filter_by(filename=event.filename).all()
+                            
+                            if old_crop_infos:
+                                current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename} for {len(old_crop_infos)} devices")
                                 
-                                # Copy all crop data
-                                new_crop_info.x = old_crop_info.x
-                                new_crop_info.y = old_crop_info.y
-                                new_crop_info.width = old_crop_info.width
-                                new_crop_info.height = old_crop_info.height
-                                new_crop_info.resolution = old_crop_info.resolution
+                                for old_crop_info in old_crop_infos:
+                                    device_address = old_crop_info.device_address
+                                    
+                                    # Check if crop info already exists for this device and the new filename
+                                    new_crop_info = ScreenshotCropInfo.query.filter_by(
+                                        filename=new_filename,
+                                        device_address=device_address
+                                    ).first()
+                                    
+                                    if not new_crop_info:
+                                        # Create new crop info for this device
+                                        new_crop_info = ScreenshotCropInfo(
+                                            filename=new_filename,
+                                            device_address=device_address
+                                        )
+                                        db.session.add(new_crop_info)
+                                    
+                                    # Copy all crop data
+                                    new_crop_info.x = old_crop_info.x
+                                    new_crop_info.y = old_crop_info.y
+                                    new_crop_info.width = old_crop_info.width
+                                    new_crop_info.height = old_crop_info.height
+                                    new_crop_info.resolution = old_crop_info.resolution
+                                
+                                # Commit all changes at once
+                                db.session.commit()
+                                current_app.logger.info(f"Successfully copied all device-specific crop data to {new_filename}")
                                 db.session.commit()
                             
                             # Update the screenshot record in the database
@@ -786,26 +802,42 @@ def send_scheduled_image(event_id):
             current_app.logger.info(f"[SCHEDULED-{send_id}] Sending image {event.filename} to device {device_obj.friendly_name}")
             
             try:
-                # Use curl to send the image as it's proven to work reliably with e-ink displays
-                # First, make sure the URL doesn't have any query parameters
-                base_url = url.split('?')[0]
+                # Define the required variables to prevent NameError
+                # Device address for error logging and output
+                addr = device_obj.address
+                
+                # We're not using an external URL here - we're using the curl command with our local endpoint
+                # So we don't need to split a URL, but we'll keep this variable for logging
+                url = f"http://localhost/send_image (internal endpoint)"
                 
                 # Add verbose diagnostic logging
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Image properties: temp_file={temp_filename}")
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Target device: {device_obj.friendly_name} at {addr}")
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Using URL: {base_url}")
+                current_app.logger.info(f"[SCHEDULED-{send_id}] Using endpoint: {url}")
                 
-                # Get the file size for logging
-                file_size = os.path.getsize(temp_filename)
-                current_app.logger.info(f"[SCHEDULED-{send_id}] File size: {file_size} bytes")
+                # Get image path for verification
+                if event.filename.startswith("screenshot_"):
+                    # For screenshots, use the screenshots folder
+                    screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
+                    image_path = os.path.join(screenshots_folder, event.filename)
+                else:
+                    # For regular images, use the images folder
+                    image_folder = current_app.config.get('IMAGE_FOLDER', './images')
+                    image_path = os.path.join(image_folder, event.filename)
                 
-                # Verify the image with Pillow to ensure it's not corrupted
-                try:
-                    with Image.open(temp_filename) as verify_img:
-                        current_app.logger.info(f"[SCHEDULED-{send_id}] Image verification: format={verify_img.format}, size={verify_img.size}, mode={verify_img.mode}")
-                except Exception as e:
-                    current_app.logger.error(f"[SCHEDULED-{send_id}] Image verification failed: {e}")
-                    return f"Error with processed image: {e}", 500
+                # Get the file size for logging if the file exists
+                if os.path.exists(image_path):
+                    file_size = os.path.getsize(image_path)
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] File size: {file_size} bytes")
+                    
+                    # Verify the image with Pillow to ensure it's not corrupted
+                    try:
+                        with Image.open(image_path) as verify_img:
+                            current_app.logger.info(f"[SCHEDULED-{send_id}] Image verification: format={verify_img.format}, size={verify_img.size}, mode={verify_img.mode}")
+                    except Exception as e:
+                        current_app.logger.error(f"[SCHEDULED-{send_id}] Image verification failed: {e}")
+                        return f"Error with processed image: {e}", 500
+                else:
+                    current_app.logger.error(f"[SCHEDULED-{send_id}] Image file not found: {image_path}")
                     
                 # Instead of directly sending to the device, let's use the server's '/send_image' endpoint
                 # This ensures proper cropping and resizing is applied consistently
@@ -904,13 +936,9 @@ def send_scheduled_image(event_id):
                     f.write(f"URL: {url}\n")
                     f.write(f"Error: {str(e)}\n")
                 return
-            
-            # Delete the temporary file after sending
-            try:
-                os.remove(temp_filename)
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file deleted: {temp_filename}")
-            except Exception as e:
-                current_app.logger.error(f"[SCHEDULED-{send_id}] Error deleting temporary file: {e}")
+            # No temporary file to delete in this implementation
+            # We directly send the file from its storage location
+            current_app.logger.info(f"[SCHEDULED-{send_id}] No temporary files to clean up")
             
             # If we reach this point, it means the request was successful (status code 200)
             current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
