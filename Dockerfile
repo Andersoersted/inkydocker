@@ -149,8 +149,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Create necessary directories for the database and model cache
-RUN mkdir -p /data /app/data/model_cache /app/data/ram_models
+# Create necessary directories for the database, model cache, and static files
+RUN mkdir -p /data /app/data/model_cache /app/data/ram_models /app/static/css /app/static/js
 
 # Set working directory
 WORKDIR /app

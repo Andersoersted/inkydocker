@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 db = SQLAlchemy()
@@ -134,3 +134,62 @@ class UserConfig(db.Model):
     zero_shot_model = db.Column(db.String(256), default="facebook/bart-large-mnli")  # Zero shot model name
     zero_shot_min_confidence = db.Column(db.Float, default=0.5)  # Confidence threshold for zero shot classification
     ram_model = db.Column(db.String(256), default="facebook/ram-14b")  # RAM model name
+
+class Notification(db.Model):
+    """
+    Model for storing system notifications with automatic 30-day expiry.
+    """
+    __tablename__ = 'notifications'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    message = db.Column(db.String(512), nullable=False)
+    type = db.Column(db.String(20), nullable=False, default='info')  # info, success, warning, error
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime)
+    
+    def __init__(self, message, type='info', is_read=False):
+        self.message = message
+        self.type = type
+        self.is_read = is_read
+        self.created_at = datetime.utcnow()
+        # Set expiration to 30 days from creation
+        self.expires_at = self.created_at + timedelta(days=30)
+    
+    def __repr__(self):
+        return f"<Notification {self.id}: {self.type} - {self.message[:30]}...>"
+    
+    @classmethod
+    def create(cls, message, type='info'):
+        """Create a new notification"""
+        notification = cls(message=message, type=type)
+        db.session.add(notification)
+        db.session.commit()
+        return notification
+    
+    @classmethod
+    def get_active(cls, include_read=False):
+        """Get all non-expired notifications"""
+        query = cls.query.filter(cls.expires_at > datetime.utcnow())
+        if not include_read:
+            query = query.filter_by(is_read=False)
+        return query.order_by(cls.created_at.desc()).all()
+    
+    @classmethod
+    def mark_as_read(cls, notification_id):
+        """Mark a notification as read"""
+        notification = cls.query.get(notification_id)
+        if notification:
+            notification.is_read = True
+            db.session.commit()
+            return True
+        return False
+    
+    @classmethod
+    def delete_expired(cls):
+        """Delete all expired notifications"""
+        expired = cls.query.filter(cls.expires_at <= datetime.utcnow()).all()
+        for notification in expired:
+            db.session.delete(notification)
+        db.session.commit()
+        return len(expired)

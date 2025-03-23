@@ -221,7 +221,7 @@ def load_scheduled_events(app):
 def start_scheduler(app):
     """Start the APScheduler with the Flask app context."""
     with app.app_context():
-        from tasks import fetch_device_metrics
+        from tasks import fetch_device_metrics, cleanup_expired_notifications
         
         # Schedule device metrics check
         scheduler.add_job(
@@ -237,6 +237,14 @@ def start_scheduler(app):
             'interval',
             seconds=60,
             id='check_for_new_events'
+        )
+        
+        # Schedule cleanup of expired notifications
+        scheduler.add_job(
+            cleanup_expired_notifications,
+            'interval',
+            hours=12,  # Run twice a day
+            id='cleanup_expired_notifications'
         )
         
         # Initial load of scheduled events

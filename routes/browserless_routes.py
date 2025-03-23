@@ -17,6 +17,19 @@ import open_clip
 from PIL import Image
 import io
 
+# Function to log when images are sent to devices
+def add_send_log_entry(filename):
+    """
+    Add a log entry when an image is sent to a device.
+    This is a simplified version that just logs to the application logger.
+    """
+    try:
+        current_app.logger.info(f"Image sent: {filename} at {datetime.utcnow()}")
+        # In a future implementation, this could write to a database table
+    except Exception as e:
+        current_app.logger.error(f"Failed to add send log entry: {str(e)}")
+        # Do not raise the exception to avoid breaking the main flow
+
 # Create blueprint
 browserless_bp = Blueprint('browserless', __name__)
 
@@ -1141,4 +1154,5 @@ def send_screenshot(filename):
             return jsonify({"status": "error", "message": f"Error sending image: {str(e)}"}), 500
     except Exception as e:
         current_app.logger.error(f"Error processing screenshot: {str(e)}")
+        return jsonify({"status": "error", "message": f"Error processing screenshot: {str(e)}"}), 500
         return jsonify({"status": "error", "message": f"Error processing screenshot: {str(e)}"}), 500

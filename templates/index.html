@@ -1404,4 +1404,7 @@ document.getElementById('cropModal').addEventListener('shown.bs.modal', function
   }, 300);
 });
 </script>
+
+<!-- Add device-specific crop functionality -->
+<script src="{{ url_for('static', filename='device_crop.js') }}"></script>
 {% endblock %}

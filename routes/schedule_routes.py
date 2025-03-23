@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from models import db, ScheduleEvent, Device, ImageDB, Screenshot
+from utils.notification_service import NotificationService, notify_on_completion
 import datetime
 import json
 import pytz
@@ -315,8 +316,12 @@ def get_last_weekday_of_month(year, month, weekday):
         return None
     
     return date
-
 @schedule_bp.route('/schedule/add', methods=['POST'])
+@notify_on_completion(
+    message_start="Creating scheduled event...",
+    message_success="Event successfully scheduled",
+    message_error="Error creating scheduled event: {error}"
+)
 def add_event():
     """Add a new scheduled event."""
     data = request.get_json()
@@ -386,6 +391,10 @@ def add_event():
         return jsonify({"status": "error", "message": f"Error creating event: {str(e)}"}), 400
 
 @schedule_bp.route('/schedule/remove/<int:event_id>', methods=['POST'])
+@notify_on_completion(
+    message_success="Scheduled event successfully removed",
+    message_error="Error removing scheduled event: {error}"
+)
 def remove_event(event_id):
     """Remove a scheduled event."""
     ev = ScheduleEvent.query.get(event_id)
@@ -402,6 +411,11 @@ def remove_event(event_id):
     return jsonify({"status": "success"})
 
 @schedule_bp.route('/schedule/update', methods=['POST'])
+@notify_on_completion(
+    message_start="Updating scheduled event...",
+    message_success="Scheduled event successfully updated",
+    message_error="Error updating scheduled event: {error}"
+)
 def update_event():
     """Update a scheduled event."""
     data = request.get_json()

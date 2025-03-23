@@ -1,0 +1,165 @@
+/* Notification Styles */
+
+/* Bell icon badge */
+.notification-badge {
+    position: relative;
+    display: inline-block;
+}
+
+.notification-badge .badge {
+    position: absolute;
+    top: -5px;
+    right: -10px;
+    padding: 3px 6px;
+    border-radius: 50%;
+    background-color: #dc3545;
+    color: white;
+    font-size: 0.6rem;
+}
+
+/* Notification center */
+.notification-center {
+    width: 350px;
+    max-width: 100%;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Custom toast styles */
+.toast-container {
+    z-index: 9999;
+}
+
+.notification-toast {
+    min-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slide-in 0.3s ease-out;
+}
+
+.notification-toast.info {
+    border-left: 4px solid #0d6efd;
+}
+
+.notification-toast.success {
+    border-left: 4px solid #198754;
+}
+
+.notification-toast.warning {
+    border-left: 4px solid #ffc107;
+}
+
+.notification-toast.error {
+    border-left: 4px solid #dc3545;
+}
+
+/* Notification item in the notification center */
+.notification-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+}
+
+.notification-item:hover {
+    background-color: #f8f9fa;
+}
+
+.notification-item.unread {
+    background-color: #f0f8ff;
+}
+
+.notification-item.unread:hover {
+    background-color: #e6f3ff;
+}
+
+.notification-item .notification-time {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.notification-item .notification-message {
+    margin-bottom: 5px;
+}
+
+.notification-center .notification-header {
+    padding: 10px 15px;
+    border-bottom: 1px solid #ddd;
+    background-color: #f8f9fa;
+}
+
+.notification-center .notification-body {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.notification-center .notification-footer {
+    padding: 10px 15px;
+    border-top: 1px solid #ddd;
+    background-color: #f8f9fa;
+    text-align: center;
+}
+
+/* Empty state */
+.notification-empty {
+    padding: 30px;
+    text-align: center;
+    color: #6c757d;
+}
+
+/* Animations */
+@keyframes slide-in {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.notification-item.info {
+    border-left: 4px solid #0d6efd;
+}
+
+.notification-item.success {
+    border-left: 4px solid #198754;
+}
+
+.notification-item.warning {
+    border-left: 4px solid #ffc107;
+}
+
+.notification-item.error {
+    border-left: 4px solid #dc3545;
+}
+
+/* Notification icon styles */
+.notification-icon {
+    margin-right: 10px;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.notification-icon.info {
+    background-color: #cfe2ff;
+    color: #0d6efd;
+}
+
+.notification-icon.success {
+    background-color: #d1e7dd;
+    color: #198754;
+}
+
+.notification-icon.warning {
+    background-color: #fff3cd;
+    color: #ffc107;
+}
+
+.notification-icon.error {
+    background-color: #f8d7da;
+    color: #dc3545;
+}

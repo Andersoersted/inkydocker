@@ -456,6 +456,23 @@ def generate_tags_and_description(embedding, model_name):
     return filtered_tags, description
 
 @celery.task(bind=True, time_limit=600, soft_time_limit=500, max_retries=3)
+def cleanup_expired_notifications(self=None):
+    """
+    Delete expired notifications from the database.
+    This task is scheduled to run every 12 hours via the scheduler.
+    """
+    from models import Notification
+    from flask import current_app
+    
+    try:
+        count = Notification.delete_expired()
+        current_app.logger.info(f"Deleted {count} expired notifications")
+        return {"status": "success", "message": f"Deleted {count} expired notifications"}
+    except Exception as e:
+        current_app.logger.error(f"Error cleaning up expired notifications: {e}")
+        return {"status": "error", "message": f"Error: {str(e)}"}
+
+@celery.task(bind=True, time_limit=600, soft_time_limit=500, max_retries=3)
 def process_image_tagging(self, filename):
     """
     Process an image: generate tags and a description using zero-shot models,
@@ -662,7 +679,6 @@ def reembed_all_images(self):
     except Exception as e:
         current_app.logger.error(f"Error in reembed_all_images: {e}")
         return {"status": "error", "message": str(e)}
-
 def send_scheduled_image(event_id):
     """
     Send a scheduled image to a device.
@@ -670,6 +686,7 @@ def send_scheduled_image(event_id):
     Returns:
         dict: Status information about the image send operation.
     """
+    # Import the app and create an application context
     # Import the app and create an application context
     import logging
     import asyncio
@@ -684,15 +701,18 @@ def send_scheduled_image(event_id):
         from utils.image_helpers import add_send_log_entry
         from flask import current_app
         from routes.browserless_routes import take_screenshot_with_puppeteer
+        from utils.notification_service import NotificationService
         
         # Log the start of the scheduled image send process
         current_app.logger.info(f"Starting scheduled image send for event ID: {event_id}")
+        NotificationService.create_info(f"Starting scheduled image send process...")
         
         try:
             # Get the event from the database
             event = ScheduleEvent.query.get(event_id)
             if not event:
                 current_app.logger.error(f"Event not found: {event_id}")
+                NotificationService.create_error(f"Scheduled event not found (ID: {event_id})")
                 return
             
             current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
@@ -912,9 +932,11 @@ def send_scheduled_image(event_id):
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {response.text}")
                     with open('/tmp/scheduled_image_log.txt', 'a') as f:
                         f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
+                    NotificationService.create_error(f"Failed to send {event.filename} to {device_obj.friendly_name}")
                     return {"status": "error", "message": f"Error sending image: {response.text}"}
                 
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
+                NotificationService.create_success(f"Successfully sent {event.filename} to {device_obj.friendly_name}")
                 
             except httpx.TimeoutException:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request timed out after 120 seconds")

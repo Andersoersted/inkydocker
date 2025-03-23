@@ -1,5 +1,6 @@
 from flask import Blueprint, request, redirect, url_for, render_template, flash, send_from_directory, send_file, jsonify, current_app, abort
 from models import db, ImageDB, CropInfo, SendLog, Device
+from utils.notification_service import NotificationService, notify_on_completion
 import os
 import datetime
 from PIL import Image
@@ -85,10 +86,12 @@ def thumbnail(filename):
     except Exception as e:
         current_app.logger.error("Error generating thumbnail for %s: %s", filename, e)
         return "Error generating thumbnail", 500
-
 @image_bp.route('/', methods=['GET', 'POST'])
 def upload_file():
     image_folder = current_app.config['IMAGE_FOLDER']
+    if request.method == 'POST':
+        # Create initial notification for image upload
+        NotificationService.create_info("Processing image upload...")
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('No file part')
@@ -123,6 +126,9 @@ def upload_file():
                         # Trigger automatic image tagging
                         from tasks import process_image_tagging
                         process_image_tagging.delay(original_filename)
+        
+        # Create success notification for upload completion
+        NotificationService.create_success("Images successfully uploaded")
         return redirect(url_for('image.upload_file'))
     
     images_db = ImageDB.query.all()
@@ -373,20 +379,26 @@ def save_crop_info_endpoint(filename):
     except Exception as e:
         current_app.logger.error(f"Error saving crop data for {filename} with device {device_addr}: {str(e)}")
         return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
-
 @image_bp.route('/send_image/<filename>', methods=['POST'])
 @image_bp.route('/send_image', methods=['POST'])
+@notify_on_completion(
+    message_start="Image send process initiated...",
+    message_success="Image successfully sent to device",
+    message_error="Error sending image: {error}"
+)
 def send_image(filename=None):
     # If filename is not provided in the URL, get it from the form data
     if not filename:
         filename = request.form.get("filename")
         if not filename:
             current_app.logger.error("[GALLERY] No filename specified in request")
+            NotificationService.create_error("No filename specified in image send request")
             return "No filename specified", 400
     image_folder = current_app.config['IMAGE_FOLDER']
     data_folder = current_app.config['DATA_FOLDER']
     
-    # Log only basic request details
+    # Log only basic request details and create notification
+    current_app.logger.debug(f"[GALLERY] Send image request received for filename: {filename}")
     current_app.logger.debug(f"[GALLERY] Send image request received for filename: {filename}")
     
     filepath = os.path.join(image_folder, filename)
