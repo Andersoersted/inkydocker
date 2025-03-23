@@ -26,18 +26,11 @@ else
   echo "Redis is running."
 fi
 
-# Check if the database file exists
-if [ ! -f /app/data/mydb.sqlite ]; then
-  echo "Creating database tables for the first time..."
-  python -c "from app import app; from models import db; app.app_context().push(); db.create_all()"
-  echo "Database tables created successfully."
-else
-  echo "Database already exists, skipping table creation."
-fi
-
-echo "Running database migrations..."
-cd /app && python -m flask db upgrade
-echo "Database migrations applied successfully."
+# Since the app is in development and we're frequently making schema changes,
+# we'll just create a fresh database with the latest schema instead of migrations
+echo "Creating database tables from the latest models..."
+python -c "from app import app; from models import db; app.app_context().push(); db.drop_all(); db.create_all()"
+echo "Database tables created successfully with the latest schema."
 
 # Clear any stale lock files
 echo "Clearing any stale lock files..."
