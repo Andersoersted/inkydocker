@@ -307,8 +307,12 @@ def uploaded_file(filename):
     
     # For original image requests (sending to eInk display), serve the original
     return send_from_directory(image_folder, filename)
-
 @image_bp.route('/save_crop_info/<filename>', methods=['POST'])
+@notify_on_completion(
+    message_start="Saving image crop settings...",
+    message_success="Image crop settings saved successfully",
+    message_error="Error saving image crop settings: {error}"
+)
 def save_crop_info_endpoint(filename):
     import json
     crop_data = request.get_json()
@@ -316,13 +320,19 @@ def save_crop_info_endpoint(filename):
     
     if not crop_data:
         current_app.logger.error(f"No crop data provided for {filename}")
+        # Create error notification
+        NotificationService.create_error(f"No crop data provided for {filename}")
+        return jsonify({"status": "error", "message": "No crop data provided"}), 400
         return jsonify({"status": "error", "message": "No crop data provided"}), 400
     
     # Validate crop data
     required_fields = ["x", "y", "width", "height"]
     for field in required_fields:
         if field not in crop_data or not isinstance(crop_data[field], (int, float)) or crop_data[field] < 0:
-            current_app.logger.error(f"Invalid crop data for {filename}: {field} is missing or invalid")
+            error_msg = f"Invalid crop data for {filename}: {field} is missing or invalid"
+            current_app.logger.error(error_msg)
+            # Create error notification
+            NotificationService.create_error(error_msg)
             return jsonify({"status": "error", "message": f"Invalid crop data: {field} is missing or invalid"}), 400
     
     # Get device information if provided
@@ -366,6 +376,12 @@ def save_crop_info_endpoint(filename):
             
             if all_match:
                 current_app.logger.info(f"All crop values for {filename} with device {device_addr} match the submitted data")
+                # Create a more specific success notification
+                device_name = "unknown device"
+                device_obj = Device.query.filter_by(address=device_addr).first()
+                if device_obj:
+                    device_name = device_obj.friendly_name
+                NotificationService.create_success(f"Crop settings saved for {filename} for {device_name}")
             
             return jsonify({
                 "status": "success",
@@ -374,19 +390,20 @@ def save_crop_info_endpoint(filename):
                 "device_address": saved_data.get("device_address")
             }), 200
         else:
-            current_app.logger.error(f"Failed to verify crop data was saved for {filename} with device {device_addr}")
+            error_msg = f"Failed to verify crop data was saved for {filename} with device {device_addr}"
+            current_app.logger.error(error_msg)
+            # Create error notification
+            NotificationService.create_error(error_msg)
             return jsonify({"status": "error", "message": "Failed to verify crop data was saved"}), 500
     except Exception as e:
         current_app.logger.error(f"Error saving crop data for {filename} with device {device_addr}: {str(e)}")
         return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
 @image_bp.route('/send_image/<filename>', methods=['POST'])
 @image_bp.route('/send_image', methods=['POST'])
-@notify_on_completion(
-    message_start="Image send process initiated...",
-    message_success="Image successfully sent to device",
-    message_error="Error sending image: {error}"
-)
 def send_image(filename=None):
+    # Create a single notification for sending
+    NotificationService.create_info("Image send process initiated...")
+    
     # If filename is not provided in the URL, get it from the form data
     if not filename:
         filename = request.form.get("filename")
@@ -796,20 +813,26 @@ def send_image(filename=None):
                 timer = threading.Timer(600, delete_debug_copy)
                 timer.daemon = True
                 timer.start()
-                
                 # Return error if curl failed
                 if result.returncode != 0:
+                    error_msg = f"Error sending image with curl: {result.stderr}"
+                    NotificationService.create_error(f"Error sending image: {error_msg}")
+                    return error_msg, 500
                     return f"Error sending image with curl: {result.stderr}", 500
             
             except subprocess.TimeoutExpired:
                 current_app.logger.error(f"[GALLERY-{send_id}] Curl command timed out after 120 seconds")
                 response = CurlResponse("Curl command timed out", 500)
-                return "Request timed out while sending the image to the device", 500
+                error_msg = "Request timed out while sending the image to the device"
+                NotificationService.create_error(f"Timeout error: {error_msg}")
+                return error_msg, 500
             
             except Exception as e:
                 current_app.logger.error(f"[GALLERY-{send_id}] Exception executing curl: {e}")
                 response = CurlResponse(str(e), 500)
-                return f"Error sending image: {str(e)}", 500
+                error_msg = f"Error sending image: {str(e)}"
+                NotificationService.create_error(error_msg)
+                return error_msg, 500
                 
                 # Log the response details
                 current_app.logger.debug(f"[GALLERY-{send_id}] Response status code: {response.status_code}")
@@ -836,7 +859,9 @@ def send_image(filename=None):
                     current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {response.text}")
                     with open('/tmp/gallery_send_log.txt', 'a') as f:
                         f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
-                    return f"Error sending image: {response.text}", 500
+                    error_msg = f"Error sending image: {response.text}"
+                    NotificationService.create_error(error_msg)
+                    return error_msg, 500
                 
                 # If we get here, the request was successful
 
@@ -852,6 +877,9 @@ def send_image(filename=None):
             # Write completion to log file
             with open('/tmp/gallery_send_log.txt', 'a') as f:
                 f.write(f"{datetime.datetime.now()}: [GALLERY-{send_id}] Successfully completed gallery send\n")
+            
+            # Create success notification with device name
+            NotificationService.create_success(f"Image {filename} successfully sent to {device_obj.friendly_name}")
                 
             return "Image sent successfully", 200
             
@@ -861,24 +889,32 @@ def send_image(filename=None):
                 os.remove(temp_filename)
             except:
                 pass
-            return "Request timed out while sending the image to the device", 500
+            error_msg = "Request timed out while sending the image to the device"
+            NotificationService.create_error(f"Timeout error: {error_msg}")
+            return error_msg, 500
         except httpx.RequestError as e:
             current_app.logger.error(f"[GALLERY-{send_id}] HTTP request error: {e}")
             try:
                 os.remove(temp_filename)
             except:
                 pass
-            return f"Network error while sending the image: {str(e)}", 500
+            error_msg = f"Network error while sending the image: {str(e)}"
+            NotificationService.create_error(error_msg)
+            return error_msg, 500
         except Exception as e:
             current_app.logger.error(f"[GALLERY-{send_id}] Unexpected error: {e}")
             try:
                 os.remove(temp_filename)
             except:
                 pass
-            return f"Error sending image: {str(e)}", 500
+            error_msg = f"Error sending image: {str(e)}"
+            NotificationService.create_error(error_msg)
+            return error_msg, 500
     except Exception as e:
         current_app.logger.error("Error resizing/cropping image: %s", e)
-        return f"Error processing image: {e}", 500
+        error_msg = f"Error processing image: {e}"
+        NotificationService.create_error(error_msg)
+        return error_msg, 500
 
 @image_bp.route('/api/get_current_image', methods=['GET'])
 def get_current_image():

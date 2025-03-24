@@ -482,12 +482,16 @@ if (searchInput) {
   searchInput.addEventListener('input', performSearch);
 }
 
-/* Upload form */
+/* Upload form with notification system */
 const uploadForm = document.getElementById('uploadForm');
+const originalUploadFormSubmit = uploadForm.onsubmit;
 uploadForm.addEventListener('submit', function(e) {
   e.preventDefault();
   const fileInput = document.getElementById('fileInput');
   if (!fileInput.files.length) return;
+  
+  // Create persistent notification for upload start
+  createNotification("Starting image upload...", "info");
   
   const formData = new FormData();
   for (let i = 0; i < fileInput.files.length; i++) {
@@ -503,16 +507,28 @@ uploadForm.addEventListener('submit', function(e) {
   xhr.upload.addEventListener("progress", function(e) {
     if (e.lengthComputable) {
       const percentComplete = (e.loaded / e.total) * 100;
+      const roundedPercent = Math.round(percentComplete);
+      
+      // Update the progress bar (keep it for backward compatibility)
       const progressBar = document.getElementById('progressBar');
-      progressBar.style.width = percentComplete + '%';
-      progressBar.textContent = Math.round(percentComplete) + '%';
+      progressBar.style.width = roundedPercent + '%';
+      progressBar.textContent = roundedPercent + '%';
       document.getElementById('progressContainer').style.display = 'block';
+      
+      // Update notification every 10% progress
+      if (roundedPercent % 10 === 0) {
+        createNotification(`Uploading images: ${roundedPercent}% complete`, "info");
+      }
     }
   });
 
   xhr.onload = function() {
     if (xhr.status === 200) {
       document.getElementById('uploadStatus').textContent = 'Image uploaded successfully!';
+      
+      // Create success notification
+      createNotification("Images uploaded successfully!", "success");
+      
       // Instead of reloading the page, refresh the gallery
       setTimeout(function() {
         currentPage = 1;
@@ -522,11 +538,17 @@ uploadForm.addEventListener('submit', function(e) {
       }, 1500);
     } else {
       document.getElementById('uploadStatus').textContent = 'Error uploading image.';
+      
+      // Create error notification
+      createNotification("Error uploading images", "error");
     }
   };
 
   xhr.onerror = function() {
     document.getElementById('uploadStatus').textContent = 'Error uploading image.';
+    
+    // Create error notification
+    createNotification("Error uploading images", "error");
   };
 
   xhr.send(formData);
@@ -557,6 +579,9 @@ document.addEventListener('click', function(e) {
     button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sending...';
     
     const deviceFriendly = selectedDevice.getAttribute('data-friendly');
+    
+    // Create persistent notification for sending
+    createNotification(`Sending image: ${imageFilename} to ${deviceFriendly}...`, "info");
     const formData = new FormData();
     formData.append("device", selectedDevice.value);
     formData.append("filename", imageFilename);
@@ -588,7 +613,10 @@ document.addEventListener('click', function(e) {
         // Show success icon in button temporarily
         button.innerHTML = '<i class="fas fa-check"></i> Sent!';
         
-        // Create toast notification
+        // Create persistent notification
+        createNotification(`Image ${imageFilename} sent successfully to ${deviceFriendly}!`, "success");
+        
+        // Create toast notification (keep for backward compatibility)
         const toastEl = document.createElement('div');
         toastEl.className = 'toast align-items-center text-white bg-success border-0';
         toastEl.setAttribute('role', 'alert');
@@ -626,7 +654,10 @@ document.addEventListener('click', function(e) {
         // Show error in button
         button.innerHTML = '<i class="fas fa-times"></i> Failed';
         
-        // Create toast notification for error
+        // Create persistent notification for error
+        createNotification(`Error sending image ${imageFilename} to ${deviceFriendly}`, "error");
+        
+        // Create toast notification for error (keep for backward compatibility)
         const toastEl = document.createElement('div');
         toastEl.className = 'toast align-items-center text-white bg-danger border-0';
         toastEl.setAttribute('role', 'alert');

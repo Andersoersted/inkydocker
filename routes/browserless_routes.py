@@ -16,6 +16,7 @@ import torch
 import open_clip
 from PIL import Image
 import io
+from utils.notification_service import NotificationService, notify_on_completion
 
 # Function to log when images are sent to devices
 def add_send_log_entry(filename):
@@ -82,16 +83,28 @@ def save_browserless_config():
     return jsonify({"status": "success", "message": "Configuration saved successfully"}), 200
 
 @browserless_bp.route('/api/browserless/screenshot', methods=['POST'])
+@notify_on_completion(
+    message_start="Taking screenshot...",
+    message_success="Screenshot captured successfully",
+    message_error="Error capturing screenshot: {error}"
+)
 def take_screenshot():
     data = request.get_json()
     
     if not data or 'url' not in data or 'name' not in data:
-        return jsonify({"status": "error", "message": "Missing required fields"}), 400
+        error_msg = "Missing required fields for screenshot"
+        NotificationService.create_error(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 400
     
     # Get active browserless config
     config = BrowserlessConfig.query.filter_by(active=True).first()
     if not config:
-        return jsonify({"status": "error", "message": "No active browserless configuration found"}), 400
+        error_msg = "No active browserless configuration found"
+        NotificationService.create_error(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 400
+    
+    # Create a more specific notification with the URL
+    NotificationService.create_info(f"Taking screenshot of {data['url']}...")
     
     # Generate filename
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -115,7 +128,9 @@ def take_screenshot():
         ))
         
         if not screenshot_taken:
-            return jsonify({"status": "error", "message": "Failed to take screenshot"}), 500
+            error_msg = "Failed to take screenshot"
+            NotificationService.create_error(error_msg)
+            return jsonify({"status": "error", "message": error_msg}), 500
             
         # Create or update screenshot record
         existing_screenshot = Screenshot.query.filter_by(name=data['name']).first()
@@ -161,6 +176,10 @@ def take_screenshot():
             db.session.add(screenshot)
         
         db.session.commit()
+
+        # Create a more specific success notification
+        name = data['name']
+        NotificationService.create_success(f"Screenshot '{name}' captured successfully")
         
         return jsonify({
             "status": "success",
@@ -183,6 +202,9 @@ def take_screenshot():
             user_message = "Could not connect to the browserless service. Please check your browserless configuration."
         else:
             user_message = f"Error: {error_message}"
+        
+        # Create error notification with user-friendly message
+        NotificationService.create_error(f"Screenshot error: {user_message}")
             
         return jsonify({
             "status": "error",

@@ -1,165 +1,224 @@
-/* Notification Styles */
+/**
+ * Notification System Styling
+ * Provides styles for notification components including toasts and notification center
+ */
 
-/* Bell icon badge */
-.notification-badge {
-    position: relative;
-    display: inline-block;
-}
-
-.notification-badge .badge {
-    position: absolute;
-    top: -5px;
-    right: -10px;
-    padding: 3px 6px;
-    border-radius: 50%;
-    background-color: #dc3545;
-    color: white;
-    font-size: 0.6rem;
-}
-
-/* Notification center */
-.notification-center {
-    width: 350px;
-    max-width: 100%;
-    max-height: 500px;
-    overflow-y: auto;
-}
-
-/* Custom toast styles */
+/* Notification Container (Fixed position at bottom right) */
 .toast-container {
-    z-index: 9999;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1050;
+  max-width: 350px;
 }
 
-.notification-toast {
-    min-width: 300px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    animation: slide-in 0.3s ease-out;
+/* Individual Toast Styling */
+.toast {
+  background-color: #fff;
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  opacity: 1 !important;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-.notification-toast.info {
-    border-left: 4px solid #0d6efd;
+.toast.show {
+  opacity: 1;
 }
 
-.notification-toast.success {
-    border-left: 4px solid #198754;
+.toast.hide {
+  opacity: 0;
+  transform: translateX(100%);
 }
 
-.notification-toast.warning {
-    border-left: 4px solid #ffc107;
+/* Type-specific colors */
+.toast.info {
+  border-left: 4px solid #0d6efd;
 }
 
-.notification-toast.error {
-    border-left: 4px solid #dc3545;
+.toast.success {
+  border-left: 4px solid #198754;
 }
 
-/* Notification item in the notification center */
-.notification-item {
-    padding: 10px;
-    border-bottom: 1px solid #eee;
-    transition: background-color 0.2s;
+.toast.warning {
+  border-left: 4px solid #ffc107;
 }
 
-.notification-item:hover {
-    background-color: #f8f9fa;
+.toast.error {
+  border-left: 4px solid #dc3545;
 }
 
-.notification-item.unread {
-    background-color: #f0f8ff;
+/* Toast Header */
+.toast-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
 }
 
-.notification-item.unread:hover {
-    background-color: #e6f3ff;
+.toast-header .me-auto {
+  font-weight: 500;
 }
 
-.notification-item .notification-time {
-    font-size: 0.8rem;
-    color: #6c757d;
+/* Toast Body */
+.toast-body {
+  padding: 0.75rem;
+  word-wrap: break-word;
 }
 
-.notification-item .notification-message {
-    margin-bottom: 5px;
+/* Notification Center (Offcanvas sidebar) */
+.notification-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
 }
 
-.notification-center .notification-header {
-    padding: 10px 15px;
-    border-bottom: 1px solid #ddd;
-    background-color: #f8f9fa;
+.notification-body {
+  padding: 0;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
 }
 
-.notification-center .notification-body {
-    max-height: 350px;
-    overflow-y: auto;
-}
-
-.notification-center .notification-footer {
-    padding: 10px 15px;
-    border-top: 1px solid #ddd;
-    background-color: #f8f9fa;
-    text-align: center;
+.notification-footer {
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+  padding: 1rem;
+  text-align: center;
 }
 
 /* Empty state */
 .notification-empty {
-    padding: 30px;
-    text-align: center;
-    color: #6c757d;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: #6c757d;
 }
 
-/* Animations */
-@keyframes slide-in {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
+/* Individual notification item */
+.notification-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f1f1;
+  transition: background-color 0.2s;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
 }
 
-.notification-item.info {
-    border-left: 4px solid #0d6efd;
+.notification-item:hover {
+  background-color: #f8f9fa;
 }
 
-.notification-item.success {
-    border-left: 4px solid #198754;
+.notification-item.read {
+  opacity: 0.75;
 }
 
-.notification-item.warning {
-    border-left: 4px solid #ffc107;
-}
-
-.notification-item.error {
-    border-left: 4px solid #dc3545;
-}
-
-/* Notification icon styles */
+/* Notification icon */
 .notification-icon {
-    margin-right: 10px;
-    width: 20px;
-    height: 20px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 12px;
+  flex-shrink: 0;
 }
 
 .notification-icon.info {
-    background-color: #cfe2ff;
-    color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.1);
+  color: #0d6efd;
 }
 
 .notification-icon.success {
-    background-color: #d1e7dd;
-    color: #198754;
+  background-color: rgba(25, 135, 84, 0.1);
+  color: #198754;
 }
 
 .notification-icon.warning {
-    background-color: #fff3cd;
-    color: #ffc107;
+  background-color: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
 }
 
 .notification-icon.error {
-    background-color: #f8d7da;
-    color: #dc3545;
+  background-color: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+}
+
+/* Notification content */
+.notification-message {
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.notification-time {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+/* Badge for notification count */
+#notification-badge {
+  position: absolute;
+  top: 0px;
+  right: 2px;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 50%;
+  transform: translate(25%, -25%);
+}
+
+/* Bell icon styling */
+#notification-bell {
+  position: relative;
+}
+
+/* Mark read button */
+.mark-read-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.notification-item:hover .mark-read-btn {
+  opacity: 1;
+}
+
+/* Smooth animation for notifications */
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.notification-toast {
+  animation: fadeInRight 0.3s ease-out forwards;
+}
+
+/* Progress notification specific styling */
+.progress-notification .toast-body {
+  padding-bottom: 0.25rem;
+}
+
+.progress-notification .progress {
+  height: 6px;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 576px) {
+  .toast-container {
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
 }

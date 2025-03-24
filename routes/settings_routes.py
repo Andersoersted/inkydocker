@@ -12,6 +12,7 @@ import time
 import json
 import sys
 from huggingface_hub import hf_hub_download
+from utils.notification_service import NotificationService, notify_on_completion
 
 settings_bp = Blueprint('settings', __name__)
 logger = logging.getLogger(__name__)
@@ -199,6 +200,9 @@ def settings():
         display_name = request.form.get("display_name") or "Unknown"
         resolution = request.form.get("resolution") or "N/A"
         if color and friendly_name and orientation and address:
+            # Create a single notification for adding display
+            NotificationService.create_info("Adding new E-Ink display...")
+            
             new_dev = Device(
                 color=color,
                 friendly_name=friendly_name,
@@ -211,8 +215,14 @@ def settings():
             db.session.add(new_dev)
             db.session.commit()
             flash("Device added successfully", "success")
+            
+            # Create success notification
+            NotificationService.create_success(f"E-Ink display '{friendly_name}' added successfully")
         else:
-            flash("Missing mandatory fields (color, friendly name, orientation, address).", "error")
+            error_msg = "Missing mandatory fields (color, friendly name, orientation, address)."
+            flash(error_msg, "error")
+            # Create error notification
+            NotificationService.create_error(error_msg)
         return redirect(url_for("settings.settings"))
     else:
         devs = Device.query.all()
@@ -232,18 +242,31 @@ def settings():
 
 @settings_bp.route('/delete_device/<int:device_index>', methods=['POST'])
 def delete_device(device_index):
+    # Create a single notification for device deletion
+    NotificationService.create_info("Deleting E-Ink display...")
+    
     all_devices = Device.query.order_by(Device.id).all()
     if 0 <= device_index < len(all_devices):
-        db.session.delete(all_devices[device_index])
+        device = all_devices[device_index]
+        device_name = device.friendly_name
+        db.session.delete(device)
         db.session.commit()
         flash("Device deleted", "success")
+        # Create a success notification
+        NotificationService.create_success(f"E-Ink display '{device_name}' deleted successfully")
     else:
+        error_msg = f"Device with index {device_index} not found"
         flash("Device not found", "error")
+        # Create error notification
+        NotificationService.create_error(error_msg)
     return redirect(url_for("settings.settings"))
 
 @settings_bp.route('/edit_device', methods=['POST'])
 def edit_device():
     try:
+        # Create notification at the start
+        NotificationService.create_info("Updating E-Ink display...")
+        
         index = int(request.form.get("device_index"))
         color = request.form.get("color")
         friendly_name = request.form.get("friendly_name")
@@ -258,14 +281,25 @@ def edit_device():
             d.address = address
             db.session.commit()
             flash("Device updated successfully", "success")
+            # Create success notification
+            NotificationService.create_success(f"E-Ink display '{friendly_name}' updated successfully")
         else:
+            error_msg = f"Device with index {index} not found"
             flash("Device index not found", "error")
+            # Create error notification
+            NotificationService.create_error(error_msg)
     except Exception as e:
-        flash("Error editing device: " + str(e), "error")
+        error_msg = f"Error editing device: {str(e)}"
+        flash(error_msg, "error")
+        # Create error notification
+        NotificationService.create_error(error_msg)
     return redirect(url_for("settings.settings"))
 
 @settings_bp.route('/settings/update_clip_model', methods=['POST'])
 def update_clip_model():
+    # Create info notification at start
+    NotificationService.create_info("Updating AI model settings...")
+    
     data = request.get_json()
     config = UserConfig.query.first()
     if not config:
@@ -284,7 +318,10 @@ def update_clip_model():
             config.min_tags = min_tags
             updated = True
         else:
-            return jsonify({"status": "error", "message": "Invalid minimum tags value. Must be a positive integer."})
+            error_msg = "Invalid minimum tags value. Must be a positive integer."
+            # Create error notification
+            NotificationService.create_error(error_msg)
+            return jsonify({"status": "error", "message": error_msg})
     
     if "similarity_threshold" in data:
         threshold = data.get("similarity_threshold")
@@ -293,22 +330,39 @@ def update_clip_model():
             config.similarity_threshold = threshold
             updated = True
         else:
-            return jsonify({"status": "error", "message": "Invalid similarity threshold value."})
+            error_msg = "Invalid similarity threshold value."
+            # Create error notification
+            NotificationService.create_error(error_msg)
+            return jsonify({"status": "error", "message": error_msg})
     
     if updated:
         db.session.commit()
+        # Create more specific success notification
+        message = "AI model settings updated successfully"
+        if "clip_model" in data:
+            message = f"AI model updated to {data.get('clip_model')}"
+        NotificationService.create_success(message)
         return jsonify({"status": "success", "message": "Settings updated successfully."})
     else:
-        return jsonify({"status": "error", "message": "No valid settings provided."})
+        error_msg = "No valid settings provided."
+        # Create error notification
+        NotificationService.create_error(error_msg)
+        return jsonify({"status": "error", "message": error_msg})
 
 @settings_bp.route('/settings/rerun_all_tagging', methods=['POST'])
 def rerun_all_tagging():
     try:
+        # Create start notification
+        NotificationService.create_info("Starting AI retagging of all images...")
+        
         # Import the task for rerunning tagging
         from tasks import reembed_all_images
         
         # Start the task
         task = reembed_all_images.delay()
+        
+        # Create a notification with more details
+        NotificationService.create_success(f"AI retagging process initiated (Task ID: {task.id}). This might take a while.")
         
         return jsonify({
             "status": "success",
@@ -317,6 +371,10 @@ def rerun_all_tagging():
         })
     except Exception as e:
         logger.error(f"Error starting retagging: {str(e)}")
+        
+        # Create error notification
+        NotificationService.create_error(f"Failed to start AI retagging: {str(e)}")
+        
         return jsonify({"status": "error", "message": f"Error: {str(e)}"})
 
 @settings_bp.route('/settings/verify_clip_model', methods=['GET'])
@@ -328,19 +386,27 @@ def verify_clip_model():
     try:
         from models import UserConfig
         
+        # Create info notification at start
+        NotificationService.create_info("Verifying current AI model...")
+        
         # Get the current CLIP model from user config
         config = UserConfig.query.first()
         
         if not config:
+            error_msg = "No configuration found"
+            NotificationService.create_error(error_msg)
             return jsonify({
                 "status": "error",
-                "message": "No configuration found"
+                "message": error_msg
             }), 404
             
         clip_model_name = config.clip_model if config.clip_model else "ViT-B-32"
         
         # Log the verification request
         logger.info(f"CLIP model verification requested: current model is {clip_model_name}")
+        
+        # Create success notification
+        NotificationService.create_success(f"AI model verification completed: {clip_model_name}")
         
         return jsonify({
             "status": "success",
@@ -349,6 +415,10 @@ def verify_clip_model():
         })
     except Exception as e:
         logger.error(f"Error verifying CLIP model: {str(e)}")
+        
+        # Create error notification
+        NotificationService.create_error(f"Failed to verify AI model: {str(e)}")
+        
         return jsonify({"status": "error", "message": f"Error: {str(e)}"})
 
 @settings_bp.route('/settings/test_tagging', methods=['POST'])
