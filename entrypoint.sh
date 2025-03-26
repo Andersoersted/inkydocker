@@ -26,11 +26,10 @@ else
   echo "Redis is running."
 fi
 
-# Since the app is in development and we're frequently making schema changes,
-# we'll just create a fresh database with the latest schema instead of migrations
-echo "Creating database tables from the latest models..."
-python -c "from app import app; from models import db; app.app_context().push(); db.drop_all(); db.create_all()"
-echo "Database tables created successfully with the latest schema."
+# Check if the database exists and run migrations
+echo "Running database migrations..."
+python -c "from app import app; from flask_migrate import upgrade as flask_migrate_upgrade; app.app_context().push(); flask_migrate_upgrade()"
+echo "Database migrations completed successfully."
 
 # Clear any stale lock files
 echo "Clearing any stale lock files..."
