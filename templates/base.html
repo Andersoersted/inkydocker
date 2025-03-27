@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <!-- Notification CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/notifications.css') }}">
+    <!-- Custom CSS (for overrides and additions) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
     <!-- FontAwesome for icons -->
     <link rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
@@ -26,103 +28,6 @@
           href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"
           crossorigin="anonymous"
           referrerpolicy="no-referrer" />
-    <style>
-      /* Bootstrap 5 compatible sticky footer */
-      html, body {
-        height: 100%;
-      }
-      .wrapper {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      .main-content-wrapper {
-        flex: 1;
-      }
-      .footer {
-        flex-shrink: 0;
-      }
-      
-      /* Lazy loading styles with fade-in animation */
-      img.lazy {
-        transition: opacity 0.5s ease-in-out;
-        opacity: 0;
-      }
-      img.lazy.loaded {
-        opacity: 1;
-      }
-      
-      /* Fade-in animation for images */
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      .fade-in {
-        animation: fadeIn 0.5s ease-in-out;
-      }
-      
-      /* Bootstrap 5 enhancements */
-      .card {
-        transition: transform 0.2s, box-shadow 0.2s;
-        border-radius: 0.5rem;
-      }
-      .card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-      }
-      
-      /* Improved button styles */
-      .btn {
-        transition: all 0.2s;
-      }
-      .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      }
-      
-      /* Improved gallery item styles */
-      .gallery-item {
-        transition: all 0.3s ease;
-        border-radius: 0.5rem;
-        overflow: hidden;
-      }
-      .gallery-item:hover {
-        transform: scale(1.03);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
-        z-index: 1;
-      }
-      
-      /* Enhanced skeleton loading placeholder with pulse effect */
-      .placeholder-img {
-        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-        background-size: 200% 100%;
-        animation: loading-animation 1.5s infinite;
-      }
-      
-      /* Pulse animation for image placeholders */
-      @keyframes pulse {
-        0% { opacity: 0.6; }
-        50% { opacity: 0.8; }
-        100% { opacity: 0.6; }
-      }
-      
-      /* Apply pulse animation to lazy images that haven't loaded yet */
-      img.lazy:not(.loaded) {
-        animation: pulse 1.5s infinite ease-in-out;
-        background-color: #f0f0f0;
-        min-height: 100px;
-      }
-      
-      @keyframes loading-animation {
-        0% {
-          background-position: 200% 0;
-        }
-        100% {
-          background-position: -200% 0;
-        }
-      }
-    </style>
     {% block head %}{% endblock %}
   </head>
   <body>
@@ -175,67 +80,8 @@
             referrerpolicy="no-referrer"></script>
     <!-- Notification System -->
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-    <!-- Live Notification Enhancements -->
-    <script src="{{ url_for('static', filename='js/live-notifications.js') }}"></script>
-    <!-- Global Lazy Loading -->
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        // Initialize lazy loading for all images with the lazy class
-        if ('IntersectionObserver' in window) {
-          const lazyImageObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-              if (entry.isIntersecting) {
-                const lazyImage = entry.target;
-                if (lazyImage.dataset.src) {
-                  // Set up the onload handler before changing src
-                  lazyImage.onload = function() {
-                    // Add loaded class for fade-in effect
-                    lazyImage.classList.add('loaded');
-                    // Add fade-in class for additional animation
-                    lazyImage.classList.add('fade-in');
-                    // Remove the onload handler to prevent memory leaks
-                    this.onload = null;
-                  };
-                  
-                  // Set the src to trigger loading
-                  lazyImage.src = lazyImage.dataset.src;
-                  lazyImageObserver.unobserve(lazyImage);
-                }
-              }
-            });
-          });
-
-          // Observe all images with the 'lazy' class
-          document.querySelectorAll('img.lazy').forEach(lazyImage => {
-            lazyImageObserver.observe(lazyImage);
-          });
-        } else {
-          // Fallback for browsers that don't support IntersectionObserver
-          document.querySelectorAll('img.lazy').forEach(img => {
-            if (img.dataset.src) {
-              // Set up the onload handler before changing src
-              img.onload = function() {
-                // Add loaded class for fade-in effect
-                img.classList.add('loaded');
-                // Add fade-in class for additional animation
-                img.classList.add('fade-in');
-                // Remove the onload handler to prevent memory leaks
-                this.onload = null;
-              };
-              
-              // Set the src to trigger loading
-              img.src = img.dataset.src;
-            }
-          });
-        }
-        
-        // Add Bootstrap 5 Toasts container
-        const toastContainer = document.createElement('div');
-        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
-        toastContainer.style.zIndex = '1100';
-        document.body.appendChild(toastContainer);
-      });
-    </script>
+    <!-- Main App JS (includes lazy loading, toast container setup) -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

@@ -9,148 +9,7 @@ body {
   color: #333;
   line-height: 1.6;
 }
-  /* Standardized Grid System */
-  .container {
-    max-width: 1200px;
-    margin: 2rem auto;
-    padding: 0 1.5rem;
-  }
-  
-  /* Standardized Spacing System */
-  .mb-1 { margin-bottom: 0.5rem; }
-  .mb-2 { margin-bottom: 1rem; }
-  .mb-3 { margin-bottom: 1.5rem; }
-  .mb-4 { margin-bottom: 2rem; }
-  .mb-5 { margin-bottom: 3rem; }
-  
-  .mt-1 { margin-top: 0.5rem; }
-  .mt-2 { margin-top: 1rem; }
-  .mt-3 { margin-top: 1.5rem; }
-  .mt-4 { margin-top: 2rem; }
-  .mt-5 { margin-top: 3rem; }
-  
-  .p-1 { padding: 0.5rem; }
-  .p-2 { padding: 1rem; }
-  .p-3 { padding: 1.5rem; }
-  .p-4 { padding: 2rem; }
-  .p-5 { padding: 3rem; }
-  /* Standardized Card System */
-  .card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    transition: box-shadow 0.3s ease;
-  }
-  .card:hover {
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-  }
-  .card-header {
-    padding: 1rem 1.5rem;
-    margin: -1.5rem -1.5rem 1rem -1.5rem;
-    background-color: rgba(0,0,0,0.03);
-    border-bottom: 1px solid rgba(0,0,0,0.08);
-    border-radius: 8px 8px 0 0;
-  }
-  .card-body {
-    padding: 0;
-  }
-  .card-footer {
-    padding: 1rem 1.5rem;
-    margin: 1rem -1.5rem -1.5rem -1.5rem;
-    background-color: rgba(0,0,0,0.03);
-    border-top: 1px solid rgba(0,0,0,0.08);
-    border-radius: 0 0 8px 8px;
-  }
-  
-  /* Navbar */
-  .navbar {
-    background: #2c3e50;
-    color: #ecf0f1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 20px;
-    position: relative;
-  }
-  .navbar .logo {
-    font-size: 1.8em;
-    text-decoration: none;
-    color: #ecf0f1;
-  }
-  .navbar .nav-links {
-    display: flex;
-    gap: 15px;
-  }
-  .navbar .nav-links a {
-    text-decoration: none;
-    color: #bdc3c7;
-    padding: 8px 12px;
-    transition: background 0.3s, color 0.3s;
-    border-radius: 4px;
-  }
-  .navbar .nav-links a:hover,
-  .navbar .nav-links a.active {
-    background: #34495e;
-    color: #ecf0f1;
-  }
-  
-  /* Hamburger Menu for Mobile */
-  .nav-toggle {
-    display: none;
-  }
-  .nav-toggle-label {
-    display: none;
-    cursor: pointer;
-  }
-  .nav-toggle-label span,
-  .nav-toggle-label span::before,
-  .nav-toggle-label span::after {
-    display: block;
-    background: #ecf0f1;
-    height: 3px;
-    width: 25px;
-    border-radius: 3px;
-    position: relative;
-    transition: all 0.3s ease;
-  }
-  .nav-toggle-label span::before,
-  .nav-toggle-label span::after {
-    content: '';
-    position: absolute;
-  }
-  .nav-toggle-label span::before {
-    top: -8px;
-  }
-  .nav-toggle-label span::after {
-    top: 8px;
-  }
-  @media (max-width: 768px) {
-    .nav-links {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: #2c3e50;
-      flex-direction: column;
-      width: 200px;
-      transform: translateY(-200%);
-      transition: transform 0.3s ease;
-    }
-    .nav-links a {
-      padding: 15px;
-      border-bottom: 1px solid #34495e;
-    }
-    .nav-toggle:checked ~ .nav-links {
-      transform: translateY(0);
-    }
-    .nav-toggle {
-      display: block;
-    }
-    .nav-toggle-label {
-      display: block;
-    }
-  }
+  /* Custom styles below - Bootstrap provides grid, spacing, cards etc. */
   
   /* Enhanced Masonry Gallery Layout */
   .gallery {
@@ -327,123 +186,58 @@ body {
   }
   /* Position buttons within overlay */
   .overlay .send-button {
-    position: absolute !important; /* Changed from relative to absolute for better centering */
-    background-color: #28a745 !important; /* Use !important to override any other styles */
-    color: #fff !important;
-    border: none !important;
-    padding: 6px 10px !important;
-    border-radius: 4px !important;
-    cursor: pointer !important;
-    transition: background-color 0.3s ease !important;
-    z-index: 10 !important; /* Increased z-index to ensure it's clickable */
-    margin-bottom: 0 !important; /* Reset margin */
-    width: 70px !important;
-    text-align: center !important;
-    font-size: 0.9em !important;
+    position: absolute; /* Changed from relative to absolute for better centering */
+    background-color: #28a745; /* Use !important to override any other styles */
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    z-index: 10; /* Increased z-index to ensure it's clickable */
+    margin-bottom: 0; /* Reset margin */
+    width: 70px;
+    text-align: center;
+    font-size: 0.9em;
     /* Center the send button */
-    left: 50% !important;
-    top: 40% !important; /* Position from the top instead of using margin */
-    transform: translateX(-50%) !important;
-    pointer-events: auto !important; /* Ensure clicks are registered */
+    left: 50%;
+    top: 40%; /* Position from the top instead of using margin */
+    transform: translateX(-50%);
+    pointer-events: auto; /* Ensure clicks are registered */
   }
   .overlay .send-button:hover {
-    background-color: #218838 !important; /* Use !important to override any other styles */
+    background-color: #218838; /* Use !important to override any other styles */
     /* No transform scale to prevent movement */
-    transform: translateX(-50%) !important;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+    transform: translateX(-50%);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
   
   .overlay .info-button {
-    position: absolute !important; /* Changed from relative to absolute for better centering */
-    background-color: #007bff !important; /* Changed from #17a2b8 to blue, with !important */
-    color: #fff !important;
-    border: none !important;
-    padding: 6px 10px !important;
-    border-radius: 4px !important;
-    cursor: pointer !important;
-    transition: background-color 0.3s ease !important;
-    z-index: 10 !important; /* Increased z-index to ensure it's clickable */
-    width: 70px !important;
-    text-align: center !important;
-    font-size: 0.9em !important;
+    position: absolute; /* Changed from relative to absolute for better centering */
+    background-color: #007bff; /* Changed from #17a2b8 to blue, with !important */
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    z-index: 10; /* Increased z-index to ensure it's clickable */
+    width: 70px;
+    text-align: center;
+    font-size: 0.9em;
     /* Position the info button below the send button with more space */
-    margin-top: 0 !important; /* Reset margin */
+    margin-top: 0; /* Reset margin */
     /* Center the info button like the send button */
-    left: 50% !important;
-    top: 75% !important; /* Moved further down from 60% to 75% to prevent overlap */
-    transform: translateX(-50%) !important;
-    pointer-events: auto !important; /* Ensure clicks are registered */
+    left: 50%;
+    top: 75%; /* Moved further down from 60% to 75% to prevent overlap */
+    transform: translateX(-50%);
+    pointer-events: auto; /* Ensure clicks are registered */
   }
   .overlay .info-button:hover {
-    background-color: #0069d9 !important; /* Darker blue on hover, with !important */
+    background-color: #0069d9; /* Darker blue on hover, with !important */
     /* No transform scale to prevent movement */
-    transform: translateX(-50%) !important;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
-  }
-  
-  /* Lightbox Modal for Image Preview */
-  .lightbox-modal {
-    display: none;
-    position: fixed;
-    z-index: 4000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.9);
-  }
-  .lightbox-content {
-    margin: auto;
-    display: block;
-    max-width: 90%;
-    max-height: 80%;
-    animation: zoomIn 0.3s;
-  }
-  @keyframes zoomIn {
-    from { transform: scale(0.8); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-  .lightbox-close {
-    position: absolute;
-    top: 20px;
-    right: 35px;
-    color: #f1f1f1;
-    font-size: 40px;
-    font-weight: bold;
-    transition: 0.3s;
-    cursor: pointer;
-  }
-  .lightbox-close:hover,
-  .lightbox-close:focus {
-    color: #bbb;
-  }
-  #lightboxCaption {
-    text-align: center;
-    color: #ccc;
-    padding: 10px 0;
-  }
-  
-  /* Progress Popup (Overlay) */
-  .popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(255,255,255,0.95);
-    border: 2px solid #ccc;
-    padding: 30px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    z-index: 10000;
-    text-align: center;
-    font-size: 1.5em;
-    display: none;
-    border-radius: 8px;
-    animation: popupFade 0.5s ease;
-  }
-  @keyframes popupFade {
-    from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    transform: translateX(-50%);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
   
   /* Progress Bar (within upload form) */
@@ -464,28 +258,6 @@ body {
     line-height: 30px;
     font-size: 1em;
     text-align: center;
-  }
-  
-  /* Custom modal for settings page - renamed to avoid conflicts with Bootstrap */
-  .custom-modal {
-    display: none;
-    position: fixed;
-    z-index: 3000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.7);
-    padding: 20px;
-  }
-  /* We're removing custom modal-content styling to rely on Bootstrap's default implementation */
-  .close {
-    position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 1.5em;
-    color: #333;
-    cursor: pointer;
   }
   
   /* Buttons */
@@ -510,20 +282,20 @@ body {
   /* Gallery buttons have their own specific styling */
   .overlay .send-button {
     /* Send button specific styling */
-    background-color: #28a745 !important;
-    background-image: none !important;
-    padding: 6px 10px !important;
-    font-size: 0.9em !important;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
+    background-color: #28a745;
+    background-image: none;
+    padding: 6px 10px;
+    font-size: 0.9em;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
   }
   
   .overlay .info-button {
     /* Info button specific styling */
-    background-color: #007bff !important;
-    background-image: none !important;
-    padding: 6px 10px !important;
-    font-size: 0.9em !important;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease !important;
+    background-color: #007bff;
+    background-image: none;
+    padding: 6px 10px;
+    font-size: 0.9em;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
   }
   input[type="submit"]:hover,
   button:hover:not(.overlay .send-button):not(.overlay .info-button),
@@ -539,17 +311,17 @@ body {
   
   /* Override hover styles for gallery buttons to prevent movement */
   .overlay .info-button:hover {
-    background-color: #0069d9 !important; /* Explicitly set the hover color */
-    transform: translateX(-50%) !important; /* Keep centered without scaling */
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+    background-color: #0069d9; /* Explicitly set the hover color */
+    transform: translateX(-50%); /* Keep centered without scaling */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
+  
   
   .overlay .send-button:hover {
-    background-color: #218838 !important; /* Explicitly set the hover color */
-    transform: translateX(-50%) !important; /* Keep centered without scaling */
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+    background-color: #218838; /* Explicitly set the hover color */
+    transform: translateX(-50%); /* Keep centered without scaling */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   }
-  
   /* Form Elements */
   input[type="text"],
   input[type="password"],

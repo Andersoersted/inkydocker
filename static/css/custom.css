@@ -1,0 +1,95 @@
+/* Bootstrap 5 compatible sticky footer */
+html, body {
+  height: 100%;
+}
+.wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.main-content-wrapper {
+  flex: 1;
+}
+.footer {
+  flex-shrink: 0;
+}
+
+/* Lazy loading styles with fade-in animation */
+img.lazy {
+  transition: opacity 0.5s ease-in-out;
+  opacity: 0;
+}
+img.lazy.loaded {
+  opacity: 1;
+}
+
+/* Fade-in animation for images */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+/* Bootstrap 5 enhancements */
+.card {
+  transition: transform 0.2s, box-shadow 0.2s;
+  border-radius: 0.5rem;
+}
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+/* Improved button styles */
+.btn {
+  transition: all 0.2s;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Improved gallery item styles */
+.gallery-item {
+  transition: all 0.3s ease;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.gallery-item:hover {
+  transform: scale(1.03);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+  z-index: 1;
+}
+
+/* Enhanced skeleton loading placeholder with pulse effect */
+.placeholder-img {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading-animation 1.5s infinite;
+}
+
+/* Pulse animation for image placeholders */
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.6; }
+}
+
+/* Apply pulse animation to lazy images that haven't loaded yet */
+img.lazy:not(.loaded) {
+  animation: pulse 1.5s infinite ease-in-out;
+  background-color: #f0f0f0;
+  min-height: 100px;
+}
+
+@keyframes loading-animation {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

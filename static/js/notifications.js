@@ -1,33 +1,34 @@
 /**
  * Notification System
- * 
- * Handles real-time and persistent notifications using Bootstrap 5 toasts
- * and a centralized notification center.
+ *
+ * Handles:
+ * 1. Fetching/displaying persistent notifications from the backend via polling.
+ * 2. Displaying these persistent notifications in an offcanvas center.
+ * 3. Showing transient 'live' toasts for ongoing operations (uploads, sending, etc.)
+ *    with spinners or progress bars, managed client-side.
  */
 
-// Initialize the notification system
-document.addEventListener('DOMContentLoaded', function() {
-    // Create notification system
-    NotificationSystem.init();
-});
-
 const NotificationSystem = {
-    // Configuration
+    // --- Configuration ---
     config: {
-        pollInterval: 30000, // 30 seconds
-        maxToasts: 5,
-        notificationLifetime: 30, // 30 days
+        pollInterval: 30000, // 30 seconds for backend polling
+        maxToasts: 5,        // Max simultaneous standard toasts
+        liveToastDefaults: {
+            autohide: false,
+            delay: 5000 // Default delay for hiding completed live toasts
+        }
     },
-    
-    // State
+
+    // --- State ---
     state: {
         lastFetchTime: null,
         pollingTimer: null,
         unreadCount: 0,
         isInitialized: false,
+        activeLiveToasts: {} // Stores references to active live toasts { operationId: { element: toastElement, bsToast: bootstrapToastInstance } }
     },
-    
-    // Cache DOM elements
+
+    // --- DOM Elements Cache ---
     elements: {
         toastContainer: null,
         notificationCenter: null,
@@ -35,419 +36,709 @@ const NotificationSystem = {
         notificationBadge: null,
         bellIcon: null,
     },
-    
-    /**
-     * Initialize the notification system
-     */
+
+    // --- Initialization ---
     init: function() {
         if (this.state.isInitialized) return;
-        
-        // Add notification bell to the navbar if it doesn't exist
-        this.createNotificationElements();
-        
-        // Initialize elements
+        console.log("Initializing NotificationSystem...");
+
+        // Ensure toast container exists (moved from app.js for self-containment)
         this.elements.toastContainer = document.querySelector('.toast-container');
         if (!this.elements.toastContainer) {
+            console.log("Creating toast container.");
             this.elements.toastContainer = document.createElement('div');
             this.elements.toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            this.elements.toastContainer.style.zIndex = '1100'; // Ensure toasts appear above most elements
             document.body.appendChild(this.elements.toastContainer);
+        } else {
+             console.log("Toast container found.");
         }
-        
+
+        // Create notification center UI if needed
+        this.createNotificationCenterElements();
+
+        // Cache other elements
         this.elements.bellIcon = document.getElementById('notification-bell');
         this.elements.notificationBadge = document.getElementById('notification-badge');
         this.elements.notificationCenter = document.getElementById('notification-center');
         this.elements.notificationBody = document.getElementById('notification-body');
-        
-        // Setup event listeners
-        this.setupEventListeners();
-        
-        // Start polling for new notifications
-        this.startPolling();
-        
-        // Mark as initialized
+
+        // Setup event listeners (polling, center, live operations)
+        this.setupBackendPollingListeners();
+        this.setupNotificationCenterListeners();
+        this.setupLiveOperationListeners(); // Integrate listeners from live-notifications.js
+
         this.state.isInitialized = true;
-        
-        // Initial fetch of notifications
-        this.fetchNotifications();
+        console.log("NotificationSystem Initialized.");
+
+        // Initial fetch of persistent notifications
+        this.fetchPersistentNotifications();
     },
-    
-    /**
-     * Create notification UI elements
-     */
-    createNotificationElements: function() {
+
+    // --- Backend Persistent Notification Handling ---
+
+    createNotificationCenterElements: function() {
         // Check if notification bell already exists
         if (document.getElementById('notification-bell')) return;
-        
-        // Create notification bell in the navbar
+        console.log("Creating notification center elements.");
+
         const navbarNav = document.querySelector('#navbarNav .navbar-nav');
-        if (!navbarNav) return;
-        
+        if (!navbarNav) {
+            console.error("Navbar nav container not found for notification bell.");
+            return;
+        }
+
         const notificationLi = document.createElement('li');
-        notificationLi.className = 'nav-item notification-badge';
+        notificationLi.className = 'nav-item'; // Removed notification-badge class, badge is inside
         notificationLi.innerHTML = `
-            <a class="nav-link" href="#" id="notification-bell" data-bs-toggle="offcanvas" data-bs-target="#notification-center">
-                <i class="fas fa-bell"></i>
-                <span class="badge bg-danger" id="notification-badge" style="display: none;">0</span>
+            <a class="nav-link position-relative" href="#" id="notification-bell" data-bs-toggle="offcanvas" data-bs-target="#notification-center" aria-label="Notifications">
+                <i class="fas fa-bell" aria-hidden="true"></i>
+                <span class="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle" id="notification-badge" style="display: none;">0</span>
             </a>
         `;
         navbarNav.appendChild(notificationLi);
-        
-        // Create notification center
+
         const notificationCenter = document.createElement('div');
         notificationCenter.className = 'offcanvas offcanvas-end';
         notificationCenter.id = 'notification-center';
         notificationCenter.setAttribute('tabindex', '-1');
         notificationCenter.setAttribute('aria-labelledby', 'notification-center-label');
-        
+
         notificationCenter.innerHTML = `
             <div class="offcanvas-header notification-header">
                 <h5 class="offcanvas-title" id="notification-center-label">Notifications</h5>
-                <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
             </div>
             <div class="offcanvas-body p-0">
                 <div id="notification-body" class="notification-body">
-                    <div class="notification-empty">
-                        <i class="fas fa-bell fa-2x mb-3"></i>
-                        <p>No notifications yet</p>
-                    </div>
+                    <!-- Content populated by JS -->
                 </div>
                 <div class="notification-footer">
                     <button class="btn btn-sm btn-outline-secondary" id="mark-all-read">Mark all as read</button>
                 </div>
             </div>
         `;
-        
         document.body.appendChild(notificationCenter);
-        
-        // Add CSS link if it doesn't exist
+
+        // Add CSS link dynamically if needed (though it should be in base.html now)
         if (!document.querySelector('link[href*="notifications.css"]')) {
+            console.warn("Notifications CSS not found in head, adding dynamically.");
             const cssLink = document.createElement('link');
             cssLink.rel = 'stylesheet';
-            cssLink.href = '/static/css/notifications.css';
+            cssLink.href = '/static/css/notifications.css'; // Adjust path if necessary
             document.head.appendChild(cssLink);
         }
     },
-    
-    /**
-     * Set up event listeners
-     */
-    setupEventListeners: function() {
-        // Mark all as read button
+
+    setupBackendPollingListeners: function() {
+        if (this.state.pollingTimer) {
+            clearInterval(this.state.pollingTimer);
+        }
+        this.state.pollingTimer = setInterval(() => {
+            this.fetchPersistentNotifications();
+        }, this.config.pollInterval);
+        console.log("Backend polling started.");
+    },
+
+    setupNotificationCenterListeners: function() {
         const markAllReadBtn = document.getElementById('mark-all-read');
         if (markAllReadBtn) {
             markAllReadBtn.addEventListener('click', () => this.markAllAsRead());
         }
-        
-        // Set up notification center events
+
         if (this.elements.notificationCenter) {
+            // Use Bootstrap's event system
             this.elements.notificationCenter.addEventListener('show.bs.offcanvas', () => {
-                // Refresh notifications when opening the center
-                this.fetchNotifications();
+                console.log("Notification center opening, fetching persistent notifications.");
+                this.fetchPersistentNotifications(); // Refresh on open
             });
         }
-        
-        // Delegate click events for notification items
+
         if (this.elements.notificationBody) {
             this.elements.notificationBody.addEventListener('click', (e) => {
-                // Check if the clicked element or its parent is a notification item
                 const notificationItem = e.target.closest('.notification-item');
                 if (!notificationItem) return;
-                
-                // Check if the clicked element is the mark-read button
+
                 const markReadBtn = e.target.closest('.mark-read-btn');
-                if (markReadBtn) {
-                    const notificationId = notificationItem.dataset.id;
-                    this.markAsRead(notificationId);
-                    e.preventDefault();
-                    return;
-                }
-                
-                // Mark as read when clicking the notification itself
                 const notificationId = notificationItem.dataset.id;
-                if (notificationId && !notificationItem.classList.contains('read')) {
+
+                if (markReadBtn && notificationId) {
+                    console.log(`Marking notification ${notificationId} as read via button.`);
+                    this.markAsRead(notificationId);
+                    e.preventDefault(); // Prevent other actions if button clicked
+                } else if (notificationId && !notificationItem.classList.contains('read')) {
+                    // Mark as read when clicking the notification body itself (if not already read)
+                    console.log(`Marking notification ${notificationId} as read via item click.`);
                     this.markAsRead(notificationId);
                 }
             });
         }
+         console.log("Notification center listeners set up.");
     },
-    
-    /**
-     * Start polling for new notifications
-     */
-    startPolling: function() {
-        if (this.state.pollingTimer) {
-            clearInterval(this.state.pollingTimer);
-        }
-        
-        this.state.pollingTimer = setInterval(() => {
-            this.fetchNotifications();
-        }, this.config.pollInterval);
-    },
-    
-    /**
-     * Fetch notifications from the server
-     */
-    fetchNotifications: function() {
-        fetch('/api/notifications')
-            .then(response => response.json())
+
+    fetchPersistentNotifications: function() {
+        console.log("Fetching persistent notifications...");
+        fetch('/api/notifications') // Assuming this endpoint returns only unread persistent notifications
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
-                this.handleNotifications(data.notifications);
+                console.log("Received persistent notifications:", data);
+                this.handlePersistentNotifications(data.notifications || []);
             })
             .catch(error => {
-                console.error('Error fetching notifications:', error);
+                console.error('Error fetching persistent notifications:', error);
+                // Optionally show an error toast
+                // this.showToast({ message: 'Could not fetch notifications.', type: 'error' });
             });
     },
-    
-    /**
-     * Handle notifications data from server
-     */
-    handleNotifications: function(notifications) {
-        // Update unread count
-        this.state.unreadCount = notifications.length;
+
+    handlePersistentNotifications: function(notifications) {
+        // Update unread count based on fetched *persistent* notifications
+        this.state.unreadCount = notifications.filter(n => !n.read).length; // Assuming API returns read status
         this.updateBadge();
-        
-        // Update notification center
-        this.updateNotificationCenter(notifications);
-        
-        // Show toasts for new notifications
+
+        // Update notification center UI
+        this.updateNotificationCenterUI(notifications);
+
+        // Show standard toasts ONLY for *new* persistent notifications since last fetch
         if (this.state.lastFetchTime) {
             const newNotifications = notifications.filter(notification => {
-                const notificationTime = new Date(notification.created_at);
-                return notificationTime > this.state.lastFetchTime;
+                // Ensure created_at is valid before creating Date object
+                return notification.created_at && new Date(notification.created_at) > this.state.lastFetchTime;
             });
-            
-            // Show toasts for new notifications (in reverse order so newest appears on top)
-            newNotifications.reverse().forEach(notification => {
-                this.showToast(notification);
-            });
+
+            if (newNotifications.length > 0) {
+                 console.log(`Showing ${newNotifications.length} new persistent notification toasts.`);
+                 // Show toasts (newest first)
+                 newNotifications.reverse().forEach(notification => {
+                     this.showStandardToast(notification); // Use a separate function for standard toasts
+                 });
+            }
         }
-        
-        // Update last fetch time
+
+        // Update last fetch time only if fetch was successful
         this.state.lastFetchTime = new Date();
     },
-    
-    /**
-     * Update the notification badge count
-     */
+
     updateBadge: function() {
         if (!this.elements.notificationBadge) return;
-        
         if (this.state.unreadCount > 0) {
             this.elements.notificationBadge.textContent = this.state.unreadCount > 99 ? '99+' : this.state.unreadCount;
-            this.elements.notificationBadge.style.display = 'inline-block';
+            this.elements.notificationBadge.style.display = ''; // Use '' to reset to default display
         } else {
             this.elements.notificationBadge.style.display = 'none';
         }
     },
-    
-    /**
-     * Update the notification center with notifications
-     */
-    updateNotificationCenter: function(notifications) {
+
+    updateNotificationCenterUI: function(notifications) {
         if (!this.elements.notificationBody) return;
-        
-        if (notifications.length === 0) {
+
+        if (!notifications || notifications.length === 0) {
             this.elements.notificationBody.innerHTML = `
                 <div class="notification-empty">
-                    <i class="fas fa-bell fa-2x mb-3"></i>
+                    <i class="fas fa-bell fa-2x mb-3" aria-hidden="true"></i>
                     <p>No notifications yet</p>
                 </div>
             `;
             return;
         }
-        
-        // Clear existing notifications
-        this.elements.notificationBody.innerHTML = '';
-        
-        // Add each notification
+
+        this.elements.notificationBody.innerHTML = ''; // Clear existing
+        notifications.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); // Sort newest first
+
         notifications.forEach(notification => {
-            const notificationItem = document.createElement('div');
-            notificationItem.className = `notification-item ${notification.type}`;
-            notificationItem.dataset.id = notification.id;
-            
-            // Format the date
-            const notificationDate = new Date(notification.created_at);
-            const formattedDate = notificationDate.toLocaleDateString() + ' ' + notificationDate.toLocaleTimeString();
-            
-            // Icon based on notification type
+            const item = document.createElement('div');
+            item.className = `notification-item ${notification.type || 'info'} ${notification.read ? 'read' : ''}`;
+            item.dataset.id = notification.id;
+
+            const date = notification.created_at ? new Date(notification.created_at) : new Date();
+            // More robust date formatting
+            const formattedDate = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' +
+                                  date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
             const iconClass = this.getIconForType(notification.type);
-            
-            notificationItem.innerHTML = `
-                <div class="d-flex align-items-start">
-                    <div class="notification-icon ${notification.type}">
-                        <i class="${iconClass}"></i>
-                    </div>
-                    <div class="flex-grow-1">
-                        <div class="notification-message">${notification.message}</div>
-                        <div class="notification-time">${formattedDate}</div>
-                    </div>
-                    <button class="btn btn-sm mark-read-btn" title="Mark as read">
-                        <i class="fas fa-check"></i>
-                    </button>
+
+            item.innerHTML = `
+                <div class="notification-icon ${notification.type || 'info'}">
+                    <i class="${iconClass}" aria-hidden="true"></i>
                 </div>
+                <div class="notification-content flex-grow-1">
+                    <div class="notification-message">${notification.message || 'No message'}</div>
+                    <div class="notification-time">${formattedDate}</div>
+                </div>
+                ${!notification.read ? `
+                <button class="btn btn-sm btn-outline-secondary mark-read-btn ms-2" title="Mark as read">
+                    <i class="fas fa-check" aria-hidden="true"></i>
+                </button>` : ''}
             `;
-            
-            this.elements.notificationBody.appendChild(notificationItem);
+            this.elements.notificationBody.appendChild(item);
         });
     },
-    
-    /**
-     * Show a toast notification
-     */
-    showToast: function(notification) {
+
+    markAsRead: function(notificationId) {
+        console.log(`API call: Mark notification ${notificationId} as read.`);
+        fetch('/api/notifications/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [notificationId] }),
+        })
+        .then(response => response.ok ? response.json() : Promise.reject(`HTTP error! status: ${response.status}`))
+        .then(() => {
+            console.log(`Notification ${notificationId} marked as read successfully.`);
+            this.fetchPersistentNotifications(); // Refresh list
+        })
+        .catch(error => {
+            console.error(`Error marking notification ${notificationId} as read:`, error);
+            this.showStandardToast({ message: 'Failed to mark notification as read.', type: 'error' });
+        });
+    },
+
+    markAllAsRead: function() {
+        console.log("API call: Mark all notifications as read.");
+        fetch('/api/notifications/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}), // Empty body means mark all
+        })
+        .then(response => response.ok ? response.json() : Promise.reject(`HTTP error! status: ${response.status}`))
+        .then(() => {
+            console.log("All notifications marked as read successfully.");
+            this.fetchPersistentNotifications(); // Refresh list
+        })
+        .catch(error => {
+            console.error('Error marking all notifications as read:', error);
+            this.showStandardToast({ message: 'Failed to mark all notifications as read.', type: 'error' });
+        });
+    },
+
+    // --- Standard Toast Handling (for new persistent notifications) ---
+    showStandardToast: function(notification) {
         if (!this.elements.toastContainer) return;
-        
-        // Create toast element
-        const toast = document.createElement('div');
-        toast.className = `toast notification-toast ${notification.type} show`;
-        toast.setAttribute('role', 'alert');
-        toast.setAttribute('aria-live', 'assertive');
-        toast.setAttribute('aria-atomic', 'true');
-        
-        // Icon based on notification type
-        const iconClass = this.getIconForType(notification.type);
-        
-        toast.innerHTML = `
-            <div class="toast-header">
-                <i class="${iconClass} me-2"></i>
-                <strong class="me-auto">${this.getHeaderForType(notification.type)}</strong>
-                <small>Just now</small>
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body">
-                ${notification.message}
-            </div>
-        `;
-        
-        // Add to container
-        this.elements.toastContainer.appendChild(toast);
-        
-        // Initialize Bootstrap toast
-        const bsToast = new bootstrap.Toast(toast, {
+
+        const toastElement = this.createToastElement(notification.message, notification.type);
+        this.elements.toastContainer.appendChild(toastElement);
+
+        const bsToast = new bootstrap.Toast(toastElement, {
             autohide: true,
-            delay: 5000
+            delay: this.config.liveToastDefaults.delay // Use same default delay
         });
-        
-        // Remove from DOM after hiding
-        toast.addEventListener('hidden.bs.toast', function() {
-            toast.remove();
-        });
-        
-        // Show the toast
+
+        toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove());
         bsToast.show();
-        
-        // Limit maximum number of toasts
-        const toasts = this.elements.toastContainer.querySelectorAll('.toast');
-        if (toasts.length > this.config.maxToasts) {
-            // Remove oldest toasts
-            for (let i = 0; i < toasts.length - this.config.maxToasts; i++) {
-                const oldToast = toasts[i];
+        this.limitStandardToastCount(); // Limit standard toasts
+    },
+
+    limitStandardToastCount: function() {
+        const standardToasts = this.elements.toastContainer.querySelectorAll('.toast:not([data-operation-id])'); // Select only standard toasts
+        if (standardToasts.length > this.config.maxToasts) {
+            console.log(`Limiting standard toasts, removing ${standardToasts.length - this.config.maxToasts} oldest.`);
+            for (let i = 0; i < standardToasts.length - this.config.maxToasts; i++) {
+                const oldToast = standardToasts[i];
                 const bsOldToast = bootstrap.Toast.getInstance(oldToast);
                 if (bsOldToast) {
-                    bsOldToast.hide();
+                    bsOldToast.hide(); // This will trigger removal via 'hidden.bs.toast' listener
                 } else {
-                    oldToast.remove();
+                    oldToast.remove(); // Fallback removal
                 }
             }
         }
     },
-    
+
+
+    // --- Live Operation Toast Handling ---
+
     /**
-     * Mark a notification as read
+     * Shows a persistent toast for an ongoing operation.
+     * @param {string} operationId - A unique ID for this operation.
+     * @param {string} message - The initial message.
+     * @param {string} type - Notification type (info, success, warning, error).
+     * @param {boolean} showSpinner - Whether to show a spinner.
+     * @param {number|null} progress - Initial progress value (0-100), null for no progress bar.
      */
-    markAsRead: function(notificationId) {
-        fetch('/api/notifications/mark-read', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ ids: [notificationId] }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Refresh notifications
-            this.fetchNotifications();
-        })
-        .catch(error => {
-            console.error('Error marking notification as read:', error);
+    showLiveToast: function(operationId, message, type = 'info', showSpinner = false, progress = null) {
+        if (!this.elements.toastContainer) {
+             console.error("Toast container not available for live toast.");
+             return;
+        }
+        if (this.state.activeLiveToasts[operationId]) {
+            console.warn(`Live toast with ID ${operationId} already exists. Updating instead.`);
+            this.updateLiveToast(operationId, message, type, showSpinner, progress);
+            return;
+        }
+         console.log(`Showing live toast: ${operationId} - ${message}`);
+
+        const toastElement = this.createToastElement(message, type, showSpinner, progress);
+        toastElement.dataset.operationId = operationId; // Mark as live toast
+
+        this.elements.toastContainer.appendChild(toastElement);
+
+        const bsToast = new bootstrap.Toast(toastElement, {
+            autohide: false // Live toasts do not autohide initially
+        });
+
+        // Store reference
+        this.state.activeLiveToasts[operationId] = { element: toastElement, bsToast: bsToast };
+
+        // Add listener for manual removal case (though completeLiveToast is preferred)
+        toastElement.addEventListener('hidden.bs.toast', () => {
+            toastElement.remove();
+            delete this.state.activeLiveToasts[operationId];
+             console.log(`Live toast ${operationId} removed.`);
+        });
+
+        bsToast.show();
+    },
+
+    /**
+     * Updates an existing live toast.
+     * @param {string} operationId - The ID of the toast to update.
+     * @param {string} message - The new message.
+     * @param {string} [type] - Optional new type.
+     * @param {boolean|null} [showSpinner] - Optional new spinner state (null to keep current).
+     * @param {number|null} [progress] - Optional new progress value (null to keep current).
+     */
+    updateLiveToast: function(operationId, message, type = null, showSpinner = null, progress = null) {
+        const liveToast = this.state.activeLiveToasts[operationId];
+        if (!liveToast) {
+            console.warn(`Cannot update live toast: ID ${operationId} not found.`);
+            return;
+        }
+         console.log(`Updating live toast: ${operationId} - ${message}`);
+
+        const toastElement = liveToast.element;
+        const bodyElement = toastElement.querySelector('.toast-body');
+        const headerElement = toastElement.querySelector('.toast-header');
+        const iconElement = headerElement?.querySelector('i');
+        const titleElement = headerElement?.querySelector('.me-auto');
+        const messageSpan = bodyElement?.querySelector('.live-toast-message');
+        const spinnerElement = bodyElement?.querySelector('.spinner-border');
+        const progressElement = bodyElement?.querySelector('.progress');
+        const progressBar = progressElement?.querySelector('.progress-bar');
+
+        // Update Type (Icon, Header Text, Border)
+        if (type && toastElement.classList.contains(type)) {
+             const currentType = [...toastElement.classList].find(cls => ['info', 'success', 'warning', 'error'].includes(cls));
+             if (currentType) toastElement.classList.remove(currentType);
+             toastElement.classList.add(type);
+             if (iconElement) iconElement.className = `${this.getIconForType(type)} me-2`;
+             if (titleElement) titleElement.textContent = this.getHeaderForType(type);
+        }
+
+        // Update Message
+        if (messageSpan) {
+            messageSpan.textContent = message;
+        } else if (bodyElement) {
+             // Fallback if structure wasn't as expected initially
+             bodyElement.innerHTML = `<span class="live-toast-message">${message}</span>` + (bodyElement.innerHTML.includes('spinner') ? this.getSpinnerHtml() : '') + (bodyElement.innerHTML.includes('progress') ? this.getProgressHtml(progress ?? 0) : '');
+        }
+
+
+        // Update Spinner
+        if (showSpinner !== null) {
+            if (showSpinner && !spinnerElement) {
+                bodyElement?.insertAdjacentHTML('beforeend', this.getSpinnerHtml());
+            } else if (!showSpinner && spinnerElement) {
+                spinnerElement.remove();
+            }
+        }
+
+        // Update Progress Bar
+        if (progress !== null) {
+            if (progress >= 0 && progress <= 100) {
+                if (!progressElement && bodyElement) {
+                     bodyElement.insertAdjacentHTML('beforeend', this.getProgressHtml(progress));
+                } else if (progressBar) {
+                    progressBar.style.width = `${progress}%`;
+                    progressBar.setAttribute('aria-valuenow', progress);
+                    progressBar.textContent = `${progress}%`; // Optional: show text
+                    if (progressElement) progressElement.style.display = ''; // Ensure visible
+                }
+            } else if (progressElement) {
+                 progressElement.style.display = 'none'; // Hide if progress is invalid/nullified
+            }
+        } else if (progressElement && showSpinner === true) {
+             // Hide progress if spinner is explicitly shown and progress is not updated
+             progressElement.style.display = 'none';
+        }
+
+    },
+
+    /**
+     * Completes a live toast, updating its message/type and making it autohide.
+     * @param {string} operationId - The ID of the toast to complete.
+     * @param {string} message - The final message (e.g., "Success!").
+     * @param {string} type - The final type (e.g., 'success' or 'error').
+     * @param {number} [delay] - Optional hide delay (defaults to config).
+     */
+    completeLiveToast: function(operationId, message, type = 'success', delay = null) {
+        const liveToast = this.state.activeLiveToasts[operationId];
+        if (!liveToast) {
+            console.warn(`Cannot complete live toast: ID ${operationId} not found.`);
+            // Optionally create a standard toast if the live one is missing
+            this.showStandardToast({ message: message, type: type });
+            return;
+        }
+         console.log(`Completing live toast: ${operationId} - ${message}`);
+
+        // Update final state (remove spinner/progress)
+        this.updateLiveToast(operationId, message, type, false, -1); // Progress -1 hides bar
+
+        // Make it autohide
+        const hideDelay = delay ?? this.config.liveToastDefaults.delay;
+        liveToast.bsToast.update({ autohide: true, delay: hideDelay });
+        liveToast.bsToast.show(); // Re-show to apply new autohide settings if needed
+
+        // Reference will be removed by the 'hidden.bs.toast' listener added in showLiveToast
+    },
+
+    // --- Live Operation Listeners (Integrated from live-notifications.js) ---
+    setupLiveOperationListeners: function() {
+        this.setupImageUploadListener();
+        this.setupImageSendingListener();
+        this.setupScheduleEventsListener();
+         console.log("Live operation listeners set up.");
+    },
+
+    setupImageUploadListener: function() {
+        const uploadForm = document.getElementById('uploadForm');
+        if (!uploadForm) return;
+
+        uploadForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                this.showStandardToast({ message: "Please select files to upload.", type: 'warning' });
+                return;
+            }
+
+            const operationId = `upload-${Date.now()}`; // Simple unique ID
+            const fileCount = fileInput.files.length;
+            const message = `Starting upload of ${fileCount} image(s)...`;
+
+            this.showLiveToast(operationId, message, 'info', false, 0); // Show progress bar initially
+
+            const formData = new FormData(uploadForm); // More robust way to get form data
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', uploadForm.action, true);
+
+            let lastReportedProgress = -1;
+            xhr.upload.addEventListener("progress", (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = Math.round((event.loaded / event.total) * 100);
+                    // Throttle updates slightly
+                    if (percentComplete > lastReportedProgress) {
+                         lastReportedProgress = percentComplete;
+                         this.updateLiveToast(operationId, `Uploading ${fileCount} image(s)...`, 'info', false, percentComplete);
+                    }
+                }
+            });
+
+            xhr.onload = () => {
+                // Clear file input
+                fileInput.value = '';
+                // Hide legacy progress bar if it exists
+                const legacyProgress = document.getElementById('progressContainer');
+                if(legacyProgress) legacyProgress.style.display = 'none';
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    this.completeLiveToast(operationId, `Successfully uploaded ${fileCount} image(s)!`, 'success');
+                    // Refresh gallery after a short delay to allow toast visibility
+                    setTimeout(() => {
+                        if (typeof window.loadImages === 'function') { // Check if gallery refresh function exists
+                            window.currentPage = 1; // Reset pagination if applicable
+                            window.loadImages(1);
+                             console.log("Gallery refresh triggered after upload.");
+                        } else {
+                             console.warn("loadImages function not found for gallery refresh.");
+                        }
+                    }, 1500);
+                } else {
+                    let errorMsg = `Upload failed (Status: ${xhr.status})`;
+                    try {
+                        const jsonResponse = JSON.parse(xhr.responseText);
+                        errorMsg = jsonResponse.error || errorMsg;
+                    } catch (parseError) { /* Ignore if response is not JSON */ }
+                    this.completeLiveToast(operationId, errorMsg, 'error', 10000); // Keep error longer
+                }
+            };
+
+            xhr.onerror = () => {
+                 // Clear file input
+                fileInput.value = '';
+                 // Hide legacy progress bar if it exists
+                const legacyProgress = document.getElementById('progressContainer');
+                if(legacyProgress) legacyProgress.style.display = 'none';
+                this.completeLiveToast(operationId, "Upload failed due to network error.", 'error', 10000);
+            };
+
+            xhr.send(formData);
         });
     },
-    
-    /**
-     * Mark all notifications as read
-     */
-    markAllAsRead: function() {
-        fetch('/api/notifications/mark-read', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({}),  // Empty object will mark all as read
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Refresh notifications
-            this.fetchNotifications();
-        })
-        .catch(error => {
-            console.error('Error marking all notifications as read:', error);
+
+    setupImageSendingListener: function() {
+        // Use event delegation on a stable parent, like document.body
+        document.body.addEventListener('click', (e) => {
+            const sendButton = e.target.closest('.send-button'); // Find the button even if icon inside is clicked
+            if (sendButton) {
+                const imageFilename = sendButton.getAttribute('data-image');
+                // Find the selected device more reliably
+                const selectedDeviceInput = document.querySelector('input[name="device"]:checked');
+
+                if (!imageFilename) {
+                    console.error("Send button clicked, but data-image attribute is missing.");
+                    return;
+                }
+                if (!selectedDeviceInput) {
+                    this.showStandardToast({ message: "Please select a device first.", type: 'warning' });
+                    e.preventDefault(); // Prevent default if validation fails
+                    e.stopPropagation(); // Stop propagation if validation fails
+                    return;
+                }
+
+                const deviceId = selectedDeviceInput.value;
+                const deviceFriendly = selectedDeviceInput.getAttribute('data-friendly') || deviceId;
+                const operationId = `send-${imageFilename}-${deviceId}`; // More specific ID
+
+                console.log(`Intercepted send click: Image ${imageFilename} to Device ${deviceId}`);
+                this.showLiveToast(operationId, `Sending ${imageFilename} to ${deviceFriendly}...`, 'info', true); // Show spinner
+
+                // IMPORTANT: We assume the original click handler (e.g., in gallery.js)
+                // will make the actual fetch/AJAX call. That handler MUST be modified
+                // to call NotificationSystem.completeLiveToast(operationId, ...) on success/error.
+                // We do NOT preventDefault() here, allowing the original handler to run.
+            }
         });
     },
-    
-    /**
-     * Get appropriate icon class for notification type
-     */
+
+    setupScheduleEventsListener: function() {
+        // This relies on other parts of the application using window.postMessage
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'schedule-status') {
+                const { action, details, operationId } = event.data;
+                const id = operationId || `schedule-${Date.now()}`; // Use provided ID or generate one
+
+                if (action === 'start') {
+                    this.showLiveToast(id, `Scheduled task started: ${details}`, 'info', true);
+                } else if (action === 'progress') {
+                     this.updateLiveToast(id, `Scheduled task progress: ${details}`, 'info', true); // Keep spinner for generic progress
+                } else if (action === 'complete') {
+                    this.completeLiveToast(id, `Scheduled task finished: ${details}`, 'success');
+                } else if (action === 'error') {
+                    this.completeLiveToast(id, `Scheduled task failed: ${details}`, 'error', 10000);
+                }
+            }
+        });
+         console.log("Schedule event listener set up.");
+    },
+
+
+    // --- Helper Functions ---
+    createToastElement: function(message, type = 'info', showSpinner = false, progress = null) {
+        const toast = document.createElement('div');
+        // Base classes + type class
+        toast.className = `toast notification-toast ${type}`;
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+
+        const iconClass = this.getIconForType(type);
+        const headerText = this.getHeaderForType(type);
+
+        let bodyContent = `<span class="live-toast-message">${message}</span>`;
+        if (showSpinner) {
+            bodyContent += this.getSpinnerHtml();
+        }
+        if (progress !== null && progress >= 0 && progress <= 100) {
+            bodyContent += this.getProgressHtml(progress);
+        }
+
+        toast.innerHTML = `
+            <div class="toast-header">
+                <i class="${iconClass} me-2" aria-hidden="true"></i>
+                <strong class="me-auto">${headerText}</strong>
+                <small class="text-muted">Just now</small> <!-- Consider updating this dynamically -->
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                ${bodyContent}
+            </div>
+        `;
+        return toast;
+    },
+
+    getSpinnerHtml: function() {
+        return ` <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>`;
+    },
+
+    getProgressHtml: function(progressValue) {
+         const clampedProgress = Math.max(0, Math.min(100, progressValue));
+         return `
+            <div class="progress mt-2" style="height: 6px;">
+                <div class="progress-bar" role="progressbar" style="width: ${clampedProgress}%;"
+                     aria-valuenow="${clampedProgress}" aria-valuemin="0" aria-valuemax="100">${clampedProgress}%</div>
+            </div>
+        `;
+    },
+
     getIconForType: function(type) {
         switch (type) {
-            case 'info':
-                return 'fas fa-info-circle';
-            case 'success':
-                return 'fas fa-check-circle';
-            case 'warning':
-                return 'fas fa-exclamation-triangle';
-            case 'error':
-                return 'fas fa-times-circle';
-            default:
-                return 'fas fa-bell';
+            case 'info': return 'fas fa-info-circle';
+            case 'success': return 'fas fa-check-circle';
+            case 'warning': return 'fas fa-exclamation-triangle';
+            case 'error': return 'fas fa-times-circle';
+            default: return 'fas fa-bell';
         }
     },
-    
-    /**
-     * Get appropriate header text for notification type
-     */
+
     getHeaderForType: function(type) {
         switch (type) {
-            case 'info':
-                return 'Information';
-            case 'success':
-                return 'Success';
-            case 'warning':
-                return 'Warning';
-            case 'error':
-                return 'Error';
-            default:
-                return 'Notification';
+            case 'info': return 'Information';
+            case 'success': return 'Success';
+            case 'warning': return 'Warning';
+            case 'error': return 'Error';
+            default: return 'Notification';
         }
     }
 };
 
+// --- Global Helper (Optional but convenient) ---
 /**
- * Helper function to create a notification
- * 
- * @param {string} message - The notification message
- * @param {string} type - The notification type: 'info', 'success', 'warning', 'error'
- * @returns {Promise} - A promise that resolves when the notification is created
+ * Creates a persistent notification via the backend API.
+ * Use NotificationSystem.showLiveToast for transient operation status.
+ * @param {string} message - The notification message.
+ * @param {string} type - The notification type: 'info', 'success', 'warning', 'error'.
+ * @returns {Promise} - A promise that resolves with the created notification data or rejects on error.
  */
-function createNotification(message, type = 'info') {
+function createPersistentNotification(message, type = 'info') {
+    console.log(`API call: Create persistent notification - ${message}`);
     return fetch('/api/notifications', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, type }),
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+             return response.json().then(err => Promise.reject(err.error || `HTTP error! status: ${response.status}`));
+        }
+        return response.json();
+    })
     .catch(error => {
-        console.error('Error creating notification:', error);
+        console.error('Error creating persistent notification:', error);
+        // Optionally show an error toast *here* using the live system
+        NotificationSystem.showStandardToast({ message: `Failed to save notification: ${error}`, type: 'error' });
+        return Promise.reject(error); // Re-reject so calling code knows it failed
     });
+}
+
+
+// --- Initialize ---
+// Use a slight delay or ensure this runs after the main DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => NotificationSystem.init());
+} else {
+    NotificationSystem.init(); // DOMContentLoaded has already fired
 }
