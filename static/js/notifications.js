@@ -489,130 +489,25 @@ const NotificationSystem = {
 
         // Make it autohide
         const hideDelay = delay ?? this.config.liveToastDefaults.delay;
-        liveToast.bsToast.update({ autohide: true, delay: hideDelay });
-        liveToast.bsToast.show(); // Re-show to apply new autohide settings if needed
+        // liveToast.bsToast.update({ autohide: true, delay: hideDelay }); // .update() is not a valid BS5 method
+        // Attempt to re-show the toast to apply autohide. Note: BS5 might require dispose/recreate for option changes.
+        // We might need to manually set a timeout to hide if this doesn't work reliably.
+        liveToast.bsToast.show();
 
         // Reference will be removed by the 'hidden.bs.toast' listener added in showLiveToast
     },
 
     // --- Live Operation Listeners (Integrated from live-notifications.js) ---
     setupLiveOperationListeners: function() {
-        this.setupImageUploadListener();
-        this.setupImageSendingListener();
+        // Removed call to setupImageUploadListener
+        // Removed call to setupImageSendingListener
         this.setupScheduleEventsListener();
          console.log("Live operation listeners set up.");
     },
 
-    setupImageUploadListener: function() {
-        const uploadForm = document.getElementById('uploadForm');
-        if (!uploadForm) return;
+    // setupImageUploadListener function removed
 
-        uploadForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('fileInput');
-            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-                this.showStandardToast({ message: "Please select files to upload.", type: 'warning' });
-                return;
-            }
-
-            const operationId = `upload-${Date.now()}`; // Simple unique ID
-            const fileCount = fileInput.files.length;
-            const message = `Starting upload of ${fileCount} image(s)...`;
-
-            this.showLiveToast(operationId, message, 'info', false, 0); // Show progress bar initially
-
-            const formData = new FormData(uploadForm); // More robust way to get form data
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', uploadForm.action, true);
-
-            let lastReportedProgress = -1;
-            xhr.upload.addEventListener("progress", (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    // Throttle updates slightly
-                    if (percentComplete > lastReportedProgress) {
-                         lastReportedProgress = percentComplete;
-                         this.updateLiveToast(operationId, `Uploading ${fileCount} image(s)...`, 'info', false, percentComplete);
-                    }
-                }
-            });
-
-            xhr.onload = () => {
-                // Clear file input
-                fileInput.value = '';
-                // Hide legacy progress bar if it exists
-                const legacyProgress = document.getElementById('progressContainer');
-                if(legacyProgress) legacyProgress.style.display = 'none';
-
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    this.completeLiveToast(operationId, `Successfully uploaded ${fileCount} image(s)!`, 'success');
-                    // Refresh gallery after a short delay to allow toast visibility
-                    setTimeout(() => {
-                        if (typeof window.loadImages === 'function') { // Check if gallery refresh function exists
-                            window.currentPage = 1; // Reset pagination if applicable
-                            window.loadImages(1);
-                             console.log("Gallery refresh triggered after upload.");
-                        } else {
-                             console.warn("loadImages function not found for gallery refresh.");
-                        }
-                    }, 1500);
-                } else {
-                    let errorMsg = `Upload failed (Status: ${xhr.status})`;
-                    try {
-                        const jsonResponse = JSON.parse(xhr.responseText);
-                        errorMsg = jsonResponse.error || errorMsg;
-                    } catch (parseError) { /* Ignore if response is not JSON */ }
-                    this.completeLiveToast(operationId, errorMsg, 'error', 10000); // Keep error longer
-                }
-            };
-
-            xhr.onerror = () => {
-                 // Clear file input
-                fileInput.value = '';
-                 // Hide legacy progress bar if it exists
-                const legacyProgress = document.getElementById('progressContainer');
-                if(legacyProgress) legacyProgress.style.display = 'none';
-                this.completeLiveToast(operationId, "Upload failed due to network error.", 'error', 10000);
-            };
-
-            xhr.send(formData);
-        });
-    },
-
-    setupImageSendingListener: function() {
-        // Use event delegation on a stable parent, like document.body
-        document.body.addEventListener('click', (e) => {
-            const sendButton = e.target.closest('.send-button'); // Find the button even if icon inside is clicked
-            if (sendButton) {
-                const imageFilename = sendButton.getAttribute('data-image');
-                // Find the selected device more reliably
-                const selectedDeviceInput = document.querySelector('input[name="device"]:checked');
-
-                if (!imageFilename) {
-                    console.error("Send button clicked, but data-image attribute is missing.");
-                    return;
-                }
-                if (!selectedDeviceInput) {
-                    this.showStandardToast({ message: "Please select a device first.", type: 'warning' });
-                    e.preventDefault(); // Prevent default if validation fails
-                    e.stopPropagation(); // Stop propagation if validation fails
-                    return;
-                }
-
-                const deviceId = selectedDeviceInput.value;
-                const deviceFriendly = selectedDeviceInput.getAttribute('data-friendly') || deviceId;
-                const operationId = `send-${imageFilename}-${deviceId}`; // More specific ID
-
-                console.log(`Intercepted send click: Image ${imageFilename} to Device ${deviceId}`);
-                this.showLiveToast(operationId, `Sending ${imageFilename} to ${deviceFriendly}...`, 'info', true); // Show spinner
-
-                // IMPORTANT: We assume the original click handler (e.g., in gallery.js)
-                // will make the actual fetch/AJAX call. That handler MUST be modified
-                // to call NotificationSystem.completeLiveToast(operationId, ...) on success/error.
-                // We do NOT preventDefault() here, allowing the original handler to run.
-            }
-        });
-    },
+    // setupImageSendingListener function removed
 
     setupScheduleEventsListener: function() {
         // This relies on other parts of the application using window.postMessage

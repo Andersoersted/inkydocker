@@ -82,6 +82,12 @@
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     <!-- Main App JS (includes lazy loading, toast container setup) -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-    {% block scripts %}{% endblock %}
+    
+    {% block scripts %}
+    <script src="{{ url_for('static', filename='js/gallery_page.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/info_modal.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/crop_modal.js') }}"></script>
+
+    {% endblock %}
   </body>
 </html>
