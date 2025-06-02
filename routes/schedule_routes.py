@@ -78,8 +78,9 @@ def get_events():
         device_name = device_info["friendly_name"]
         
         if ev.recurrence.lower() == "none":
-            # Check if the file is a screenshot
+            # Check if the file is a screenshot or Immich asset
             is_screenshot = False
+            is_immich = False
             thumbnail_url = f"/thumbnail/{ev.filename}"
             current_filename = ev.filename  # Keep track of the current filename
             
@@ -87,9 +88,12 @@ def get_events():
             screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
             if screenshot:
                 is_screenshot = True
-                # Use the current filename from the Screenshot record, which could be updated during refresh
                 thumbnail_url = f"/screenshots/{screenshot.filename}?cropped=true"
-                current_filename = screenshot.filename  # Update to the current screenshot filename
+                current_filename = screenshot.filename
+            if ev.filename.startswith('immich:'):
+                is_immich = True
+                asset_id = ev.filename.split(':',1)[1]
+                thumbnail_url = f"/immich/image/{asset_id}?thumbnail=true"
             
             event_list.append({
                 "id": ev.id,
@@ -106,6 +110,7 @@ def get_events():
                 "extendedProps": {
                     "thumbnail": thumbnail_url,
                     "isScreenshot": is_screenshot,
+                    "isImmich": is_immich,
                     "refreshScreenshot": ev.refresh_screenshot,
                     "currentFilename": current_filename
                 }
@@ -159,6 +164,7 @@ def get_events():
             while occurrence <= future_horizon:
                 # Check if the file is a screenshot
                 is_screenshot = False
+                is_immich = False
                 thumbnail_url = f"/thumbnail/{ev.filename}"
                 current_filename = ev.filename  # Keep track of the current filename
                 
@@ -166,9 +172,12 @@ def get_events():
                 screenshot = Screenshot.query.filter_by(filename=ev.filename).first()
                 if screenshot:
                     is_screenshot = True
-                    # Use the current filename from the Screenshot record, which could be updated during refresh
                     thumbnail_url = f"/screenshots/{screenshot.filename}?cropped=true"
-                    current_filename = screenshot.filename  # Update to the current screenshot filename
+                    current_filename = screenshot.filename
+                if ev.filename.startswith('immich:'):
+                    is_immich = True
+                    asset_id = ev.filename.split(':',1)[1]
+                    thumbnail_url = f"/immich/image/{asset_id}?thumbnail=true"
                 
                 event_list.append({
                     "id": ev.id,  # same series id
@@ -187,6 +196,7 @@ def get_events():
                         "thumbnail": thumbnail_url,
                         "isRecurring": True,  # Flag for frontend to identify recurring events
                         "isScreenshot": is_screenshot,
+                        "isImmich": is_immich,
                         "refreshScreenshot": ev.refresh_screenshot,
                         "currentFilename": current_filename
                     }

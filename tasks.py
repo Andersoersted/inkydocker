@@ -684,6 +684,8 @@ def send_scheduled_image(event_id):
         from utils.image_helpers import add_send_log_entry
         from flask import current_app
         from routes.browserless_routes import take_screenshot_with_puppeteer
+        import httpx
+        import tempfile
         
         # Log the start of the scheduled image send process
         current_app.logger.info(f"Starting scheduled image send for event ID: {event_id}")
@@ -780,14 +782,31 @@ def send_scheduled_image(event_id):
             data_folder = current_app.config.get("DATA_FOLDER", "./data")
             screenshots_folder = os.path.join(data_folder, 'screenshots')
             
-            # Check if the file is a screenshot or a regular image
-            filepath = os.path.join(screenshots_folder, event.filename)
-            if not os.path.exists(filepath):
-                # Try in the regular images folder
-                filepath = os.path.join(image_folder, event.filename)
-                if not os.path.exists(filepath):
-                    current_app.logger.error("Image file not found: %s", filepath)
+            # Check if the file is a screenshot, Immich asset or a regular image
+            if event.filename.startswith('immich:'):
+                asset_id = event.filename.split(':',1)[1]
+                from models import ImmichConfig
+                config = ImmichConfig.query.filter_by(active=True).first()
+                if not config:
+                    current_app.logger.error("No Immich config for event")
                     return
+                try:
+                    url = f"{config.address}/api/assets/{asset_id}"
+                    r = httpx.get(url, headers={'x-api-key': config.api_key}, timeout=30)
+                    r.raise_for_status()
+                except Exception as e:
+                    current_app.logger.error(f"Error fetching Immich asset: {e}")
+                    return
+                temp_fd, filepath = tempfile.mkstemp(suffix='.jpg')
+                with os.fdopen(temp_fd, 'wb') as f:
+                    f.write(r.content)
+            else:
+                filepath = os.path.join(screenshots_folder, event.filename)
+                if not os.path.exists(filepath):
+                    filepath = os.path.join(image_folder, event.filename)
+                    if not os.path.exists(filepath):
+                        current_app.logger.error("Image file not found: %s", filepath)
+                        return
     
             addr = device_obj.address
             if not (addr.startswith("http://") or addr.startswith("https://")):
@@ -1047,6 +1066,11 @@ def send_scheduled_image(event_id):
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file deleted: {temp_filename}")
             except Exception as e:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] Error deleting temporary file: {e}")
+            if event.filename.startswith('immich:'):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
             
             # If we reach this point, it means the request was successful (status code 200)
             current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")

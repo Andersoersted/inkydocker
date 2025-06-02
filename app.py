@@ -51,6 +51,7 @@ def create_app(config_class=Config):
     from routes.ai_tagging_routes import ai_bp
     from routes.browserless_routes import browserless_bp
     from routes.settings_routes_zero_shot import zero_shot_bp
+    from routes.immich_routes import immich_bp
 
     app.register_blueprint(image_bp)
     app.register_blueprint(device_bp)
@@ -60,6 +61,7 @@ def create_app(config_class=Config):
     app.register_blueprint(ai_bp)
     app.register_blueprint(browserless_bp)
     app.register_blueprint(zero_shot_bp)
+    app.register_blueprint(immich_bp)
 
     # Create database tables if they don't exist
     with app.app_context():
