@@ -11,6 +11,20 @@ class BrowserlessConfig(db.Model):
     token = db.Column(db.String(256), nullable=True)
     active = db.Column(db.Boolean, default=True)
 
+class ImmichConfig(db.Model):
+    __tablename__ = 'immich_config'
+    id = db.Column(db.Integer, primary_key=True)
+    address = db.Column(db.String(256), nullable=False)
+    api_key = db.Column(db.String(256), nullable=False)
+    active = db.Column(db.Boolean, default=True)
+
+class ImmichGallery(db.Model):
+    __tablename__ = 'immich_gallery'
+    id = db.Column(db.Integer, primary_key=True)
+    gallery_id = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(256), nullable=False)
+    selected = db.Column(db.Boolean, default=False)
+
 class Screenshot(db.Model):
     __tablename__ = 'screenshots'
     id = db.Column(db.Integer, primary_key=True)

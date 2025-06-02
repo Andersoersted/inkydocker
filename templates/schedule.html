@@ -197,6 +197,11 @@
               <input type="hidden" id="selectedScreenshot" name="selectedScreenshot">
               <span id="selectedScreenshotName" class="text-truncate"></span>
             </div>
+            <div class="d-flex align-items-center mt-2">
+              <button type="button" class="btn btn-outline-secondary me-2" onclick="openImmichGallery()">Select Immich Image</button>
+              <input type="hidden" id="selectedImmich" name="selectedImmich">
+              <span id="selectedImmichName" class="text-truncate"></span>
+            </div>
             <div class="form-check mt-2" id="refreshScreenshotContainer" style="display: none;">
               <input class="form-check-input" type="checkbox" id="refreshScreenshot" name="refreshScreenshot">
               <label class="form-check-label" for="refreshScreenshot">
@@ -289,6 +294,24 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="closeBrowserlessGallery()">Close</button>
       </div>
+</div>
+</div>
+</div>
+
+<!-- Bootstrap 5 Modal for Immich images -->
+<div class="modal fade" id="immichGalleryModal" tabindex="-1" aria-labelledby="immichGalleryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select Immich Image</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="immichGalleryContainer" class="gallery"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -317,6 +340,7 @@
   <script>
     var currentDeleteEventId = null; // store event id for deletion modal
     var calendar; // Global calendar instance
+    var currentImmichId = null;
     
     // Bootstrap 5 compatible modal functions
     function openEventModal() {
@@ -803,6 +827,35 @@
         browserlessModal.hide();
       }
     }
+
+    // Functions for Immich gallery
+    function openImmichGallery() {
+      var immichModal = new bootstrap.Modal(document.getElementById('immichGalleryModal'));
+      immichModal.show();
+      fetchImmichImages();
+    }
+
+    function closeImmichGallery() {
+      var immichModalEl = document.getElementById('immichGalleryModal');
+      var immichModal = bootstrap.Modal.getInstance(immichModalEl);
+      if (immichModal) {
+        immichModal.hide();
+      }
+    }
+
+    function selectImmichImage(id, thumbUrl) {
+      document.getElementById('selectedImage').value = 'immich:' + id;
+      var span = document.getElementById('selectedImmichName');
+      if (span) {
+        var img = document.createElement('img');
+        img.src = thumbUrl;
+        img.style.height = '40px';
+        img.loading = 'lazy';
+        span.innerHTML = '';
+        span.appendChild(img);
+      }
+      closeImmichGallery();
+    }
     
     function selectScreenshot(filename, name, id, src) {
       // Store screenshot info for refresh functionality
@@ -1097,11 +1150,32 @@
           showToast("Error: " + data.message, true);
         }
       })
-      .catch(err => {
+  .catch(err => {
         console.error("Error " + (isUpdate ? "updating" : "adding") + " event:", err);
         showToast("Error saving event. Please try again.", true);
       });
     });
+
+    async function fetchImmichImages() {
+      const container = document.getElementById('immichGalleryContainer');
+      if (!container) return;
+      container.innerHTML = '<p>Loading...</p>';
+      const res = await fetch('/api/immich/assets/' + (currentImmichId || ''));
+      const data = await res.json();
+      container.innerHTML = '';
+      if (data.assets) {
+        data.assets.forEach(a => {
+          const div = document.createElement('div');
+          div.className = 'gallery-item';
+          const img = document.createElement('img');
+          img.src = `/immich/image/${a.id}?thumbnail=true`;
+          img.loading = 'lazy';
+          img.onclick = () => selectImmichImage(a.id, img.src);
+          div.appendChild(img);
+          container.appendChild(div);
+        });
+      }
+    }
     
   </script>
 {% endblock %}
