@@ -348,16 +348,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
   browserlessConfigForm.addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
     const address = document.getElementById('browserlessAddress').value.trim();
     const port = parseInt(document.getElementById('browserlessPort').value.trim());
     const token = document.getElementById('browserlessToken').value.trim();
-    
+
     if (!address || isNaN(port)) {
-      configStatus.innerHTML = '<div class="alert alert-danger">Please provide both address and port</div>';
+      InkyNotify.updateStatus(configStatus, 'Please provide both address and port', 'error');
       return;
     }
-    
+
+    InkyNotify.updateStatus(configStatus, 'Saving configuration...', 'loading');
+
     fetch('/api/browserless/config', {
       method: 'POST',
       headers: {
@@ -372,17 +374,18 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(response => response.json())
     .then(data => {
       if (data.status === 'success') {
-        configStatus.innerHTML = '<div class="alert alert-success">Configuration saved successfully</div>';
-        setTimeout(() => {
-          configStatus.innerHTML = '';
-        }, 3000);
+        InkyNotify.updateStatus(configStatus, 'Configuration saved successfully', 'success');
+        InkyNotify.success('Browserless configuration saved');
+        setTimeout(() => InkyNotify.clearStatus(configStatus), 3000);
       } else {
-        configStatus.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+        InkyNotify.updateStatus(configStatus, data.message, 'error');
+        InkyNotify.error(data.message);
       }
     })
     .catch(error => {
       console.error('Error:', error);
-      configStatus.innerHTML = '<div class="alert alert-danger">An error occurred</div>';
+      InkyNotify.updateStatus(configStatus, 'An error occurred', 'error');
+      InkyNotify.error('Failed to save configuration');
     });
   });
 
@@ -392,17 +395,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   addScreenshotForm.addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
     const name = document.getElementById('screenshotName').value.trim();
     const url = document.getElementById('screenshotUrl').value.trim();
-    
+
     if (!name || !url) {
-      screenshotStatus.innerHTML = '<div class="alert alert-danger">Please provide both name and URL</div>';
+      InkyNotify.updateStatus(screenshotStatus, 'Please provide both name and URL', 'error');
       return;
     }
-    
-    screenshotStatus.innerHTML = '<div class="alert alert-info">Taking screenshot...</div>';
-    
+
+    InkyNotify.updateStatus(screenshotStatus, 'Taking screenshot...', 'loading');
+
     fetch('/api/browserless/screenshot', {
       method: 'POST',
       headers: {
@@ -416,19 +419,21 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(response => response.json())
     .then(data => {
       if (data.status === 'success') {
-        screenshotStatus.innerHTML = '<div class="alert alert-success">Screenshot taken successfully</div>';
+        InkyNotify.updateStatus(screenshotStatus, 'Screenshot taken successfully', 'success');
+        InkyNotify.success('Screenshot captured successfully');
         setTimeout(() => {
-          screenshotStatus.innerHTML = '';
           // Reload the page to show the new screenshot
           window.location.reload();
         }, 2000);
       } else {
-        screenshotStatus.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+        InkyNotify.updateStatus(screenshotStatus, data.message, 'error');
+        InkyNotify.error(data.message);
       }
     })
     .catch(error => {
       console.error('Error:', error);
-      screenshotStatus.innerHTML = '<div class="alert alert-danger">An error occurred</div>';
+      InkyNotify.updateStatus(screenshotStatus, 'An error occurred', 'error');
+      InkyNotify.error('Failed to take screenshot');
     });
   });
 
@@ -439,45 +444,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const filename = this.getAttribute('data-filename');
       const selectedDevice = document.querySelector('input[name="device"]:checked');
       
-      // Create or get status container
-      let statusContainer = document.getElementById('sendStatusContainer');
-      if (!statusContainer) {
-        statusContainer = document.createElement('div');
-        statusContainer.id = 'sendStatusContainer';
-        statusContainer.className = 'position-fixed bottom-0 end-0 p-3';
-        statusContainer.style.zIndex = '1050';
-        document.body.appendChild(statusContainer);
-      }
-      
       if (!selectedDevice) {
-        // Create toast notification for device selection error
-        const toastEl = document.createElement('div');
-        toastEl.className = 'toast align-items-center text-white bg-warning border-0';
-        toastEl.setAttribute('role', 'alert');
-        toastEl.setAttribute('aria-live', 'assertive');
-        toastEl.setAttribute('aria-atomic', 'true');
-        toastEl.innerHTML = `
-          <div class="d-flex">
-            <div class="toast-body">
-              <i class="fas fa-exclamation-triangle me-2"></i> Please select a device
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-          </div>
-        `;
-        statusContainer.appendChild(toastEl);
-        
-        // Initialize and show the toast
-        const toast = new bootstrap.Toast(toastEl, {
-          autohide: true,
-          delay: 3000
-        });
-        toast.show();
-        
-        // Remove the toast element when hidden
-        toastEl.addEventListener('hidden.bs.toast', function() {
-          toastEl.remove();
-        });
-        
+        InkyNotify.warning('Please select a device');
         return;
       }
       
@@ -497,39 +465,12 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         // Re-enable button
         this.disabled = false;
-        
+
         if (data.status === 'success') {
           // Show success icon in button temporarily
           this.innerHTML = '<i class="fas fa-check"></i> Sent!';
-          
-          // Create toast notification
-          const toastEl = document.createElement('div');
-          toastEl.className = 'toast align-items-center text-white bg-success border-0';
-          toastEl.setAttribute('role', 'alert');
-          toastEl.setAttribute('aria-live', 'assertive');
-          toastEl.setAttribute('aria-atomic', 'true');
-          toastEl.innerHTML = `
-            <div class="d-flex">
-              <div class="toast-body">
-                <i class="fas fa-check-circle me-2"></i> Screenshot sent successfully to ${deviceFriendly}!
-              </div>
-              <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-          `;
-          statusContainer.appendChild(toastEl);
-          
-          // Initialize and show the toast
-          const toast = new bootstrap.Toast(toastEl, {
-            autohide: true,
-            delay: 3000
-          });
-          toast.show();
-          
-          // Remove the toast element when hidden
-          toastEl.addEventListener('hidden.bs.toast', function() {
-            toastEl.remove();
-          });
-          
+          InkyNotify.success(`Screenshot sent successfully to ${deviceFriendly}!`);
+
           // Restore original button text after delay
           setTimeout(() => {
             this.innerHTML = originalText;
@@ -537,35 +478,8 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
           // Show error in button
           this.innerHTML = '<i class="fas fa-times"></i> Failed';
-          
-          // Create toast notification for error
-          const toastEl = document.createElement('div');
-          toastEl.className = 'toast align-items-center text-white bg-danger border-0';
-          toastEl.setAttribute('role', 'alert');
-          toastEl.setAttribute('aria-live', 'assertive');
-          toastEl.setAttribute('aria-atomic', 'true');
-          toastEl.innerHTML = `
-            <div class="d-flex">
-              <div class="toast-body">
-                <i class="fas fa-exclamation-circle me-2"></i> Error: ${data.message}
-              </div>
-              <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-          `;
-          statusContainer.appendChild(toastEl);
-          
-          // Initialize and show the toast
-          const toast = new bootstrap.Toast(toastEl, {
-            autohide: true,
-            delay: 5000
-          });
-          toast.show();
-          
-          // Remove the toast element when hidden
-          toastEl.addEventListener('hidden.bs.toast', function() {
-            toastEl.remove();
-          });
-          
+          InkyNotify.error(data.message || 'Failed to send screenshot');
+
           // Restore original button text after delay
           setTimeout(() => {
             this.innerHTML = originalText;
@@ -574,39 +488,12 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(error => {
         console.error('Error:', error);
-        
+
         // Re-enable button and show error
         this.disabled = false;
         this.innerHTML = '<i class="fas fa-times"></i> Failed';
-        
-        // Create toast notification for network error
-        const toastEl = document.createElement('div');
-        toastEl.className = 'toast align-items-center text-white bg-danger border-0';
-        toastEl.setAttribute('role', 'alert');
-        toastEl.setAttribute('aria-live', 'assertive');
-        toastEl.setAttribute('aria-atomic', 'true');
-        toastEl.innerHTML = `
-          <div class="d-flex">
-            <div class="toast-body">
-              <i class="fas fa-exclamation-circle me-2"></i> Network error while sending the screenshot
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-          </div>
-        `;
-        statusContainer.appendChild(toastEl);
-        
-        // Initialize and show the toast
-        const toast = new bootstrap.Toast(toastEl, {
-          autohide: true,
-          delay: 5000
-        });
-        toast.show();
-        
-        // Remove the toast element when hidden
-        toastEl.addEventListener('hidden.bs.toast', function() {
-          toastEl.remove();
-        });
-        
+        InkyNotify.error('Network error while sending the screenshot');
+
         // Restore original button text after delay
         setTimeout(() => {
           this.innerHTML = originalText;
