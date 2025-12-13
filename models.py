@@ -1,3 +1,7 @@
+"""
+Database models for InkyDocker application.
+Defines SQLAlchemy models for images, devices, schedules, and configurations.
+"""
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 

@@ -1,22 +1,51 @@
+"""
+Database utility functions for InkyDocker.
+Handles common database operations for crop info, send logs, etc.
+"""
+from flask import current_app
 from models import CropInfo, SendLog, db
+from datetime import datetime
+import json
+
+
+def add_send_log_entry(filename):
+    """
+    Log the image send by adding an entry to the SendLog table.
+
+    Args:
+        filename: The filename of the image that was sent
+    """
+    entry = SendLog(filename=filename)
+    db.session.add(entry)
+    db.session.commit()
+
+
+def get_last_sent():
+    """
+    Get the filename of the last sent image from the log.
+
+    Returns:
+        str: Filename of the last sent image, or None if no logs exist
+    """
+    latest = SendLog.query.order_by(SendLog.id.desc()).first()
+    return latest.filename if latest else None
+
 
 def load_crop_info_from_db(filename):
     """
     Load crop information from the database with enhanced logging.
-    
+
     Args:
         filename: The filename to load crop info for
-        
+
     Returns:
         dict: Crop information or None if not found
     """
-    from flask import current_app
-    
     c = CropInfo.query.filter_by(filename=filename).first()
     if not c:
         current_app.logger.debug(f"No crop info found for {filename}")
         return None
-    
+
     result = {
         "x": c.x,
         "y": c.y,
@@ -26,27 +55,24 @@ def load_crop_info_from_db(filename):
         "updated_at": c.updated_at if hasattr(c, 'updated_at') else None
     }
     current_app.logger.debug(f"Loaded crop info for {filename}: {result}")
-    
+
     return result
+
 
 def save_crop_info_to_db(filename, crop_data):
     """
     Save crop information to the database with enhanced logging and timestamp.
-    
+
     Args:
         filename: The filename to save crop info for
         crop_data: Dictionary containing crop information
     """
-    from flask import current_app
-    from datetime import datetime
-    import json
-    
     current_app.logger.info(f"Saving new crop info for {filename}: {json.dumps(crop_data)}")
-    
+
     # Check if there's existing crop info to detect changes
     existing = CropInfo.query.filter_by(filename=filename).first()
     is_update = existing is not None
-    
+
     if not existing:
         current_app.logger.info(f"Creating new crop record for {filename}")
         existing = CropInfo(filename=filename)
@@ -62,7 +88,7 @@ def save_crop_info_to_db(filename, crop_data):
         }
         current_app.logger.info(f"Updating existing crop record for {filename}")
         current_app.logger.info(f"Old values: {json.dumps(old_values)}")
-    
+
     # Update the values
     existing.x = crop_data.get("x", 0)
     existing.y = crop_data.get("y", 0)
@@ -70,11 +96,11 @@ def save_crop_info_to_db(filename, crop_data):
     existing.height = crop_data.get("height", 0)
     if "resolution" in crop_data:
         existing.resolution = crop_data.get("resolution")
-    
+
     # Add updated_at field if it doesn't exist
     if hasattr(existing, 'updated_at'):
         existing.updated_at = datetime.utcnow()
-    
+
     # Commit the changes
     try:
         db.session.commit()
@@ -83,12 +109,3 @@ def save_crop_info_to_db(filename, crop_data):
         db.session.rollback()
         current_app.logger.error(f"Error saving crop info for {filename}: {str(e)}")
         raise
-
-def add_send_log_entry(filename):
-    entry = SendLog(filename=filename)
-    db.session.add(entry)
-    db.session.commit()
-
-def get_last_sent():
-    latest = SendLog.query.order_by(SendLog.id.desc()).first()
-    return latest.filename if latest else None

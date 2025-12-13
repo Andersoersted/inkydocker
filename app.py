@@ -1,3 +1,9 @@
+"""
+InkyDocker - Flask application for managing e-ink displays with AI-powered image tagging.
+
+This module initializes the Flask application, registers blueprints, configures Celery,
+and sets up the database with migrations.
+"""
 # Suppress warnings
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -5,19 +11,15 @@ warnings.filterwarnings("ignore", message=".*torch.distributed.reduce_op.*")
 
 from flask import Flask, send_from_directory, request
 import os
-import multiprocessing
 import logging
 from config import Config
 from models import db
 from flask_migrate import Migrate
 import pillow_heif
+from utils.init import setup_multiprocessing
 
 # Set multiprocessing start method to 'spawn' to fix CUDA issues
-try:
-    multiprocessing.set_start_method('spawn', force=True)
-except RuntimeError:
-    # Method already set, ignore
-    pass
+setup_multiprocessing()
 
 # Import celery after setting multiprocessing start method
 from tasks import celery

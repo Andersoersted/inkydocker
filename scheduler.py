@@ -9,18 +9,15 @@ The scheduler is responsible for:
 
 import sys
 import logging
-import multiprocessing
 import warnings
+from utils.init import setup_multiprocessing
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message=".*torch.distributed.reduce_op.*")
 
 # Set multiprocessing start method to 'spawn'
-try:
-    multiprocessing.set_start_method('spawn', force=True)
-except RuntimeError:
-    pass
+setup_multiprocessing()
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask

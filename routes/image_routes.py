@@ -6,7 +6,7 @@ from PIL import Image
 import subprocess
 import httpx
 from utils.image_helpers import allowed_file, convert_to_jpeg
-from utils.crop_helpers import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry, get_last_sent
+from utils.database import add_send_log_entry, get_last_sent, load_crop_info_from_db, save_crop_info_to_db
 
 image_bp = Blueprint('image', __name__)
 
