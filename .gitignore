@@ -26,6 +26,12 @@ images/
 *.sqlite
 *.db
 
+# Environment variables and secrets
+.env
+.env.local
+*.pem
+*.key
+
 # Logs
 *.log
 /tmp/

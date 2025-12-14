@@ -15,6 +15,9 @@ import logging
 from config import Config
 from models import db
 from flask_migrate import Migrate
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import pillow_heif
 from utils.init import setup_multiprocessing
 
@@ -30,7 +33,7 @@ pillow_heif.register_heif_opener()
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
-    
+
     # Configure Flask logging to reduce verbosity
     app.logger.setLevel(logging.WARNING)
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
@@ -43,6 +46,17 @@ def create_app(config_class=Config):
     # Initialize database with migrations
     db.init_app(app)
     migrate = Migrate(app, db)
+
+    # Initialize CSRF Protection
+    csrf = CSRFProtect(app)
+
+    # Initialize Rate Limiter
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri=app.config['REDIS_URL']
+    )
 
     # Register blueprints
     from routes.image_routes import image_bp
@@ -76,12 +90,19 @@ def create_app(config_class=Config):
         task_acks_late=True  # Only acknowledge tasks after they are completed
     )
 
-    # Add cache control for static files
+    # Add cache control and security headers
     @app.after_request
-    def add_cache_headers(response):
+    def add_headers(response):
+        # Cache control for static files
         if request.path.startswith('/static/'):
             response.cache_control.max_age = 604800  # 1 week in seconds
             response.cache_control.public = True
+
+        # Security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+
         return response
 
     # Serve static files with cache headers

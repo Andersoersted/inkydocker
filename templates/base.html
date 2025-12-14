@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}InkyDocker{% endblock %}</title>
     <!-- Favicon -->
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='favicon_io/apple-touch-icon.png') }}">
@@ -176,6 +177,46 @@
             referrerpolicy="no-referrer"></script>
     <!-- Centralized Notification System -->
     <script src="{{ url_for('static', filename='notifications.js') }}"></script>
+    <!-- CSRF Token Setup for AJAX requests -->
+    <script>
+      // Set up CSRF token for all AJAX requests
+      document.addEventListener('DOMContentLoaded', function() {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+        // Add CSRF token to all fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+          options = options || {};
+          options.headers = options.headers || {};
+
+          // Add CSRF token to POST, PUT, DELETE requests
+          if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+            if (options.headers instanceof Headers) {
+              options.headers.append('X-CSRFToken', csrfToken);
+            } else {
+              options.headers['X-CSRFToken'] = csrfToken;
+            }
+          }
+
+          return originalFetch(url, options);
+        };
+
+        // Add CSRF token to all XMLHttpRequest
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+          this._method = method;
+          return originalOpen.apply(this, arguments);
+        };
+
+        const originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function() {
+          if (this._method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(this._method.toUpperCase())) {
+            this.setRequestHeader('X-CSRFToken', csrfToken);
+          }
+          return originalSend.apply(this, arguments);
+        };
+      });
+    </script>
     <!-- Global Lazy Loading -->
     <script>
       document.addEventListener('DOMContentLoaded', function() {
