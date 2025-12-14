@@ -2,7 +2,6 @@ from flask import Blueprint, request, render_template, jsonify, current_app, abo
 from models import db, BrowserlessConfig, Screenshot, ScreenshotCropInfo, Device
 import os
 from datetime import datetime
-import requests
 from PIL import Image
 from io import BytesIO
 from utils.database import load_crop_info_from_db, save_crop_info_to_db, add_send_log_entry
@@ -120,9 +119,7 @@ def take_screenshot():
             
             # Copy crop info from old screenshot to new one if it exists
             old_crop_info = ScreenshotCropInfo.query.filter_by(filename=old_filename).first()
-            if old_crop_info:
-                current_app.logger.info(f"Copying crop info from {old_filename} to {filename}")
-                # Check if crop info already exists for the new filename
+            if old_crop_info:                # Check if crop info already exists for the new filename
                 new_crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
                 if not new_crop_info:
                     new_crop_info = ScreenshotCropInfo(filename=filename)
@@ -942,10 +939,7 @@ def send_screenshot(filename):
             else:
                 target_ratio = dev_width / dev_height
                 
-            # Log the original image dimensions and target ratio
-            current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, target ratio: {target_ratio}")
-            
-            # Step 1: Apply crop if available
+            # Log the original image dimensions and target ratio            # Step 1: Apply crop if available
             crop_info = ScreenshotCropInfo.query.filter_by(filename=filename).first()
             cdata = None
             
@@ -980,9 +974,7 @@ def send_screenshot(filename):
                         cropped = orig_img.crop((x, y, x+w, y+h))
                     else:
                         # If resolutions don't match, we need to recalculate the crop
-                        # to maintain the correct aspect ratio
-                        current_app.logger.info(f"Recalculating crop to match target ratio")
-                        cropped = orig_img.crop((x, y, x+w, y+h))
+                        # to maintain the correct aspect ratio                        cropped = orig_img.crop((x, y, x+w, y+h))
                         crop_w, crop_h = cropped.size
                         crop_ratio = crop_w / crop_h
                         
@@ -1011,26 +1003,12 @@ def send_screenshot(filename):
                     # Image is taller than target ratio, use full width
                     new_height = int(orig_w / target_ratio)
                     top = (orig_h - new_height) // 2
-                    crop_box = (0, top, orig_w, top + new_height)
-                
-                current_app.logger.info(f"Auto crop box: {crop_box}")
-                cropped = orig_img.crop(crop_box)
+                    crop_box = (0, top, orig_w, top + new_height)                cropped = orig_img.crop(crop_box)
 
-            # Step 2: Resize the cropped image to match the target resolution
-            current_app.logger.info(f"Cropped image size: {cropped.size}")
-            
-            # If portrait, rotate the image 90 degrees clockwise and swap dimensions
-            if is_portrait:
-                current_app.logger.info("Rotating image for portrait orientation")
-                cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                current_app.logger.info(f"After rotation size: {cropped.size}")
-                final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
+            # Step 2: Resize the cropped image to match the target resolution            # If portrait, rotate the image 90 degrees clockwise and swap dimensions
+            if is_portrait:                cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation                final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)  # Note swapped dimensions
             else:
-                final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
-            
-            current_app.logger.info(f"Final image size: {final_img.size}")
-            
-            # Save the processed image as a temporary file
+                final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)            # Save the processed image as a temporary file
             temp_dir = os.path.join(current_app.config['DATA_FOLDER'], "temp")
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
@@ -1066,14 +1044,8 @@ def send_screenshot(filename):
                 with httpx.Client(timeout=120.0) as client:
                     response = client.post(url, files=files, data=data)
                 
-                # Log the response details
-                current_app.logger.info(f"Response status code: {response.status_code}")
-                current_app.logger.info(f"Response headers: {response.headers}")
-                current_app.logger.info(f"Response content: {response.text}")
-            
-            # Clean up the temporary file
+                # Log the response details            # Clean up the temporary file
             os.remove(temp_filename)
-            current_app.logger.info(f"Temporary file deleted: {temp_filename}")
             
             if response.status_code != 200:
                 current_app.logger.error(f"Error sending image: {response.text}")
@@ -1082,11 +1054,9 @@ def send_screenshot(filename):
             # Update the device's last_sent field with the current filename
             device_obj.last_sent = filename
             db.session.commit()
-            current_app.logger.info(f"Updated device {device_obj.friendly_name} last_sent to {filename}")
             
             # Add a log entry for this send operation
             add_send_log_entry(filename)
-            current_app.logger.info(f"Added send log entry for {filename}")
             
             return jsonify({"status": "success", "message": "Screenshot sent successfully"}), 200
         except httpx.TimeoutException:

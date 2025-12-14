@@ -341,19 +341,11 @@ def send_scheduled_image(event_id):
             event = ScheduleEvent.query.get(event_id)
             if not event:
                 current_app.logger.error(f"Event not found: {event_id}")
-                return
-            
-            current_app.logger.info(f"Found event: {event.id}, filename: {event.filename}, device: {event.device}")
-            
-            # Get the device from the database
+                return            # Get the device from the database
             device_obj = Device.query.filter_by(address=event.device).first()
             if not device_obj:
                 current_app.logger.error(f"Device not found for event {event_id}")
-                return
-            
-            current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
-
-            # Check if this is a screenshot that needs to be refreshed
+                return            # Check if this is a screenshot that needs to be refreshed
             if event.refresh_screenshot:
                 # Check if the filename exists in the screenshots table
                 screenshot = Screenshot.query.filter_by(filename=event.filename).first()
@@ -368,10 +360,7 @@ def send_scheduled_image(event_id):
                         else:
                             # Generate a new filename for the refreshed screenshot
                             timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-                            new_filename = f"screenshot_{timestamp}.jpg"
-                            current_app.logger.info(f"New filename for refreshed screenshot: {new_filename}")
-                            
-                            # Create screenshots folder if it doesn't exist
+                            new_filename = f"screenshot_{timestamp}.jpg"                            # Create screenshots folder if it doesn't exist
                             screenshots_folder = os.path.join(current_app.config.get('DATA_FOLDER', './data'), 'screenshots')
                             if not os.path.exists(screenshots_folder):
                                 os.makedirs(screenshots_folder)
@@ -391,9 +380,7 @@ def send_scheduled_image(event_id):
                             # Copy crop info from old screenshot to new one
                             from models import ScreenshotCropInfo
                             old_crop_info = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
-                            if old_crop_info:
-                                current_app.logger.info(f"Copying crop info from {event.filename} to {new_filename}")
-                                # Check if crop info already exists for the new filename
+                            if old_crop_info:                                # Check if crop info already exists for the new filename
                                 new_crop_info = ScreenshotCropInfo.query.filter_by(filename=new_filename).first()
                                 if not new_crop_info:
                                     new_crop_info = ScreenshotCropInfo(filename=new_filename)
@@ -413,10 +400,7 @@ def send_scheduled_image(event_id):
                             
                             # Update the event to use the new filename
                             event.filename = new_filename
-                            db.session.commit()
-                            
-                            current_app.logger.info(f"Updated event to use new screenshot filename: {new_filename}")
-                    except Exception as e:
+                            db.session.commit()                    except Exception as e:
                         current_app.logger.error(f"Error refreshing screenshot: {e}")
     
             image_folder = current_app.config.get("IMAGE_FOLDER", "./images")
@@ -443,39 +427,23 @@ def send_scheduled_image(event_id):
                 dev_height = int(parts[1])
                 
                 # Check if device is in portrait orientation
-                is_portrait = device_obj.orientation.lower() == 'portrait'
-                current_app.logger.info(f"Device orientation from database: '{device_obj.orientation}', is_portrait: {is_portrait}")
-                
-                # Calculate aspect ratio based on device orientation
+                is_portrait = device_obj.orientation.lower() == 'portrait'                # Calculate aspect ratio based on device orientation
                 # This ratio is used for cropping to ensure the image fits the display correctly
                 if is_portrait:
                     # For portrait displays, use height/width (taller than wide)
-                    device_ratio = dev_height / dev_width
-                    current_app.logger.info(f"Portrait display: using height/width ratio = {device_ratio}")
-                else:
+                    device_ratio = dev_height / dev_width                else:
                     # For landscape displays, use width/height (wider than tall)
-                    device_ratio = dev_width / dev_height
-                    current_app.logger.info(f"Landscape display: using width/height ratio = {device_ratio}")
-                
-                # Log the original image dimensions and device info
-                current_app.logger.info(f"Original image dimensions: {orig_w}x{orig_h}, device orientation: {device_obj.orientation}, device resolution: {device_obj.resolution}, device ratio: {device_ratio}")
-                    
-                # First check for ScreenshotCropInfo for screenshots
+                    device_ratio = dev_width / dev_height                # Log the original image dimensions and device info                # First check for ScreenshotCropInfo for screenshots
                 from models import ScreenshotCropInfo
                 screenshot_crop = None
                 if event.filename.startswith("screenshot_"):
                     screenshot_crop = ScreenshotCropInfo.query.filter_by(filename=event.filename).first()
-                    if screenshot_crop:
-                        current_app.logger.info(f"Found ScreenshotCropInfo for {event.filename}")
-                
-                # If screenshot crop info exists, use it
+                    if screenshot_crop:                # If screenshot crop info exists, use it
                 if screenshot_crop:
                     x = screenshot_crop.x
                     y = screenshot_crop.y
                     w = screenshot_crop.width
-                    h = screenshot_crop.height
-                    current_app.logger.info(f"Using screenshot crop data: x={x}, y={y}, w={w}, h={h}")
-                    cropped = orig_img.crop((x, y, x + w, y + h))
+                    h = screenshot_crop.height                    cropped = orig_img.crop((x, y, x + w, y + h))
                 else:
                     # Otherwise check for regular CropInfo
                     cdata = load_crop_info_from_db(event.filename)
@@ -483,18 +451,13 @@ def send_scheduled_image(event_id):
                         x = cdata.get("x", 0)
                         y = cdata.get("y", 0)
                         w = cdata.get("width", orig_w)
-                        h = cdata.get("height", orig_h)
-                        current_app.logger.info(f"Using regular crop data: x={x}, y={y}, w={w}, h={h}")
-                        cropped = orig_img.crop((x, y, x + w, y + h))
+                        h = cdata.get("height", orig_h)                        cropped = orig_img.crop((x, y, x + w, y + h))
                     else:
                         # If no crop data, create an auto-centered crop
                         current_app.logger.info("No crop data found, using auto-centered crop")
                         orig_ratio = orig_w / orig_h
                         
-                        # Log the ratios for debugging
-                        current_app.logger.info(f"Original image ratio: {orig_ratio}, device ratio: {device_ratio}")
-                        
-                        if orig_ratio > device_ratio:
+                        # Log the ratios for debugging                        if orig_ratio > device_ratio:
                             # Image is wider than device ratio, use full height
                             new_width = int(orig_h * device_ratio)
                             left = (orig_w - new_width) // 2
@@ -503,38 +466,18 @@ def send_scheduled_image(event_id):
                             # Image is taller than device ratio, use full width
                             new_height = int(orig_w / device_ratio)
                             top = (orig_h - new_height) // 2
-                            crop_box = (0, top, orig_w, top + new_height)
-                        
-                        current_app.logger.info(f"Auto crop box: {crop_box}")
-                        cropped = orig_img.crop(crop_box)
-                        current_app.logger.info(f"Auto-cropped image dimensions: {cropped.size}")
-                
-                # Step 2: Resize and rotate the cropped image to match the target resolution and orientation
-                current_app.logger.info(f"Cropped image size before resize/rotation: {cropped.size}")
-                
-                # IMPORTANT: The rotation is applied based on the device orientation in the database
+                            crop_box = (0, top, orig_w, top + new_height)                        cropped = orig_img.crop(crop_box)                # Step 2: Resize and rotate the cropped image to match the target resolution and orientation                # IMPORTANT: The rotation is applied based on the device orientation in the database
                 # If the eInk display itself is also rotating the image, this might cause double rotation
                 
                 # If portrait, rotate the image 90 degrees clockwise
                 if is_portrait:
                     current_app.logger.info(f"Device is in PORTRAIT mode, rotating image 90° clockwise")
-                    cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation
-                    current_app.logger.info(f"After rotation size: {cropped.size}")
-                    
-                    # For portrait displays, we swap width and height in the final resize
+                    cropped = cropped.rotate(-90, expand=True)  # -90 for clockwise rotation                    # For portrait displays, we swap width and height in the final resize
                     # This is because the physical display is rotated, but the native resolution
-                    # is still reported as if it were in landscape
-                    current_app.logger.info(f"Swapping dimensions for portrait mode: {dev_width}x{dev_height} -> {dev_height}x{dev_width}")
-                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)
-                    current_app.logger.info(f"Final image size after portrait resize: {final_img.size}")
-                else:
+                    # is still reported as if it were in landscape                    final_img = cropped.resize((dev_height, dev_width), Image.LANCZOS)                else:
                     current_app.logger.info(f"Device is in LANDSCAPE mode, no rotation needed")
                     # For landscape displays, we use the normal dimensions
-                    final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)
-                    current_app.logger.info(f"Final image size after landscape resize: {final_img.size}")
-                
-                current_app.logger.info(f"Final image size: {final_img.size}, target device resolution: {device_obj.resolution}")
-                temp_dir = os.path.join(data_folder, "temp")
+                    final_img = cropped.resize((dev_width, dev_height), Image.LANCZOS)                temp_dir = os.path.join(data_folder, "temp")
                 if not os.path.exists(temp_dir):
                     os.makedirs(temp_dir)
                 # Create a unique temporary filename to avoid any caching issues
@@ -545,14 +488,9 @@ def send_scheduled_image(event_id):
                 # Save the final image with high quality
                 final_img.save(temp_filename, format="JPEG", quality=95)
                 current_app.logger.info(f"Original image path: {filepath}")
-                current_app.logger.info(f"Saved temporary file: {temp_filename}")
-                current_app.logger.info(f"Final image dimensions being sent: {final_img.size}")
-            
-            # Verify the temporary file exists and has the correct dimensions
+                current_app.logger.info(f"Saved temporary file: {temp_filename}")            # Verify the temporary file exists and has the correct dimensions
             try:
-                with Image.open(temp_filename) as verify_img:
-                    current_app.logger.info(f"Verifying temporary file: {temp_filename}, dimensions: {verify_img.size}")
-            except Exception as e:
+                with Image.open(temp_filename) as verify_img:            except Exception as e:
                 current_app.logger.error(f"Error verifying temporary file: {e}")
             
             # Send the temporary file to the device using httpx
@@ -580,14 +518,9 @@ def send_scheduled_image(event_id):
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Using URL: {base_url}")
                 
                 # Get the file size for logging
-                file_size = os.path.getsize(temp_filename)
-                current_app.logger.info(f"[SCHEDULED-{send_id}] File size: {file_size} bytes")
-                
-                # Verify the image with Pillow to ensure it's not corrupted
+                file_size = os.path.getsize(temp_filename)                # Verify the image with Pillow to ensure it's not corrupted
                 try:
-                    with Image.open(temp_filename) as verify_img:
-                        current_app.logger.info(f"[SCHEDULED-{send_id}] Image verification: format={verify_img.format}, size={verify_img.size}, mode={verify_img.mode}")
-                except Exception as e:
+                    with Image.open(temp_filename) as verify_img:                except Exception as e:
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Image verification failed: {e}")
                     return f"Error with processed image: {e}", 500
                     
@@ -600,11 +533,7 @@ def send_scheduled_image(event_id):
                     result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=120)
                     
                     # Log comprehensive information about the curl command result
-                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl exit code: {result.returncode}")
-                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stdout: {result.stdout}")
-                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stderr: {result.stderr}")
-                    
-                    # Write to a separate log file for easier debugging
+                    current_app.logger.info(f"[SCHEDULED-{send_id}] Curl exit code: {result.returncode}")                    # Write to a separate log file for easier debugging
                     # Create a response-like object to maintain compatibility
                     class CurlResponse:
                         def __init__(self, text, code):
@@ -634,17 +563,10 @@ def send_scheduled_image(event_id):
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Exception executing curl: {e}")
                     return {"status": "error", "message": f"Exception executing curl: {e}"}
                 
-                # Log the response details - FIXED INDENTATION
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Response status code: {response.status_code}")
-                if hasattr(response, 'headers'):
-                    current_app.logger.info(f"[SCHEDULED-{send_id}] Response headers: {response.headers}")
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Response content: {response.text}")
-
-                if response.status_code != 200:
+                # Log the response details - FIXED INDENTATION                if hasattr(response, 'headers'):                if response.status_code != 200:
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {response.text}")
                     return {"status": "error", "message": f"Error sending image: {response.text}"}
                 
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
                 
             except httpx.TimeoutException:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request timed out after 120 seconds")
@@ -659,12 +581,10 @@ def send_scheduled_image(event_id):
             # Delete the temporary file after sending
             try:
                 os.remove(temp_filename)
-                current_app.logger.info(f"[SCHEDULED-{send_id}] Temporary file deleted: {temp_filename}")
             except Exception as e:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] Error deleting temporary file: {e}")
             
             # If we reach this point, it means the request was successful (status code 200)
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
             
             # Update the event status in the database
             event.sent = True
@@ -674,11 +594,9 @@ def send_scheduled_image(event_id):
             # Update the device's last_sent field
             device_obj.last_sent = event.filename
             db.session.commit()
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Updated device {device_obj.friendly_name} last_sent to {event.filename}")
             
             # Add a log entry for this send operation
             add_send_log_entry(event.filename)
-            current_app.logger.info(f"[SCHEDULED-{send_id}] Added send log entry for {event.filename}")
 
             return {"status": "success", "message": f"Successfully sent image {event.filename} to device {device_obj.friendly_name}"}
             

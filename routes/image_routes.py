@@ -76,7 +76,6 @@ def thumbnail(filename):
             # Save WebP version for better performance
             img.save(webp_thumb_path, "WEBP", quality=80)
             
-            current_app.logger.debug(f"Created thumbnails for {filename}, size: {img.size}")
         
         # Return WebP version
         response = send_from_directory(thumbnail_folder, os.path.basename(webp_thumb_path))
@@ -475,10 +474,7 @@ def send_image(filename=None):
                 w = cdata.get("width", orig_w)
                 h = cdata.get("height", orig_h)
                 
-                # Log the crop data we're using with timestamp for tracking
-                current_app.logger.info(f"Using crop data for {filename}: x={x}, y={y}, w={w}, h={h}, resolution={cdata.get('resolution')}")
-                
-                # Validate crop coordinates
+                # Log the crop data we're using with timestamp for tracking                # Validate crop coordinates
                 if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > orig_w or y + h > orig_h:
                     current_app.logger.warning(f"Invalid crop coordinates: ({x}, {y}, {w}, {h}) for image {orig_w}x{orig_h}")
                     # Fall back to auto-centered crop (handled in else branch below)
@@ -919,9 +915,7 @@ def get_crop_info(filename):
     
     try:
         with Image.open(filepath) as img:
-            original_width, original_height = img.size
-            current_app.logger.info(f"Original dimensions for {filename}: {original_width}x{original_height}")
-    except Exception as e:
+            original_width, original_height = img.size    except Exception as e:
         current_app.logger.error(f"Error getting image dimensions for {filename}: {e}")
     
     # Check if crop info exists for this filename
