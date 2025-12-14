@@ -1,0 +1,29 @@
+<!-- Reusable Crop Modal -->
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-labelledby="{{ modal_id }}Label" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="{{ modal_id }}Label">{{ title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="{{ crop_container_id }}" class="text-center">
+          <img id="{{ crop_image_id }}" src="" alt="Image to crop" style="max-width: 100%;">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="me-auto">
+          <label for="{{ resolution_select_id }}" class="form-label me-2">Display Resolution:</label>
+          <select id="{{ resolution_select_id }}" class="form-select form-select-sm d-inline-block w-auto">
+            <option value="800x600">800x600</option>
+            <option value="1024x758">1024x758</option>
+            <option value="1448x1072">1448x1072</option>
+            <option value="1200x825">1200x825</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="{{ save_crop_id }}">Save Crop</button>
+      </div>
+    </div>
+  </div>
+</div>
