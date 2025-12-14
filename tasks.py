@@ -352,12 +352,7 @@ def send_scheduled_image(event_id):
                 return
             
             current_app.logger.info(f"Found device: {device_obj.friendly_name}, address: {device_obj.address}")
-            
-            # Write to a separate log file for easier debugging
-            with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: Processing scheduled image send\n")
-                f.write(f"Event ID: {event_id}, Filename: {event.filename}, Device: {device_obj.friendly_name}\n")
-    
+
             # Check if this is a screenshot that needs to be refreshed
             if event.refresh_screenshot:
                 # Check if the filename exists in the screenshots table
@@ -610,13 +605,6 @@ def send_scheduled_image(event_id):
                     current_app.logger.info(f"[SCHEDULED-{send_id}] Curl stderr: {result.stderr}")
                     
                     # Write to a separate log file for easier debugging
-                    with open('/tmp/curl_debug_log.txt', 'a') as f:
-                        f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Curl debug log\n")
-                        f.write(f"Command: {' '.join(curl_cmd)}\n")
-                        f.write(f"Exit code: {result.returncode}\n")
-                        f.write(f"Stdout:\n{result.stdout}\n")
-                        f.write(f"Stderr:\n{result.stderr}\n")
-                    
                     # Create a response-like object to maintain compatibility
                     class CurlResponse:
                         def __init__(self, text, code):
@@ -651,42 +639,21 @@ def send_scheduled_image(event_id):
                 if hasattr(response, 'headers'):
                     current_app.logger.info(f"[SCHEDULED-{send_id}] Response headers: {response.headers}")
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Response content: {response.text}")
-                
-                # Write to a separate log file for easier debugging
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] Sending image to {addr}\n")
-                    f.write(f"Event ID: {event_id}, Filename: {event.filename}\n")
-                    f.write(f"URL: {url}\n")
-                    f.write(f"Status code: {response.status_code}\n")
-                    f.write(f"Response: {response.text}\n")
-                    
+
                 if response.status_code != 200:
                     current_app.logger.error(f"[SCHEDULED-{send_id}] Error sending image: {response.text}")
-                    with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                        f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
                     return {"status": "error", "message": f"Error sending image: {response.text}"}
                 
                 current_app.logger.info(f"[SCHEDULED-{send_id}] Successfully sent image to device {device_obj.friendly_name}")
                 
             except httpx.TimeoutException:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request timed out after 120 seconds")
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] TIMEOUT sending image to {addr}\n")
-                    f.write(f"URL: {url}\n")
                 return
             except httpx.RequestError as e:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] HTTP request error: {e}")
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] ERROR sending image to {addr}\n")
-                    f.write(f"URL: {url}\n")
-                    f.write(f"Error: {str(e)}\n")
                 return
             except Exception as e:
                 current_app.logger.error(f"[SCHEDULED-{send_id}] Unexpected error: {e}")
-                with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [SCHEDULED-{send_id}] ERROR sending image to {addr}\n")
-                    f.write(f"URL: {url}\n")
-                    f.write(f"Error: {str(e)}\n")
                 return
             
             # Delete the temporary file after sending
@@ -712,25 +679,14 @@ def send_scheduled_image(event_id):
             # Add a log entry for this send operation
             add_send_log_entry(event.filename)
             current_app.logger.info(f"[SCHEDULED-{send_id}] Added send log entry for {event.filename}")
-            
-            # Write completion to log file
-            with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                f.write(f"{datetime.datetime.now()}: [SCHEDULED-{send_id}] Successfully completed scheduled send\n")
-                
+
             return {"status": "success", "message": f"Successfully sent image {event.filename} to device {device_obj.friendly_name}"}
             
         except Exception as e:
             # Log the exception with full traceback
             current_app.logger.error(f"Error in send_scheduled_image: {e}")
             current_app.logger.error(traceback.format_exc())
-            
-            # Log to the special file for easier debugging
-            with open('/tmp/scheduled_image_log.txt', 'a') as f:
-                f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: ERROR in send_scheduled_image\n")
-                f.write(f"Event ID: {event_id}\n")
-                f.write(f"Error: {str(e)}\n")
-                f.write(f"Traceback:\n{traceback.format_exc()}\n")
-            
+
             # Ensure event is not incorrectly marked as sent in case of error
             try:
                 # Reload the event to make sure we're working with current data

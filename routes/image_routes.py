@@ -740,12 +740,6 @@ def send_image(filename=None):
                 current_app.logger.debug(f"[GALLERY-{send_id}] Curl stderr: {result.stderr}")
                 
                 # Write to a separate log file for easier debugging
-                with open('/tmp/curl_debug_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [GALLERY-{send_id}] Curl debug log\n")
-                    f.write(f"Command: {' '.join(curl_cmd)}\n")
-                    f.write(f"Exit code: {result.returncode}\n")
-                    f.write(f"Stdout:\n{result.stdout}\n")
-                    f.write(f"Stderr:\n{result.stderr}\n")
                 
                 # Create a response-like object
                 class CurlResponse:
@@ -797,12 +791,6 @@ def send_image(filename=None):
                 current_app.logger.debug(f"[GALLERY-{send_id}] Response content: {response.text}")
                 
                 # Write to a separate log file for easier debugging
-                with open('/tmp/gallery_send_log.txt', 'a') as f:
-                    f.write(f"\n{'-'*80}\n{datetime.datetime.now()}: [GALLERY-{send_id}] Sending image to {device_addr}\n")
-                    f.write(f"Filename: {filename}\n")
-                    f.write(f"URL: {url}\n")
-                    f.write(f"Status code: {response.status_code}\n")
-                    f.write(f"Response: {response.text}\n")
                 
                 # Delete the temporary file after sending
                 try:
@@ -813,10 +801,7 @@ def send_image(filename=None):
                 
                 # Check if the request was successful
                 if response.status_code != 200:
-                    current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {response.text}")
-                    with open('/tmp/gallery_send_log.txt', 'a') as f:
-                        f.write(f"ERROR: Failed to send image. Status code: {response.status_code}\n")
-                    return f"Error sending image: {response.text}", 500
+                    current_app.logger.error(f"[GALLERY-{send_id}] Error sending image: {response.text}")                    return f"Error sending image: {response.text}", 500
                 
                 # If we get here, the request was successful
 
@@ -830,8 +815,6 @@ def send_image(filename=None):
             current_app.logger.debug(f"[GALLERY-{send_id}] Added send log entry for {filename}")
             
             # Write completion to log file
-            with open('/tmp/gallery_send_log.txt', 'a') as f:
-                f.write(f"{datetime.datetime.now()}: [GALLERY-{send_id}] Successfully completed gallery send\n")
                 
             return "Image sent successfully", 200
             
